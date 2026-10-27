@@ -1804,6 +1804,18 @@ const pt: TranslationSchema = {
     itemCalc: "Calculadora: defina suas razões com sua equipe de diabetes e confirme-as uma vez; até lá, nenhum valor em unidades é exibido.",
     ok: "OK",
   },
+  thanks: {
+    title: "Você está no Pro, agradecemos",
+    body: "Agradecemos por continuar com o Pro depois do teste. Seu apoio nos ajuda a melhorar o zerospike.",
+    nextLabel: "Próximos passos",
+    reportTitle: "Relatório em PDF para compartilhar com seu médico",
+    reportBody: "Transforme seus registros em um arquivo organizado, pronto para a consulta.",
+    healthTitle: "Sincronização com {{health}}",
+    healthBody: "Conecte o {{health}} para que suas medições cheguem sozinhas ao seu diário.",
+    spikeTitle: "Spike",
+    spikeBody: "Pergunte ao Spike sobre refeições, carboidratos e seu diário.",
+    renewalToast: "Agradecemos pelo seu apoio",
+  },
   fatalReport: {
     row: "Último relatório de erro",
     none: "Sem registro",

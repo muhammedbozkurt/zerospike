@@ -404,6 +404,35 @@ export async function verifyProWithStore(): Promise<boolean | null> {
   }
 }
 
+/**
+ * The Pro entitlement's period facts for the thank-you moments
+ * (lib/thanks). Read from the SDK's own customer-info cache (no forced network
+ * round trip, the same read the foreground refresh makes), and null when the
+ * store cannot answer, so an unreachable store is never mistaken for "no Pro".
+ * A dev build has no store, so it answers null.
+ */
+export async function getEntitlementSnapshot(): Promise<{
+  active: boolean;
+  periodType: PeriodType;
+  expiresAt: number | null;
+  productId: string | null;
+} | null> {
+  if (DEBUG_MOCK_PURCHASES) return null;
+  try {
+    const info = await fetchCustomerInfo();
+    const ent = info?.entitlements?.active?.[ENTITLEMENT_ID];
+    if (!ent) return { active: false, periodType: "unknown", expiresAt: null, productId: null };
+    return {
+      active: true,
+      periodType: periodTypeOf(ent),
+      expiresAt: isoMs(ent.expirationDate),
+      productId: typeof ent.productIdentifier === "string" ? ent.productIdentifier : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** The entitlement as best known: the store's answer, else the last one cached. */
 export async function isPro(): Promise<boolean> {
   const verified = await verifyProWithStore();

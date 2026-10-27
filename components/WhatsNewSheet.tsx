@@ -8,7 +8,7 @@ import { HIDDEN_FROM_A11Y } from "../lib/a11y";
 import { THEME } from "../lib/theme/tokens";
 import { useApp } from "../lib/store/AppContext";
 import { isScreenshotMode } from "../lib/screenshotMode";
-import { SURVEY_ASKED_KEY, SURVEY_PENDING_KEY, surveyHeld } from "../lib/feedbackSurvey";
+import { SURVEY_ASKED_KEY, SURVEY_PENDING_KEY, overlayOpen, surveyHeld } from "../lib/feedbackSurvey";
 import {
   WHATS_NEW_DELAY_MS,
   WHATS_NEW_ITEMS,
@@ -91,7 +91,8 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
         screenshotMode: isScreenshotMode(),
         root: s.root,
         winbackHold: surveyHeld(),
-        surveyBusy: false,
+        // A thank-you sheet may already be up: two Modals cannot present together.
+        surveyBusy: overlayOpen(),
       };
       if (!whatsNewMayPresent(gate) || askedAtStart.current === null) return;
       void (async () => {

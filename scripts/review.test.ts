@@ -10,6 +10,13 @@ declare function require(id: string): any;
 
 let passed = 0;
 let failed = 0;
+function ok(name: string, cond: boolean): void {
+  if (cond) passed++;
+  else {
+    failed++;
+    console.log(`  x ${name}`);
+  }
+}
 function eq<T>(name: string, actual: T, expected: T): void {
   if (JSON.stringify(actual) === JSON.stringify(expected)) passed++;
   else {
@@ -118,6 +125,61 @@ async function main() {
     new Promise((r) => setTimeout(r, 1)).then(() => svc.noteStreakAndMaybeReview(7)),
   ]);
   eq("concurrent triggers prompt once", requests - before, 1);
+
+  // trial_converted: its own moment, gated by 365 days on the shared stamp.
+  store.clear();
+  events.length = 0;
+  let r0 = requests;
+  eq("trial_converted: fresh install (no baseline, no stamp) asks", await svc.maybeRequestReview("trial_converted"), true);
+  eq("trial_converted: native request made", requests - r0, 1);
+  eq("trial_converted: event carries the trigger", events[events.length - 1].params, { trigger: "trial_converted" });
+  ok("trial_converted: writes the shared last-prompt stamp", Math.abs(Number(store.get("zerospike.reviewLastPromptAt")) - Date.now()) < 5000);
+  eq("trial_converted: writes the shared last-prompt version", store.get("zerospike.reviewLastPromptVersion"), "1.0.0");
+
+  r0 = requests;
+  eq("trial_converted: a second ask right away is blocked", await svc.maybeRequestReview("trial_converted"), false);
+  store.set("zerospike.reviewLastPromptAt", String(Date.now() - 364 * DAY));
+  store.set("zerospike.reviewLastPromptVersion", "0.9.0");
+  eq("trial_converted: 364 days after the last prompt is blocked", await svc.maybeRequestReview("trial_converted"), false);
+  store.set("zerospike.reviewLastPromptAt", String(Date.now() - 366 * DAY));
+  eq("trial_converted: 366 days after the last prompt asks", await svc.maybeRequestReview("trial_converted"), true);
+  eq("trial_converted: and re-stamps the shared version", store.get("zerospike.reviewLastPromptVersion"), "1.0.0");
+  eq("trial_converted: only the allowed asks reached the OS", requests - r0, 1);
+
+  // Any earlier prompt counts, whichever trigger made it (shared stamp).
+  store.clear();
+  store.set("zerospike.reviewFirstSeenAt", String(Date.now() - 4 * DAY));
+  store.set("zerospike.reviewLogCount", "10");
+  await svc.maybeRequestReview("log_saved");
+  r0 = requests;
+  eq("trial_converted: a log_saved prompt just made blocks it", await svc.maybeRequestReview("trial_converted"), false);
+  eq("trial_converted: nothing reached the OS", requests - r0, 0);
+
+  // ...and a conversion prompt counts for the existing rule.
+  store.clear();
+  store.set("zerospike.reviewFirstSeenAt", String(Date.now() - 4 * DAY));
+  store.set("zerospike.reviewLogCount", "10");
+  await svc.maybeRequestReview("trial_converted");
+  r0 = requests;
+  eq("existing triggers: blocked after a conversion prompt (same version)", await svc.maybeRequestReview("log_saved"), false);
+  store.set("zerospike.reviewLastPromptVersion", "0.9.0");
+  eq("existing triggers: still blocked inside 30 days", await svc.maybeRequestReview("pdf_export_success"), false);
+  store.set("zerospike.reviewLastPromptAt", String(Date.now() - 31 * DAY));
+  eq("existing triggers: reopen on their own 30-day rule", await svc.maybeRequestReview("pdf_export_success"), true);
+  eq("existing triggers: OS asked once", requests - r0, 1);
+
+  // Existing triggers keep their baseline: a fresh install still waits.
+  store.clear();
+  r0 = requests;
+  eq("existing triggers: no baseline, no prompt", await svc.maybeRequestReview("log_saved"), false);
+  eq("existing triggers: baseline unchanged by the new trigger", requests - r0, 0);
+
+  // A damaged or future stamp never opens the conversion prompt.
+  store.clear();
+  store.set("zerospike.reviewLastPromptAt", "not-a-number");
+  eq("trial_converted: garbage stamp blocks", await svc.maybeRequestReview("trial_converted"), false);
+  store.set("zerospike.reviewLastPromptAt", String(Date.now() + 10 * DAY));
+  eq("trial_converted: future-dated stamp (clock moved) blocks", await svc.maybeRequestReview("trial_converted"), false);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

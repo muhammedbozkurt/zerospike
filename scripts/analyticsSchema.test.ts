@@ -184,7 +184,9 @@ function matchesContract(): void {
     "carb_estimate_accepted{item_count:int}",
     "portion_chip_used{kind:measure|grams}",
     "analytics_opt_out{enabled:bool}",
-    "store_review_prompt{trigger:log_saved|streak_7|weekly_insights_view|pdf_export_success}",
+    "store_review_prompt{trigger:log_saved|streak_7|weekly_insights_view|pdf_export_success|trial_converted}",
+    "trial_converted_seen{}",
+    "renewal_seen{}",
     "cgm_mode_set{mode:manual|cgm|nightscout}",
     "cgm_offer{action:accepted|declined}",
     "nightscout_connect{result:ok|auth|network|invalid}",
@@ -209,7 +211,7 @@ function matchesContract(): void {
   }
 
   const actual = canonicalSchema();
-  eq("49 events in the contract", expected.size, 49);
+  eq("51 events in the contract", expected.size, 51);
   eq("schema version is 7", SCHEMA_VERSION, 7);
   eq("event count", actual.size, expected.size);
   for (const [name, fields] of expected) {

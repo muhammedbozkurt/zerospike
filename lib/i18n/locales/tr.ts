@@ -1799,6 +1799,18 @@ const tr = {
     itemCalc: "Hesaplayıcı: oranlarınızı diyabet ekibinizle belirleyip bir kez onaylayın; onaylayana kadar ünite rakamı görünmez.",
     ok: "Tamam",
   },
+  thanks: {
+    title: "Pro'ya geçtiniz, teşekkür ederiz",
+    body: "Denemenizden sonra Pro'ya devam ettiğiniz için minnettarız. Desteğiniz zerospike'ı geliştirmemizi sağlıyor.",
+    nextLabel: "Sıradaki adımlar",
+    reportTitle: "Doktorunuzla paylaşabileceğiniz PDF raporu",
+    reportBody: "Kayıtlarınızı randevunuza hazır, derli toplu bir dosyaya dönüştürün.",
+    healthTitle: "{{health}} eşitlemesi",
+    healthBody: "{{health}} bağlantısını kurun, ölçümleriniz günlüğünüze kendiliğinden gelsin.",
+    spikeTitle: "Spike",
+    spikeBody: "Yemekler, karbonhidrat ve günlüğünüz hakkındaki sorularınızı Spike'a sorun.",
+    renewalToast: "Desteğiniz için teşekkürler",
+  },
   fatalReport: {
     row: "Son hata raporu",
     none: "Kayıt yok",

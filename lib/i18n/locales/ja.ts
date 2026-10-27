@@ -1801,6 +1801,18 @@ const ja: TranslationSchema = {
     itemCalc: "計算機：比率を糖尿病の医療チームと決めて、一度確認してください。確認するまで単位の数値は表示されません。",
     ok: "OK",
   },
+  thanks: {
+    title: "Proへのご登録、ありがとうございます",
+    body: "無料体験のあともProをご利用いただき、ありがとうございます。いただいたご支援は、zerospikeの改善に役立てられます。",
+    nextLabel: "次のステップ",
+    reportTitle: "医師と共有できるPDFレポート",
+    reportBody: "記録を、受診にそのまま使える整ったファイルにまとめられます。",
+    healthTitle: "{{health}}との連携",
+    healthBody: "{{health}}と連携すると、測定値が自動で記録に追加されます。",
+    spikeTitle: "Spike",
+    spikeBody: "食事や炭水化物、記録についてSpikeに質問できます。",
+    renewalToast: "ご支援ありがとうございます",
+  },
   fatalReport: {
     row: "前回のエラーレポート",
     none: "記録なし",

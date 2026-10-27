@@ -119,8 +119,10 @@ export const EVENT_SCHEMA = {
   portion_chip_used: { kind: ["measure", "grams"] },
   analytics_opt_out: { enabled: "bool" },
   store_review_prompt: {
-    trigger: ["log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"],
+    trigger: ["log_saved", "streak_7", "weekly_insights_view", "pdf_export_success", "trial_converted"],
   },
+  trial_converted_seen: {},
+  renewal_seen: {},
   cgm_mode_set: { mode: ["manual", "cgm", "nightscout"] },
   cgm_offer: { action: ["accepted", "declined"] },
   nightscout_connect: { result: ["ok", "auth", "network", "invalid"] },
