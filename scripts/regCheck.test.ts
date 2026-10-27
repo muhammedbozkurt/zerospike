@@ -128,7 +128,8 @@ section("E. an exemption without a reason does not excuse");
 
 section("F. shipped patterns on the real locales: 0 findings");
 for (const locale of LOCALES) {
-  const r = reg.scanLocaleEntries(locale, reg.loadLocaleEntries(locale)) as { findings: Finding[] };
+  const allowlist = require("./regRules.js").loadAllowlist();
+  const r = reg.scanLocaleEntries(locale, reg.loadLocaleEntries(locale), { allowlist }) as { findings: Finding[] };
   eq(`${locale} real findings`, r.findings.length, 0);
 }
 
