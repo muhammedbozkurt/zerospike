@@ -58,7 +58,9 @@ import {
   grantSpikeConsent,
   hasSpikeConsent,
   hasSpikeContextConsent,
+  markSpikeCgmOfferSeen,
   setSpikeContextConsent,
+  shouldOfferSpikeCgmConsent,
 } from "../lib/services/spikeConsent";
 import { hapticSelect, hapticSuccess } from "../lib/haptics";
 import { useLayout } from "../lib/useLayout";
@@ -336,6 +338,7 @@ function ContextConsentView({
   bottomPad,
   columnPad,
   saveFailed,
+  cgmUpdate,
   onAccept,
   onDecline,
 }: {
@@ -345,6 +348,10 @@ function ContextConsentView({
   columnPad: ViewStyle;
   /** Storing the choice failed: say so, the screen stays and nothing is switched on. */
   saveFailed: boolean;
+  /** A summary consent given before CGM averages were part of it: the same
+   *  screen, with one line saying what changed and that declining keeps Spike
+   *  working without them. */
+  cgmUpdate: boolean;
   onAccept: () => void;
   onDecline: () => void;
 }) {
@@ -375,6 +382,11 @@ function ContextConsentView({
         <Txt kind="caption" tone="muted" style={{ textAlign: "center" }}>
           {t("spike.ctxIntro")}
         </Txt>
+        {cgmUpdate ? (
+          <Txt kind="caption" style={{ textAlign: "center", fontWeight: "700" }}>
+            {t("spike.ctxCgmUpdate")}
+          </Txt>
+        ) : null}
         <Card style={{ width: "100%" }}>
           <View style={{ gap: SPACE.sm }}>
             <Txt style={{ fontWeight: "700" }}>{t("spike.ctxSharedTitle")}</Txt>
@@ -447,6 +459,7 @@ function SpikeScreen() {
   const [contextOn, setContextOn] = useState(false);
   const [contextView, setContextView] = useState(false);
   const [contextSaveFailed, setContextSaveFailed] = useState(false);
+  const [cgmOffer, setCgmOffer] = useState(false);
   const [messages, setMessages] = useState<SpikeMessage[]>([]);
   const [replyMeta, setReplyMeta] = useState<Record<number, ReplyMeta>>({});
   const [input, setInput] = useState("");
@@ -576,6 +589,16 @@ function SpikeScreen() {
       if (granted) {
         setMessages(await loadHistory());
         setContextOn(await hasSpikeContextConsent());
+        // A summary consent given before CGM averages joined the packet does not
+        // cover them. When the profile has such data, the current text is shown
+        // once; until it is accepted the packet goes out without the cgm block.
+        if (await shouldOfferSpikeCgmConsent()) {
+          const probe = await summarizeForSpike(SPIKE_CONTEXT_DAYS, { cgmConsent: true });
+          if (probe?.cgm) {
+            setCgmOffer(true);
+            setContextView(true);
+          }
+        }
       }
       setUsage(await getSpikeUsage(isProUser));
       setReady(true);
@@ -636,12 +659,19 @@ function SpikeScreen() {
     hapticSuccess();
     setContextOn(true);
     setContextView(false);
+    setCgmOffer(false);
     logEvent("spike_context_consent", { granted: true });
   }
 
   function declineContext() {
     setContextSaveFailed(false);
     setContextView(false);
+    if (cgmOffer) {
+      // Declining the new text leaves the earlier summary as it was, without cgm.
+      setCgmOffer(false);
+      void markSpikeCgmOfferSeen();
+      return;
+    }
     logEvent("spike_context_consent", { granted: false });
   }
 
@@ -992,6 +1022,7 @@ function SpikeScreen() {
         bottomPad={insets.bottom}
         columnPad={columnPad(24)}
         saveFailed={contextSaveFailed}
+        cgmUpdate={cgmOffer}
         onAccept={acceptContext}
         onDecline={declineContext}
       />

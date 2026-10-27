@@ -35,6 +35,52 @@ export async function hasSpikeConsent(): Promise<boolean> {
   }
 }
 
+/**
+ * The summary consent is versioned too. Version 2 added the CGM averages to
+ * the packet (spike.ctxShared1 names the sources). A summary consent stored
+ * without a version (v1, given before 2.5) keeps the packet it agreed to, but
+ * the cgm block stays out of it until the user accepts the current text.
+ */
+export const SPIKE_CONTEXT_CONSENT_VERSION = 2;
+const CONTEXT_CONSENT_VERSION_KEY = "zerospike.spikeContextConsentVersion";
+/** Set once the v2 text has been put in front of a v1 user, accepted or not,
+ *  so the offer is made once and not on every visit. */
+const CGM_OFFER_SEEN_KEY = "zerospike.spikeCgmOfferSeen";
+
+/** 0 when the summary consent is off, 1 for a pre-2.5 consent, else the stored version. */
+export async function getSpikeContextConsentVersion(): Promise<number> {
+  try {
+    if (!(await hasSpikeContextConsent())) return 0;
+    const stored = Number(await AsyncStorage.getItem(CONTEXT_CONSENT_VERSION_KEY));
+    return Number.isInteger(stored) && stored >= 1 ? stored : 1;
+  } catch {
+    return 0; // fail-closed
+  }
+}
+
+/** True only while the summary consent stands AND was given on the text that
+ *  names CGM. The one gate for the cgm block of the packet. */
+export async function hasSpikeCgmConsent(): Promise<boolean> {
+  return (await getSpikeContextConsentVersion()) >= SPIKE_CONTEXT_CONSENT_VERSION;
+}
+
+export async function shouldOfferSpikeCgmConsent(): Promise<boolean> {
+  try {
+    if ((await getSpikeContextConsentVersion()) !== 1) return false;
+    return (await AsyncStorage.getItem(CGM_OFFER_SEEN_KEY)) !== "true";
+  } catch {
+    return false;
+  }
+}
+
+export async function markSpikeCgmOfferSeen(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(CGM_OFFER_SEEN_KEY, "true");
+  } catch {
+    // best-effort: the offer may come once more
+  }
+}
+
 export async function grantSpikeConsent(): Promise<void> {
   try {
     await AsyncStorage.setItem(CONSENT_KEY, "true");
@@ -63,12 +109,18 @@ export async function hasSpikeContextConsent(): Promise<boolean> {
 export async function setSpikeContextConsent(granted: boolean): Promise<boolean> {
   try {
     if (granted) {
+      await AsyncStorage.setItem(CONTEXT_CONSENT_VERSION_KEY, String(SPIKE_CONTEXT_CONSENT_VERSION));
       await AsyncStorage.setItem(CONTEXT_CONSENT_KEY, "true");
     } else {
       try {
         await AsyncStorage.removeItem(CONTEXT_CONSENT_KEY);
       } catch {
         await AsyncStorage.setItem(CONTEXT_CONSENT_KEY, "false");
+      }
+      try {
+        await AsyncStorage.removeItem(CONTEXT_CONSENT_VERSION_KEY);
+      } catch {
+        // the consent flag above already reads off; a stale version is inert
       }
     }
     return true;
@@ -93,6 +145,12 @@ export async function withdrawSpikeConsent(): Promise<void> {
   }
   try {
     await AsyncStorage.removeItem(CONTEXT_CONSENT_KEY);
+  } catch {
+    // best-effort
+  }
+  try {
+    await AsyncStorage.removeItem(CONTEXT_CONSENT_VERSION_KEY);
+    await AsyncStorage.removeItem(CGM_OFFER_SEEN_KEY);
   } catch {
     // best-effort
   }

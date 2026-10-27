@@ -1,4 +1,5 @@
 import { getDb } from "./index";
+import { MATCHING_MANUAL_SUGAR_SQL, recentManualSugarSql } from "./cgmSql";
 import { uuid } from "../uuid";
 import { USER_ENTERED_SQL } from "../glucoseSource";
 import type { Food, MealLog, PeriodTag, SugarLog } from "./types";
@@ -235,12 +236,7 @@ export async function listRecentSugarLogs(
 ): Promise<RecentSugarLog[]> {
   const db = await getDb();
   const values = untilIso ? [profileId, sinceIso, untilIso] : [profileId, sinceIso];
-  return db.getAllAsync<RecentSugarLog>(
-    `SELECT id, logged_at, glucose_level_mgdl FROM sugar_logs
-      WHERE profile_id = ? AND logged_at >= ? ${untilIso ? "AND logged_at <= ?" : ""}
-      ORDER BY logged_at DESC;`,
-    values
-  );
+  return db.getAllAsync<RecentSugarLog>(recentManualSugarSql(Boolean(untilIso)), values);
 }
 
 /** Records the Apple Health sample UUID for a mirrored reading (schema v10).
@@ -503,13 +499,12 @@ export async function findMatchingSugarLog(
   const half = windowMinutes * 60_000;
   const from = new Date(at.getTime() - half).toISOString();
   const to = new Date(at.getTime() + half).toISOString();
-  const row = await db.getFirstAsync<SugarRow>(
-    `SELECT * FROM sugar_logs
-      WHERE profile_id = ? AND glucose_level_mgdl = ?
-        AND logged_at BETWEEN ? AND ?
-      ORDER BY logged_at DESC LIMIT 1;`,
-    [profileId, Math.round(glucoseMgdl), from, to]
-  );
+  const row = await db.getFirstAsync<SugarRow>(MATCHING_MANUAL_SUGAR_SQL, [
+    profileId,
+    Math.round(glucoseMgdl),
+    from,
+    to,
+  ]);
   return row ? mapSugar(row) : null;
 }
 
