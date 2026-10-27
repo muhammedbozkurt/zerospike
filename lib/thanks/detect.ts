@@ -23,6 +23,11 @@ export const DAY_MS = 86_400_000;
 export const RENEWAL_TOAST_MIN_DAYS = 330;
 /** Expiry must move forward by at least this much to count as a renewal. */
 export const RENEWAL_MIN_ADVANCE_MS = DAY_MS;
+/**
+ * A snapshot older than this is only a seed: an app not opened for months, or a
+ * snapshot restored from an old backup, says nothing about what just happened.
+ */
+export const SNAPSHOT_MAX_AGE_MS = 45 * DAY_MS;
 /** A decided-but-not-yet-shown moment older than this is dropped silently. */
 export const PENDING_MAX_AGE_MS = 14 * DAY_MS;
 
@@ -136,6 +141,8 @@ export function detectThanks(input: DetectInput): { outcome: ThanksOutcome; next
   if (!prev || !prev.active) return { outcome: "none", next };
   // The clock went back since the last look: nothing here can be trusted.
   if (now < prev.observedAt) return { outcome: "none", next };
+  // Too long since the last look (applies to a conversion and a renewal alike).
+  if (now - prev.observedAt > SNAPSHOT_MAX_AGE_MS) return { outcome: "none", next };
   if (!sameProduct(prev.productId, current.productId)) return { outcome: "none", next };
 
   const expiryMovedForward =

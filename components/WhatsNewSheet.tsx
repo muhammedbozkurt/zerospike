@@ -13,13 +13,12 @@ import {
   WHATS_NEW_DELAY_MS,
   WHATS_NEW_ITEMS,
   isWhatsNewRoute,
-  surveyInTheWay,
-  takeWhatsNew,
   whatsNewMayPresent,
 } from "../lib/whatsNew";
 import { currentAppVersion, whatsNewKv } from "../lib/whatsNewStore";
 import { useOverlayPresence } from "../lib/useOverlayPresence";
 import { claimSheet, onSheetRelease } from "../lib/sheetClaim";
+import { attemptWhatsNew, createAttemptMemory } from "../lib/whatsNewAttempt";
 
 export function WhatsNewSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -69,15 +68,20 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
   const latest = useRef({ ready, onboarded, root });
   latest.current = { ready, onboarded, root };
   const askedAtStart = useRef<boolean | null>(null);
-  // Bumped when the thank-you sheet lets go of the slot, so a sheet that had to
-  // wait for it looks again instead of being lost.
+  // Bumped when the slot or an overlay is released AND this host was turned away
+  // by it, so a sheet that had to wait looks again instead of being lost. Its own
+  // release never wakes it, and an attempt that found nothing to show ends the
+  // polling for the session (lib/whatsNewAttempt).
   const [slotTick, setSlotTick] = useState(0);
   const releaseSlot = useRef<(() => void) | null>(null);
+  const memory = useRef(createAttemptMemory());
 
   useEffect(() => {
-    const bump = () => setSlotTick((n) => n + 1);
-    const offSlot = onSheetRelease(bump);
-    const offOverlay = onSurveyRelease(bump);
+    const wake = () => {
+      if (memory.current.takeWake()) setSlotTick((n) => n + 1);
+    };
+    const offSlot = onSheetRelease(wake);
+    const offOverlay = onSurveyRelease(wake);
     return () => {
       offSlot();
       offOverlay();
@@ -100,7 +104,7 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
   }, []);
 
   useEffect(() => {
-    if (!ready || !onboarded || visible || !isWhatsNewRoute(root)) return;
+    if (!ready || !onboarded || visible || !isWhatsNewRoute(root) || memory.current.isDone()) return;
     const timer = setTimeout(() => {
       const s = latest.current;
       const gate = {
@@ -112,32 +116,25 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
         // A thank-you sheet may already be up: two Modals cannot present together.
         surveyBusy: overlayOpen(),
       };
-      if (!whatsNewMayPresent(gate) || askedAtStart.current === null) return;
-      void (async () => {
-        const slot = claimSheet();
-        if (!slot) return;
-        let opened = false;
-        try {
-          const inTheWay = await surveyInTheWay(whatsNewKv, askedAtStart.current === true, {
-            pending: SURVEY_PENDING_KEY,
-            asked: SURVEY_ASKED_KEY,
-          });
-          if (inTheWay) return;
-          const again = latest.current;
-          if (!isWhatsNewRoute(again.root) || surveyHeld()) return;
-          const due = await takeWhatsNew(whatsNewKv, {
-            onboarded: again.onboarded,
-            appVersion: currentAppVersion(),
-          });
-          if (due) {
-            opened = true;
-            releaseSlot.current = slot;
-            setVisible(true);
-          }
-        } finally {
-          if (!opened) slot();
-        }
-      })();
+      if (!whatsNewMayPresent(gate) || askedAtStart.current === null) {
+        memory.current.markWaiting();
+        return;
+      }
+      void attemptWhatsNew({
+        claim: claimSheet,
+        kv: whatsNewKv,
+        askedAtStart: askedAtStart.current === true,
+        latest: () => latest.current,
+        surveyHeld,
+        appVersion: currentAppVersion(),
+        open: (slot) => {
+          releaseSlot.current = slot;
+          setVisible(true);
+        },
+      }).then((result) => {
+        if (result === "nothing" || result === "opened") memory.current.markDone();
+        else if (result === "busy" || result === "retry") memory.current.markWaiting();
+      });
     }, WHATS_NEW_DELAY_MS);
     return () => clearTimeout(timer);
   }, [ready, onboarded, root, visible, slotTick]);

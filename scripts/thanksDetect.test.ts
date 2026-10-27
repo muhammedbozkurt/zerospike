@@ -22,6 +22,8 @@ import {
 } from "../lib/thanks/detect";
 import { confirmThanksShown, evaluateThanks, type ThanksDeps } from "../lib/thanks/evaluate";
 import { claimSheet, onSheetRelease, sheetClaimed } from "../lib/sheetClaim";
+import { mapEntitlement } from "../lib/thanks/map";
+import { attemptWhatsNew, createAttemptMemory } from "../lib/whatsNewAttempt";
 import { thanksMayPresent, type ThanksGate } from "../lib/thanks/gate";
 
 const fs = require("fs");
@@ -161,7 +163,7 @@ async function main() {
     const r = run(prev, ent({ productId: ANNUAL, expiresAt: T0 + 365 * DAY_MS }));
     eq("monthly to annual with a big expiry jump is silent", r.outcome, "none");
     eq("and the snapshot now holds the new product", r.next.productId, ANNUAL);
-    const again = run({ ...r.next, expiresAt: T0 + 365 * DAY_MS }, ent({ productId: ANNUAL, expiresAt: T0 + 730 * DAY_MS }), T0 + 366 * DAY_MS);
+    const again = run({ ...r.next, expiresAt: T0 + 30 * DAY_MS }, ent({ productId: ANNUAL, expiresAt: T0 + 395 * DAY_MS }), T0 + 29 * DAY_MS);
     eq("the next real renewal on the new plan is shown", again.outcome, "renewed");
     eq("Android base-plan ids differ as whole strings", run(snap({ productId: "zerospike_pro:monthly" }), ent({ productId: "zerospike_pro:annual", expiresAt: T0 + 400 * DAY_MS })).outcome, "none");
   }
@@ -445,10 +447,228 @@ async function main() {
     ok("thanks waits on a held slot or open overlay", /overlayOpen: overlayOpen\(\) \|\| sheetClaimed\(\)/.test(thanks));
     ok("thanks looks again when the slot or an overlay is released", /onSheetRelease\(bump\)/.test(thanks) && /onSurveyRelease\(bump\)/.test(thanks));
     ok("thanks releases the slot once the sheet is gone", /if \(visible\) return;\s*claimRef\.current\?\.\(\);/.test(thanks));
-    ok("what's new claims the slot before it consumes its flag", /claimSheet\(\)[\s\S]{0,700}takeWhatsNew/.test(whats));
-    ok("what's new gives the slot back when it does not open", /if \(!opened\) slot\(\)/.test(whats));
-    ok("what's new looks again when the slot is released", /onSheetRelease\(bump\)/.test(whats) && /slotTick\]/.test(whats));
+    const attempt = src("lib/whatsNewAttempt.ts");
+    ok("what's new claims the slot before it consumes its flag", /d\.claim\(\)[\s\S]{0,700}takeWhatsNew/.test(attempt) && /claim: claimSheet/.test(whats));
+    ok("what's new gives the slot back when it does not open", /if \(!opened\) slot\(\)/.test(attempt));
+    ok("what's new wakes only when it was turned away", /takeWake\(\)\) setSlotTick/.test(whats) && /onSheetRelease\(wake\)/.test(whats) && /slotTick\]/.test(whats));
+    ok("what's new stops polling once there is nothing to show", /markDone\(\)/.test(whats) && /memory\.current\.isDone\(\)/.test(whats));
     ok("both sheets register as overlays", /useOverlayPresence\(visible\)/.test(thanks) && /useOverlayPresence\(visible\)/.test(whats));
+  }
+
+  section("H3. a stale snapshot is only a seed (45 days)");
+  {
+    const limit = 45 * DAY_MS;
+    const trialPrev = snap({ periodType: "trial", expiresAt: T0 - limit - 1000 }, T0 - limit);
+    const paid = ent({ expiresAt: T0 + 365 * DAY_MS });
+    eq("conversion exactly 45 days after the last look is shown", run(trialPrev, paid).outcome, "converted");
+    const staleTrial = snap({ periodType: "trial", expiresAt: T0 - limit - 1000 }, T0 - limit - 1);
+    const stale = run(staleTrial, paid);
+    eq("conversion seen 45 days and 1 ms after the last look is silent", stale.outcome, "none");
+    eq("and it re-seeds from the current entitlement", [stale.next.periodType, stale.next.observedAt], ["normal", T0]);
+    const renewPrev = snap({ expiresAt: T0 - 1000 }, T0 - limit);
+    eq("renewal exactly 45 days after the last look is shown", run(renewPrev, paid).outcome, "renewed");
+    eq("renewal after more than 45 days is silent", run(snap({ expiresAt: T0 - 1000 }, T0 - limit - 1), paid).outcome, "none");
+    eq("an old snapshot restored from a backup (months) is silent", run(snap({ periodType: "trial", expiresAt: T0 - 200 * DAY_MS }, T0 - 200 * DAY_MS), paid).outcome, "none");
+  }
+
+  section("M. RevenueCat entitlement mapping");
+  {
+    // Shapes follow react-native-purchases' PurchasesEntitlementInfo.
+    const rc = (over: Record<string, unknown> = {}) => ({
+      identifier: "pro",
+      isActive: true,
+      willRenew: true,
+      periodType: "NORMAL",
+      latestPurchaseDate: "2026-10-01T10:00:00Z",
+      originalPurchaseDate: "2026-10-01T10:00:00Z",
+      expirationDate: "2027-10-01T10:00:00Z",
+      store: "APP_STORE",
+      productIdentifier: "zerospike_pro_annual",
+      isSandbox: false,
+      unsubscribeDetectedAt: null,
+      billingIssueDetectedAt: null,
+      ownershipType: "PURCHASED",
+      ...over,
+    });
+    eq("no entitlement is inactive", mapEntitlement(undefined).active, false);
+    eq("null is inactive", mapEntitlement(null).active, false);
+    eq("a purchased annual", mapEntitlement(rc()), {
+      active: true,
+      periodType: "normal",
+      expiresAt: Date.parse("2027-10-01T10:00:00Z"),
+      productId: "zerospike_pro_annual",
+      billingIssueDetectedAt: null,
+      familyShared: false,
+    });
+    eq("TRIAL maps to trial", mapEntitlement(rc({ periodType: "TRIAL" })).periodType, "trial");
+    eq("INTRO maps to intro", mapEntitlement(rc({ periodType: "INTRO" })).periodType, "intro");
+    eq("anything else maps to unknown", mapEntitlement(rc({ periodType: "PREPAID" })).periodType, "unknown");
+    eq("FAMILY_SHARED maps to familyShared", mapEntitlement(rc({ ownershipType: "FAMILY_SHARED" })).familyShared, true);
+    eq("PURCHASED is not shared", mapEntitlement(rc({ ownershipType: "PURCHASED" })).familyShared, false);
+    eq("UNKNOWN is not shared", mapEntitlement(rc({ ownershipType: "UNKNOWN" })).familyShared, false);
+    eq("a missing ownershipType is not shared", mapEntitlement(rc({ ownershipType: undefined })).familyShared, false);
+    eq("billingIssueDetectedAt is parsed", mapEntitlement(rc({ billingIssueDetectedAt: "2026-10-20T08:30:00Z" })).billingIssueDetectedAt, Date.parse("2026-10-20T08:30:00Z"));
+    eq("a null billing issue stays null", mapEntitlement(rc({ billingIssueDetectedAt: null })).billingIssueDetectedAt, null);
+    eq("a garbage date is null", mapEntitlement(rc({ billingIssueDetectedAt: "soon", expirationDate: "later" })).expiresAt, null);
+    eq("a lifetime (no expiration) has no expiry", mapEntitlement(rc({ expirationDate: null, productIdentifier: "zerospike_pro_lifetime" })).expiresAt, null);
+    eq("Android base-plan id is kept whole", mapEntitlement(rc({ productIdentifier: "zerospike_pro:annual" })).productId, "zerospike_pro:annual");
+    ok("purchases.ts maps through the pure mapper", /return mapEntitlement\(info\?\.entitlements\?\.active\?\.\[ENTITLEMENT_ID\]\);/.test(src("lib/services/purchases.ts")));
+  }
+
+  section("J3. the What's new host does not poll");
+  {
+    // The real attempt function and memory, the real slot; only React's effect and
+    // timer are replaced by a tiny scheduler that mirrors the host's effect.
+    const DELAY = 20;
+    const makeKv = (seen: string | null) => {
+      const m = new Map<string, string>();
+      if (seen) m.set("zerospike.whatsNew.seen", seen);
+      const stats = { reads: 0 };
+      const kv = {
+        get: async (k: string) => {
+          stats.reads++;
+          return m.get(k) ?? null;
+        },
+        set: async (k: string, v: string) => void m.set(k, v),
+      };
+      return { kv, stats, m };
+    };
+    function runHost(kv: any, appVersion = "2.5.0") {
+      const mem = createAttemptMemory();
+      const host = { attempts: 0, visible: false, slot: null as null | (() => void), timer: null as any, results: [] as string[] };
+      const effect = () => {
+        clearTimeout(host.timer);
+        if (host.visible || mem.isDone()) return;
+        host.timer = setTimeout(() => {
+          host.attempts++;
+          void attemptWhatsNew({
+            claim: claimSheet,
+            kv,
+            askedAtStart: false,
+            latest: () => ({ root: "(tabs)", onboarded: true }),
+            surveyHeld: () => false,
+            appVersion,
+            open: (slot) => {
+              host.slot = slot;
+              host.visible = true;
+            },
+          }).then((r) => {
+            host.results.push(r);
+            if (r === "nothing" || r === "opened") mem.markDone();
+            else if (r === "busy" || r === "retry") mem.markWaiting();
+          });
+        }, DELAY);
+      };
+      const wake = () => {
+        if (mem.takeWake()) effect();
+      };
+      const off1 = onSheetRelease(wake);
+      effect();
+      return {
+        host,
+        close: () => {
+          host.visible = false;
+          host.slot?.();
+          host.slot = null;
+          effect();
+        },
+        stop: () => {
+          clearTimeout(host.timer);
+          off1();
+        },
+      };
+    }
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    // Already seen: at most one attempt in the whole session, however long it runs.
+    {
+      const k = makeKv("2.5.0");
+      const h = runHost(k.kv);
+      let thanksWakes = 0;
+      const offT = onSheetRelease(() => thanksWakes++);
+      await sleep(DELAY * 40);
+      h.stop();
+      offT();
+      eq("nothing to show: one attempt in 40 delays", h.host.attempts, 1);
+      eq("nothing to show: the answer was final", h.host.results, ["nothing"]);
+      eq("nothing to show: the slot was released once only", thanksWakes, 1);
+      ok("nothing to show: a handful of reads, not one set per delay", k.stats.reads <= 4);
+      ok("the slot is free afterwards", !sheetClaimed());
+    }
+    // Due: opens once, and closing it does not start another round.
+    {
+      const k = makeKv(null);
+      const h = runHost(k.kv);
+      await sleep(DELAY * 6);
+      eq("due: it opened", h.host.visible, true);
+      ok("due: the slot is held while it is up", sheetClaimed());
+      h.close();
+      await sleep(DELAY * 10);
+      h.stop();
+      eq("due: one attempt only, the flag is spent", h.host.attempts, 1);
+      ok("due: the slot is free once it closed", !sheetClaimed());
+    }
+    // Thanks holds the slot: What's new waits, then opens once after the release.
+    {
+      const k = makeKv(null);
+      const thanksSlot = claimSheet() as () => void;
+      const h = runHost(k.kv);
+      await sleep(DELAY * 6);
+      eq("held slot: it did not open over the thank-you sheet", h.host.visible, false);
+      eq("held slot: it was turned away once, not polling", h.host.results, ["busy"]);
+      eq("held slot: the flag is untouched", k.m.get("zerospike.whatsNew.seen"), undefined);
+      thanksSlot();
+      await sleep(DELAY * 6);
+      eq("released slot: it opens after all", h.host.visible, true);
+      eq("released slot: exactly two attempts, busy then opened", h.host.results, ["busy", "opened"]);
+      h.close();
+      await sleep(DELAY * 6);
+      h.stop();
+      eq("and nothing more after it closes", h.host.attempts, 2);
+    }
+  }
+
+  section("J4. the thank-you host: settle, watchdog, stamp only on onShown");
+  {
+    const sheet = src("components/ThanksSheet.tsx");
+    /** Text inside the braces that follow `from` (balanced, strings are brace-free here). */
+    const bodyAfter = (text: string, from: number): string => {
+      const open = text.indexOf("{", from);
+      let depth = 0;
+      for (let i = open; i < text.length; i++) {
+        if (text[i] === "{") depth++;
+        else if (text[i] === "}" && --depth === 0) return text.slice(open + 1, i);
+      }
+      return "";
+    };
+    const fnBody = (header: string): string => {
+      const at = sheet.indexOf(header);
+      return at === -1 ? "" : bodyAfter(sheet, at);
+    };
+    const confirmBody = fnBody("const confirmConverted = useCallback(() => {");
+    const showEffect = fnBody('useEffect(() => {\n    if (pending !== "converted"');
+    const renewEffect = fnBody('useEffect(() => {\n    if (pending !== "renewed"');
+    const closeBody = fnBody("const close = useCallback(() => {");
+    const cardBody = fnBody("(id: CardId) => {");
+    ok("found the confirm function", confirmBody.length > 20);
+    ok("found the sheet effect", showEffect.length > 20);
+    ok("found the toast effect", renewEffect.length > 20);
+
+    eq("the seen stamp is written in confirmConverted", /confirmThanksNow\("converted"\)/.test(confirmBody), true);
+    eq("the seen event is logged in confirmConverted", /logEvent\("trial_converted_seen"\)/.test(confirmBody), true);
+    eq("the stamp is written nowhere else in the file", (sheet.match(/confirmThanksNow\("converted"\)/g) ?? []).length, 1);
+    eq("the event is logged nowhere else in the file", (sheet.match(/logEvent\("trial_converted_seen"\)/g) ?? []).length, 1);
+    ok("the sheet effect never stamps, logs or clears pending", !/confirmThanks|logEvent|setPending/.test(showEffect));
+    ok("the sheet effect waits SETTLE_MS before opening", /setTimeout\([\s\S]*SETTLE_MS\)/.test(showEffect));
+    ok("the sheet effect arms the SHOW_TIMEOUT_MS watchdog", /setTimeout\([\s\S]*SHOW_TIMEOUT_MS\)/.test(showEffect));
+    ok("the watchdog takes the sheet down", /showTimer\.current = setTimeout\([\s\S]*setVisible\(false\)[\s\S]*SHOW_TIMEOUT_MS/.test(showEffect));
+    ok("the watchdog leaves the moment pending (no stamp, no pending clear)", !/confirmThanks|setPending/.test(showEffect));
+    ok("the watchdog retries through the tick and is capped", /setTick\(/.test(showEffect) && /MAX_SHOW_ATTEMPTS/.test(showEffect));
+    ok("the settle and timeout constants are set", /const SETTLE_MS = \d+;/.test(sheet) && /const SHOW_TIMEOUT_MS = \d+;/.test(sheet));
+    ok("onShown reaches confirmConverted", /onShown=\{confirmConverted\}/.test(sheet));
+    ok("onShown also stops the watchdog", /clearTimeout\(showTimer\.current\)/.test(confirmBody));
+    ok("the toast is stamped where it is shown", /confirmThanksNow\("renewed"\)/.test(renewEffect) && /toast\(/.test(renewEffect));
+    ok("close asks for the review, a card does not", /maybeRequestReview\("trial_converted"\)/.test(closeBody) && !/maybeRequestReview/.test(cardBody));
   }
 
   section("K. presentation gate");

@@ -10,6 +10,8 @@ import {
   resolveAppleWinBack,
   type AppleWinBackPick,
 } from "../winbackOffer";
+import { mapEntitlement } from "../thanks/map";
+import type { ThanksEntitlement } from "../thanks/detect";
 
 /**
  * RevenueCat purchases layer.
@@ -411,36 +413,11 @@ export async function verifyProWithStore(): Promise<boolean | null> {
  * store cannot answer, so an unreachable store is never mistaken for "no Pro".
  * A dev build has no store, so it answers null.
  */
-export async function getEntitlementSnapshot(): Promise<{
-  active: boolean;
-  periodType: PeriodType;
-  expiresAt: number | null;
-  productId: string | null;
-  billingIssueDetectedAt: number | null;
-  familyShared: boolean;
-} | null> {
+export async function getEntitlementSnapshot(): Promise<ThanksEntitlement | null> {
   if (DEBUG_MOCK_PURCHASES) return null;
   try {
     const info = await fetchCustomerInfo();
-    const ent = info?.entitlements?.active?.[ENTITLEMENT_ID];
-    if (!ent) {
-      return {
-        active: false,
-        periodType: "unknown",
-        expiresAt: null,
-        productId: null,
-        billingIssueDetectedAt: null,
-        familyShared: false,
-      };
-    }
-    return {
-      active: true,
-      periodType: periodTypeOf(ent),
-      expiresAt: isoMs(ent.expirationDate),
-      productId: typeof ent.productIdentifier === "string" ? ent.productIdentifier : null,
-      billingIssueDetectedAt: isoMs(ent.billingIssueDetectedAt),
-      familyShared: String(ent.ownershipType ?? "").toUpperCase() === "FAMILY_SHARED",
-    };
+    return mapEntitlement(info?.entitlements?.active?.[ENTITLEMENT_ID]);
   } catch {
     return null;
   }
