@@ -23,7 +23,15 @@ import {
 import { confirmThanksShown, evaluateThanks, type ThanksDeps } from "../lib/thanks/evaluate";
 import { claimSheet, onSheetRelease, sheetClaimed } from "../lib/sheetClaim";
 import { mapEntitlement } from "../lib/thanks/map";
-import { applyAttemptResult, attemptWhatsNew, createAttemptMemory, createWhatsNewScheduler } from "../lib/whatsNewAttempt";
+import {
+  applyAttemptResult,
+  attemptWhatsNew,
+  createAttemptMemory,
+  createWhatsNewHostController,
+  createWhatsNewScheduler,
+  whatsNewEffectKey,
+} from "../lib/whatsNewAttempt";
+import { createThanksController } from "../lib/thanks/controller";
 import {
   MAX_SHOW_ATTEMPTS,
   SETTLE_MS,
@@ -450,15 +458,16 @@ async function main() {
     // The real hosts: simultaneous triggers, one after the other.
     const thanks = src("components/ThanksSheet.tsx");
     const whats = src("components/WhatsNewSheet.tsx");
-    ok("thanks claims the slot through the presenter", /claim: claimSheet/.test(thanks));
-    ok("thanks waits on a held slot or open overlay", /overlayOpen: overlayOpen\(\) \|\| sheetClaimed\(\)/.test(thanks));
-    ok("thanks looks again when the slot or an overlay is released", /onSheetRelease\(bump\)/.test(thanks) && /onSurveyRelease\(bump\)/.test(thanks));
-    ok("thanks releases the slot once the sheet is gone", /if \(!visible\) presenter\.current\?\.releaseClaim\(\)/.test(thanks));
+    const ctlSrc = src("lib/thanks/controller.ts");
+    ok("thanks waits on a held slot or open overlay", /d\.overlayOpen\(\) \|\| d\.sheetClaimed\(\)/.test(ctlSrc));
+    ok("thanks looks again when the slot or an overlay is released", /d\.onSurveyRelease\(d\.nudge\)/.test(ctlSrc) && /d\.onSheetRelease\(d\.nudge\)/.test(ctlSrc));
+    ok("thanks hands the real slot claim to the controller", /\n\s+claim: claimSheet,\n/.test(thanks));
     const attempt = src("lib/whatsNewAttempt.ts");
     ok("what's new claims the slot before it consumes its flag", /d\.claim\(\)[\s\S]{0,700}takeWhatsNew/.test(attempt) && /claim: claimSheet/.test(whats));
     ok("what's new gives the slot back when it does not open", /if \(!opened\) slot\(\)/.test(attempt));
-    ok("what's new wakes on both the slot and the overlay release", /onSheetRelease\(wake\)/.test(whats) && /onSurveyRelease\(wake\)/.test(whats));
-    ok("what's new is driven by the tested scheduler", /createWhatsNewScheduler\(/.test(whats) && /scheduler\.current\?\.onRelease\(\)/.test(whats) && /scheduler\.current\?\.start\(\)/.test(whats));
+    ok("what's new is built from the tested controller", /createWhatsNewHostController\(/.test(whats) && /ctl\.listen\(\)/.test(whats) && /ctl\.start\(\)/.test(whats) && /ctl\.onVisible\(visible\)/.test(whats) && /ctl\.onRoute\(visible, root\)/.test(whats) && /ctl\.dispose/.test(whats));
+    ok("what's new's effect depends on the tested key", /whatsNewEffectKey\(\{ ready, onboarded, root, visible \}, slotTick\)/.test(whats) && /\[ctl, effectKey\]/.test(whats));
+    ok("what's new passes the real slot, overlay and release sources", /\n\s+claim: claimSheet,\n/.test(whats) && /\n\s+overlayOpen,\n/.test(whats) && /\n\s+onSheetRelease,\n/.test(whats) && /\n\s+onSurveyRelease,\n/.test(whats) && /bumpTick: \(\) => setSlotTick/.test(whats) && /\n\s+setVisible,\n/.test(whats));
     ok("both sheets register as overlays", /useOverlayPresence\(visible\)/.test(thanks) && /useOverlayPresence\(visible\)/.test(whats));
   }
 
@@ -890,6 +899,9 @@ async function main() {
       const { p, clock, w } = make();
       p.schedule();
       p.background();
+      eq("background during settle: the settle timer is cancelled at once", clock.pending(), 0);
+      p.schedule();
+      eq("background: schedule() arms nothing while in the background", clock.pending(), 0);
       clock.advance(SETTLE * 5);
       eq("background during settle: nothing opens", [w.visible, w.claims], [false, 0]);
       eq("background during settle: no timer left", clock.pending(), 0);
@@ -926,15 +938,598 @@ async function main() {
       eq("dispose: timers and slot released", [clock.pending(), w.slotFree], [0, true]);
     }
 
-    // Wiring: the component only calls the presenter, and stamps nowhere else.
+    // Wiring: the component is a thin shell around the controller.
     const sheet = src("components/ThanksSheet.tsx");
-    ok("the host builds its sheet flow from the presenter", /createSheetPresenter\(/.test(sheet) && /presenter\.current\?\.schedule\(\)/.test(sheet));
-    ok("onShown goes to the presenter's confirm", /onShown=\{confirmConverted\}/.test(sheet) && /presenter\.current\?\.confirm\(\)/.test(sheet));
-    eq("the stamp is written nowhere but the presenter's onSeen", (sheet.match(/confirmThanksNow\("converted"\)/g) ?? []).length, 1);
-    eq("the event is logged nowhere but the presenter's onSeen", (sheet.match(/logEvent\("trial_converted_seen"\)/g) ?? []).length, 1);
-    ok("background and foreground reach the presenter", /presenter\.current\?\.background\(\)/.test(sheet) && /presenter\.current\?\.foreground\(\)/.test(sheet));
+    ok("the host is built from the controller", /createThanksController\(/.test(sheet) && /useEffect\(\(\) => ctl\.sheetEffect\(pending\), /.test(sheet) && /ctl\.mayEvaluate\(pending\)/.test(sheet));
+    ok("the host hands the controller the real sources", /\n\s+appState: AppState,\n/.test(sheet) && /\n\s+claim: claimSheet,\n/.test(sheet) && /\n\s+sheetClaimed,\n/.test(sheet) && /\n\s+overlayOpen,\n/.test(sheet) && /\n\s+surveyHeld,\n/.test(sheet) && /\n\s+onSheetRelease,\n/.test(sheet) && /\n\s+onSurveyRelease,\n/.test(sheet) && /\n\s+setVisible,\n/.test(sheet) && /\n\s+setPending,\n/.test(sheet));
+    ok("the controller's listeners, visible hook and dispose are used", /ctl\.start\(\)/.test(sheet) && /ctl\.onVisible\(visible\)/.test(sheet) && /ctl\.dispose\(\)/.test(sheet));
+    ok("onShown goes to the controller's confirm", /onShown=\{confirmConverted\}/.test(sheet) && /ctl\.confirm\(\)/.test(sheet));
+    eq("the stamp is written nowhere but the controller's stampSeen", (sheet.match(/confirmThanksNow\("converted"\)/g) ?? []).length, 1);
+    eq("the event is logged nowhere but the controller's logSeen", (sheet.match(/logEvent\("trial_converted_seen"\)/g) ?? []).length, 1);
     ok("the toast is stamped where it is shown", /confirmThanksNow\("renewed"\)/.test(sheet) && /toast\(t\("thanks\.renewalToast"\)/.test(sheet));
     ok("a card tap asks for no review, close does", (sheet.match(/maybeRequestReview\(/g) ?? []).length === 1 && /const close = useCallback\(\(\) => \{[\s\S]*?maybeRequestReview/.test(sheet));
+  }
+
+  section("J5. the presenter with the production defaults (no overrides)");
+  {
+    const makeClock = () => {
+      let now = 0;
+      let seq = 0;
+      const timers = new Map<number, { at: number; fn: () => void }>();
+      return {
+        setTimer: (fn: () => void, ms: number) => {
+          const id = ++seq;
+          timers.set(id, { at: now + ms, fn });
+          return id;
+        },
+        clearTimer: (h: unknown) => void timers.delete(h as number),
+        advance: (ms: number) => {
+          const end = now + ms;
+          for (;;) {
+            const next = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+            if (!next) break;
+            now = next[1].at;
+            timers.delete(next[0]);
+            next[1].fn();
+          }
+          now = end;
+        },
+      };
+    };
+    const rig = () => {
+      const clock = makeClock();
+      const w = { visible: false, seen: 0, cleared: 0, nudges: 0, claims: 0, free: true };
+      const p = createSheetPresenter({
+        setTimer: clock.setTimer,
+        clearTimer: clock.clearTimer,
+        clear: () => true,
+        claim: () => {
+          if (!w.free) return null;
+          w.free = false;
+          w.claims++;
+          return () => void (w.free = true);
+        },
+        setVisible: (v) => void (w.visible = v),
+        clearPending: () => void w.cleared++,
+        onSeen: () => void w.seen++,
+        nudge: () => void w.nudges++,
+      });
+      return { p, clock, w };
+    };
+    {
+      const { p, clock, w } = rig();
+      p.schedule();
+      clock.advance(SETTLE_MS - 1);
+      eq("defaults: the sheet waits the real settle delay", w.visible, false);
+      clock.advance(1);
+      eq("defaults: and opens right after it", w.visible, true);
+      clock.advance(SHOW_TIMEOUT_MS - 1);
+      eq("defaults: the sheet is not taken down before the real timeout", w.visible, true);
+      clock.advance(1);
+      eq("defaults: and is taken down at the real timeout", w.visible, false);
+      eq("defaults: nothing was stamped", [w.seen, w.cleared], [0, 0]);
+    }
+    {
+      const { p, clock, w } = rig();
+      for (let i = 0; i < MAX_SHOW_ATTEMPTS; i++) {
+        p.schedule();
+        clock.advance(SETTLE_MS + SHOW_TIMEOUT_MS);
+      }
+      eq("defaults: MAX_SHOW_ATTEMPTS presentations are made", w.claims, MAX_SHOW_ATTEMPTS);
+      p.schedule();
+      clock.advance(SETTLE_MS + SHOW_TIMEOUT_MS);
+      eq("defaults: and no more", [w.claims, w.visible], [MAX_SHOW_ATTEMPTS, false]);
+    }
+  }
+
+  section("J6. the thank-you controller: AppState, background inertness, gate, confirm, dispose");
+  {
+    const makeClock = () => {
+      let now = 0;
+      let seq = 0;
+      const timers = new Map<number, { at: number; fn: () => void }>();
+      return {
+        setTimer: (fn: () => void, ms: number) => {
+          const id = ++seq;
+          timers.set(id, { at: now + ms, fn });
+          return id;
+        },
+        clearTimer: (h: unknown) => void timers.delete(h as number),
+        pending: () => timers.size,
+        advance: (ms: number) => {
+          const end = now + ms;
+          for (;;) {
+            const next = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+            if (!next) break;
+            now = next[1].at;
+            timers.delete(next[0]);
+            next[1].fn();
+          }
+          now = end;
+        },
+      };
+    };
+    /** A host loop around the REAL controller, presenter, slot and gate: state changes re-run the effects like React would. */
+    function mount(initial: { appState?: string } = {}) {
+      const clock = makeClock();
+      const listeners: Array<(s: string) => void> = [];
+      const appState = {
+        currentState: initial.appState ?? "active",
+        addEventListener: (_t: "change", cb: (s: string) => void) => {
+          listeners.push(cb);
+          return { remove: () => void listeners.splice(listeners.indexOf(cb), 1) };
+        },
+      };
+      const env = {
+        ready: true,
+        onboarded: true,
+        root: "(tabs)" as string | undefined,
+        visible: false,
+        pending: "converted" as string,
+        overlay: false,
+        held: false,
+        screenshot: false,
+        tick: 0,
+        app: appState.currentState,
+        log: [] as string[],
+        stamps: 0,
+        seenWhileBackground: 0,
+        openWhileBackground: 0,
+      };
+      let queued = false;
+      let cleanup: (() => void) | undefined;
+      let slotListeners: Array<() => void> = [];
+      let overlayListeners: Array<() => void> = [];
+      const ctl = createThanksController({
+        appState,
+        setTimer: clock.setTimer,
+        clearTimer: clock.clearTimer,
+        claim: claimSheet,
+        sheetClaimed,
+        onSheetRelease: (cb) => {
+          slotListeners.push(cb);
+          return () => void (slotListeners = slotListeners.filter((x) => x !== cb));
+        },
+        onSurveyRelease: (cb) => {
+          overlayListeners.push(cb);
+          return () => void (overlayListeners = overlayListeners.filter((x) => x !== cb));
+        },
+        overlayOpen: () => env.overlay,
+        surveyHeld: () => env.held,
+        screenshotMode: () => env.screenshot,
+        latest: () => env,
+        setVisible: (v) => {
+          if (env.visible === v) return;
+          env.visible = v;
+          if (v && env.app === "background") env.openWhileBackground++;
+          queued = true;
+        },
+        setPending: (v) => {
+          env.pending = v;
+          queued = true;
+        },
+        nudge: () => {
+          env.tick++;
+          queued = true;
+        },
+        logSeen: () => {
+          env.log.push("seen-event");
+          if (env.app === "background") env.seenWhileBackground++;
+        },
+        stampSeen: () => void env.stamps++,
+      });
+      const stopListeners = ctl.start();
+      const render = () => {
+        ctl.onVisible(env.visible);
+        cleanup?.();
+        cleanup = ctl.sheetEffect(env.pending);
+      };
+      const flush = () => {
+        for (let i = 0; i < 50 && queued; i++) {
+          queued = false;
+          render();
+        }
+      };
+      render();
+      return {
+        env,
+        ctl,
+        clock,
+        flush,
+        render,
+        send: (s: string) => {
+          env.app = s;
+          appState.currentState = s;
+          [...listeners].forEach((cb) => cb(s));
+          flush();
+        },
+        advance: (ms: number) => {
+          clock.advance(ms);
+          flush();
+        },
+        fireSlot: () => [...slotListeners].forEach((cb) => cb()),
+        fireOverlay: () => [...overlayListeners].forEach((cb) => cb()),
+        listenerCount: () => listeners.length + slotListeners.length + overlayListeners.length,
+        stop: () => {
+          cleanup?.();
+          stopListeners();
+          ctl.dispose();
+        },
+      };
+    }
+
+    // The background repro: the sheet must not be rebuilt in the background.
+    {
+      const m = mount();
+      m.advance(SETTLE_MS);
+      eq("bg: the sheet is up in the foreground", m.env.visible, true);
+      m.send("background");
+      eq("bg: it is taken down on backgrounding", m.env.visible, false);
+      m.advance(SETTLE_MS * 5);
+      eq("bg: it never comes back up while in the background", [m.env.visible, m.env.openWhileBackground], [false, 0]);
+      eq("bg: nothing is reported or stamped in the background", [m.env.seenWhileBackground, m.env.stamps, m.env.log.length], [0, 0, 0]);
+      eq("bg: the moment is still pending", m.env.pending, "converted");
+      eq("bg: no timer left running", m.clock.pending(), 0);
+      ok("bg: the slot was given back", !sheetClaimed());
+      m.send("active");
+      m.advance(SETTLE_MS);
+      eq("bg: back in the foreground the flow starts once and opens", m.env.visible, true);
+      eq("bg: still nothing stamped before onShown", m.env.stamps, 0);
+      m.ctl.confirm();
+      eq("bg: onShown stamps and reports once", [m.env.stamps, m.env.log], [1, ["seen-event"]]);
+      m.stop();
+    }
+    // inactive (control centre, a call banner) is not the background.
+    {
+      const m = mount();
+      m.advance(SETTLE_MS);
+      m.send("inactive");
+      eq("inactive: the sheet stays", m.env.visible, true);
+      m.send("active");
+      eq("inactive then active: nothing changes", m.env.visible, true);
+      m.stop();
+    }
+    // Starting while already in the background.
+    {
+      const m = mount({ appState: "background" });
+      m.env.app = "background";
+      m.advance(SETTLE_MS * 4);
+      eq("started in the background: nothing opens", [m.env.visible, m.env.openWhileBackground], [false, 0]);
+      m.send("active");
+      m.advance(SETTLE_MS);
+      eq("and it opens once the app is active", m.env.visible, true);
+      m.stop();
+    }
+    // Foreground resets the attempt budget (watchdog loop, then back to the app).
+    {
+      const m = mount();
+      for (let i = 0; i < MAX_SHOW_ATTEMPTS; i++) m.advance(SETTLE_MS + SHOW_TIMEOUT_MS);
+      eq("attempts used up: the sheet is down", m.env.visible, false);
+      m.advance(SETTLE_MS * 5);
+      eq("attempts used up: it stays down", m.env.visible, false);
+      m.send("background");
+      m.send("active");
+      m.advance(SETTLE_MS);
+      eq("a foreground return tries again", m.env.visible, true);
+      m.stop();
+    }
+    // The watchdog's nudge reaches the host through the controller.
+    {
+      const m = mount();
+      const before = m.env.tick;
+      m.advance(SETTLE_MS + SHOW_TIMEOUT_MS);
+      ok("watchdog: the host is nudged through the controller's dependency", m.env.tick > before);
+      m.stop();
+    }
+    // The gate, through the controller.
+    {
+      const m = mount();
+      m.env.overlay = true;
+      m.advance(SETTLE_MS * 3);
+      eq("gate: an open Modal keeps the sheet down", m.env.visible, false);
+      m.env.overlay = false;
+      m.fireOverlay();
+      m.flush();
+      m.advance(SETTLE_MS);
+      eq("gate: its release lets the sheet go up", m.env.visible, true);
+      m.stop();
+
+      for (const [name, set] of [
+        ["a held survey/winback", (e: any) => (e.held = true)],
+        ["screenshot mode", (e: any) => (e.screenshot = true)],
+        ["a non-tab route", (e: any) => (e.root = "paywall")],
+        ["not onboarded", (e: any) => (e.onboarded = false)],
+        ["not ready", (e: any) => (e.ready = false)],
+      ] as const) {
+        const g = mount();
+        set(g.env);
+        g.flush();
+        g.render();
+        g.advance(SETTLE_MS * 3);
+        eq(`gate: ${name} keeps the sheet down`, [g.env.visible, typeof g.ctl.sheetEffect("converted")], [false, "undefined"]);
+        g.stop();
+      }
+      const other = claimSheet() as () => void;
+      const h = mount();
+      h.advance(SETTLE_MS * 3);
+      eq("gate: another sheet holding the slot keeps it down", h.env.visible, false);
+      other();
+      h.fireSlot();
+      h.flush();
+      h.advance(SETTLE_MS);
+      eq("gate: the slot release lets it up", h.env.visible, true);
+      h.stop();
+      const only = mount();
+      eq("only the converted moment opens the sheet", [typeof only.ctl.sheetEffect("renewed"), typeof only.ctl.sheetEffect("none"), typeof only.ctl.sheetEffect("converted")], ["undefined", "undefined", "function"]);
+      only.stop();
+    }
+    // The gate is re-checked at the end of settle.
+    {
+      const m = mount();
+      m.advance(SETTLE_MS - 1);
+      m.env.overlay = true;
+      m.advance(1);
+      eq("gate: a Modal that appeared during settle wins", m.env.visible, false);
+      m.stop();
+    }
+    // confirm: pending cleared through the setter, once.
+    {
+      const m = mount();
+      m.advance(SETTLE_MS);
+      m.ctl.confirm();
+      eq("confirm: the pending mark is cleared through the host's setter", m.env.pending, "none");
+      m.ctl.confirm();
+      eq("confirm: a second call does nothing", [m.env.stamps, m.env.log.length], [1, 1]);
+      m.flush();
+      m.advance(SETTLE_MS * 3);
+      eq("confirm: the sheet is not rebuilt afterwards", m.env.visible, true);
+      m.stop();
+    }
+    // Opening does not confirm.
+    {
+      const m = mount();
+      m.advance(SETTLE_MS);
+      eq("open: visible but nothing is seen yet", [m.env.visible, m.env.stamps, m.env.log.length], [true, 0, 0]);
+      m.stop();
+    }
+    // Releasing the slot when the sheet is gone.
+    {
+      const m = mount();
+      m.advance(SETTLE_MS);
+      ok("slot: held while the sheet is up", sheetClaimed());
+      m.ctl.confirm();
+      m.env.visible = false;
+      m.render();
+      ok("slot: released once the sheet is gone", !sheetClaimed());
+      m.stop();
+    }
+    // Evaluation: once per foreground.
+    {
+      const m = mount();
+      m.env.pending = "none";
+      eq("evaluate: first look is allowed", m.ctl.mayEvaluate("none"), true);
+      eq("evaluate: only once per foreground", m.ctl.mayEvaluate("none"), false);
+      m.send("active");
+      eq("evaluate: a new foreground allows one more", m.ctl.mayEvaluate("none"), true);
+      eq("evaluate: not while a moment is pending", m.ctl.mayEvaluate("converted"), false);
+      m.env.overlay = true;
+      m.send("active");
+      eq("evaluate: not behind a Modal", m.ctl.mayEvaluate("none"), false);
+      m.stop();
+    }
+    // Listeners and dispose.
+    {
+      const m = mount();
+      const before = m.env.tick;
+      m.fireSlot();
+      m.fireOverlay();
+      eq("a slot and an overlay release both nudge the host", m.env.tick - before, 2);
+      m.advance(SETTLE_MS);
+      m.stop();
+      eq("stop removes every listener", m.listenerCount(), 0);
+      ok("dispose releases the slot", !sheetClaimed());
+      eq("dispose leaves no timer", m.clock.pending(), 0);
+    }
+    {
+      const m = mount();
+      m.advance(SETTLE_MS);
+      m.ctl.dispose();
+      eq("dispose with the sheet up: the watchdog cannot fire later", m.clock.pending(), 0);
+      ok("dispose with the sheet up: slot released", !sheetClaimed());
+      m.stop();
+    }
+  }
+
+  section("J7. the What's new controller: gate, wake, effect key, slot, route");
+  {
+    const makeClock = () => {
+      let now = 0;
+      let seq = 0;
+      const timers = new Map<number, { at: number; fn: () => void }>();
+      return {
+        setTimer: (fn: () => void, ms: number) => {
+          const id = ++seq;
+          timers.set(id, { at: now + ms, fn });
+          return id;
+        },
+        clearTimer: (h: unknown) => void timers.delete(h as number),
+        advance: async (ms: number) => {
+          const end = now + ms;
+          for (;;) {
+            const next = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+            if (!next) break;
+            now = next[1].at;
+            timers.delete(next[0]);
+            next[1].fn();
+            for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r));
+          }
+          now = end;
+        },
+      };
+    };
+    function mount(seen: string | null = null) {
+      const clock = makeClock();
+      const store = new Map<string, string>();
+      if (seen) store.set("zerospike.whatsNew.seen", seen);
+      const env = {
+        ready: true,
+        onboarded: true,
+        root: "(tabs)" as string | undefined,
+        visible: false,
+        overlay: false,
+        held: false,
+        screenshot: false,
+        asked: false as boolean | null,
+        bumps: 0,
+        visibleCalls: [] as boolean[],
+      };
+      let slotL: Array<() => void> = [];
+      let ovL: Array<() => void> = [];
+      const ctl = createWhatsNewHostController({
+        setTimer: clock.setTimer,
+        clearTimer: clock.clearTimer,
+        delayMs: 3000,
+        latest: () => env,
+        screenshotMode: () => env.screenshot,
+        surveyHeld: () => env.held,
+        overlayOpen: () => env.overlay,
+        askedAtStart: () => env.asked,
+        claim: claimSheet,
+        kv: { get: async (k: string) => store.get(k) ?? null, set: async (k: string, v: string) => void store.set(k, v) },
+        appVersion: () => "2.5.0",
+        setVisible: (v) => {
+          env.visible = v;
+          env.visibleCalls.push(v);
+        },
+        bumpTick: () => void env.bumps++,
+        onSheetRelease: (cb) => {
+          slotL.push(cb);
+          return () => void (slotL = slotL.filter((x) => x !== cb));
+        },
+        onSurveyRelease: (cb) => {
+          ovL.push(cb);
+          return () => void (ovL = ovL.filter((x) => x !== cb));
+        },
+      });
+      const off = ctl.listen();
+      return {
+        env,
+        ctl,
+        clock,
+        store,
+        start: () => ctl.start(),
+        fireSlot: () => [...slotL].forEach((c) => c()),
+        fireOverlay: () => [...ovL].forEach((c) => c()),
+        listeners: () => slotL.length + ovL.length,
+        off,
+      };
+    }
+
+    // A Modal that is open keeps it down, and its release wakes it (rerun is bumpTick).
+    {
+      const m = mount();
+      m.env.overlay = true;
+      const stop = m.start();
+      await m.clock.advance(3100);
+      eq("surveyBusy: an open Modal keeps What's new down", [m.env.visible, m.store.get("zerospike.whatsNew.seen")], [false, undefined]);
+      m.fireOverlay();
+      eq("rerun: the release wakes the host through bumpTick", m.env.bumps, 1);
+      m.fireOverlay();
+      eq("rerun: only once per waiting spell", m.env.bumps, 1);
+      stop();
+      m.env.overlay = false;
+      const stop2 = m.start();
+      await m.clock.advance(3100);
+      eq("surveyBusy: with the Modal gone it opens", m.env.visible, true);
+      stop2();
+      m.ctl.dispose();
+      m.off();
+    }
+    // A slot release wakes a host that was turned away by the slot.
+    {
+      const m = mount();
+      const other = claimSheet() as () => void;
+      const stop = m.start();
+      await m.clock.advance(3100);
+      eq("slot held: turned away", m.env.visible, false);
+      other();
+      m.fireSlot();
+      eq("slot release: wakes the host through bumpTick", m.env.bumps, 1);
+      stop();
+      m.ctl.dispose();
+      m.off();
+    }
+    // The survey flag not read yet, a held winback, screenshot mode.
+    for (const [name, set] of [
+      ["the survey flag not read yet", (e: any) => (e.asked = null)],
+      ["a held winback", (e: any) => (e.held = true)],
+      ["screenshot mode", (e: any) => (e.screenshot = true)],
+    ] as const) {
+      const m = mount();
+      set(m.env);
+      const stop = m.start();
+      await m.clock.advance(3100);
+      eq(`gate: ${name} keeps it down`, m.env.visible, false);
+      stop();
+      m.off();
+    }
+    // Eligibility.
+    {
+      for (const [name, set] of [
+        ["not ready", (e: any) => (e.ready = false)],
+        ["not onboarded", (e: any) => (e.onboarded = false)],
+        ["off the tabs", (e: any) => (e.root = "paywall")],
+        ["already visible", (e: any) => (e.visible = true)],
+      ] as const) {
+        const m = mount();
+        set(m.env);
+        const stop = m.start();
+        await m.clock.advance(3100);
+        eq(`eligible: ${name} makes no attempt`, m.store.get("zerospike.whatsNew.seen"), undefined);
+        stop();
+        m.off();
+      }
+    }
+    // The effect key.
+    {
+      const s = { ready: true, onboarded: true, root: "(tabs)" as string | undefined, visible: false };
+      const base = whatsNewEffectKey(s, 0);
+      ok("key: a bumped tick changes it", whatsNewEffectKey(s, 1) !== base);
+      ok("key: ready changes it", whatsNewEffectKey({ ...s, ready: false }, 0) !== base);
+      ok("key: onboarded changes it", whatsNewEffectKey({ ...s, onboarded: false }, 0) !== base);
+      ok("key: the route changes it", whatsNewEffectKey({ ...s, root: "paywall" }, 0) !== base);
+      ok("key: visible changes it", whatsNewEffectKey({ ...s, visible: true }, 0) !== base);
+      eq("key: identical inputs give an identical key", whatsNewEffectKey({ ...s }, 0), base);
+    }
+    // Slot, route and dispose.
+    {
+      const m = mount();
+      const stop = m.start();
+      await m.clock.advance(3100);
+      eq("opened", m.env.visible, true);
+      ok("slot: held while the sheet is up", sheetClaimed());
+      m.ctl.onRoute(true, "paywall");
+      eq("route: leaving the tabs takes the sheet down", m.env.visible, false);
+      m.ctl.onRoute(true, "(tabs)");
+      eq("route: staying on the tabs leaves it", m.env.visibleCalls, [true, false]);
+      m.ctl.onVisible(true);
+      ok("slot: still held while visible", sheetClaimed());
+      m.ctl.onVisible(false);
+      ok("slot: released once the sheet is gone", !sheetClaimed());
+      stop();
+      m.off();
+    }
+    {
+      const m = mount();
+      const stop = m.start();
+      await m.clock.advance(3100);
+      ok("dispose: slot held first", sheetClaimed());
+      m.ctl.dispose();
+      ok("dispose: slot released", !sheetClaimed());
+      stop();
+      m.off();
+      eq("listen cleanup removes the listeners", m.listeners(), 0);
+    }
   }
 
   section("K. presentation gate");
@@ -974,7 +1569,7 @@ async function main() {
     ok("the seen events are logged", /logEvent\("trial_converted_seen"\)/.test(sheet) && /logEvent\("renewal_seen"\)/.test(sheet));
     ok("no font shrinking", !/adjustsFontSizeToFit/.test(sheet));
     ok("no hard-coded colour in the sheet", !/#[0-9a-fA-F]{3,8}\b/.test(sheet) && !/rgba?\(/.test(sheet));
-    ok("the sheet and the toast go through the same gate", (sheet.match(/clear\(\)/g) ?? []).length >= 2);
+    ok("the toast goes through the controller's gate", /pending !== "renewed" \|\| !ctl\.clear\(\)/.test(sheet));
     ok("the cards use existing routes", /"\/settings\/data"/.test(sheet) && /"\/spike"/.test(sheet) && /health: "connect"/.test(sheet));
     ok("whatsNew does not carry the thanks copy", !/thanks/.test(src("lib/whatsNew.ts")));
     const svc = src("lib/services/thanks.ts");

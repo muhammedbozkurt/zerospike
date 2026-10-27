@@ -18,9 +18,8 @@ import { onSurveyRelease, overlayOpen, surveyHeld } from "../lib/feedbackSurvey"
 import { confirmThanksNow, evaluateThanksNow } from "../lib/services/thanks";
 import { getHealthConnectStatus, getHealthSyncEnabled, hasHealthProvider } from "../lib/services/health";
 import { maybeRequestReview } from "../lib/services/review";
-import { thanksMayPresent } from "../lib/thanks/gate";
 import { claimSheet, onSheetRelease, sheetClaimed } from "../lib/sheetClaim";
-import { createSheetPresenter } from "../lib/thanks/presenter";
+import { createThanksController } from "../lib/thanks/controller";
 import { useOverlayPresence } from "../lib/useOverlayPresence";
 import type { ThanksOutcome } from "../lib/thanks/detect";
 
@@ -160,13 +159,36 @@ export function ThanksHost({ root }: { root: string | undefined }) {
   const [pending, setPending] = useState<ThanksOutcome>("none");
   const [tick, setTick] = useState(0);
 
-  const foreground = useRef(0);
-  const evaluatedIn = useRef(-1);
   const alive = useRef(true);
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const profileId = activeProfile?.id ?? null;
   const latest = useRef({ ready, onboarded, root, visible, profileId });
   latest.current = { ready, onboarded, root, visible, profileId };
+
+  // All the logic lives in the controller (lib/thanks/controller, tested with a
+  // fake AppState and clock); this component only holds state and renders.
+  const controller = useRef<ReturnType<typeof createThanksController> | null>(null);
+  if (controller.current === null) {
+    controller.current = createThanksController({
+      appState: AppState,
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      claim: claimSheet,
+      sheetClaimed,
+      onSheetRelease,
+      onSurveyRelease,
+      overlayOpen,
+      surveyHeld,
+      screenshotMode: isScreenshotMode,
+      latest: () => latest.current,
+      setVisible,
+      setPending,
+      nudge: () => setTick((n) => n + 1),
+      logSeen: () => logEvent("trial_converted_seen"),
+      stampSeen: () => void confirmThanksNow("converted"),
+    });
+  }
+  const ctl = controller.current;
 
   const later = useCallback((fn: () => void, ms: number) => {
     const id = setTimeout(() => {
@@ -179,94 +201,40 @@ export function ThanksHost({ root }: { root: string | undefined }) {
   useEffect(() => {
     alive.current = true;
     const pendingTimers = timers.current;
+    const stop = ctl.start();
     return () => {
       alive.current = false;
       pendingTimers.forEach(clearTimeout);
       pendingTimers.clear();
-      presenter.current?.dispose();
+      stop();
+      ctl.dispose();
     };
-  }, []);
+  }, [ctl]);
+
+  useEffect(() => ctl.onVisible(visible), [ctl, visible]);
 
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "background") presenter.current?.background();
-      if (state !== "active") return;
-      foreground.current += 1;
-      presenter.current?.foreground();
-      setTick((n) => n + 1);
-    });
-    const bump = () => setTick((n) => n + 1);
-    const offOverlay = onSurveyRelease(bump);
-    const offSlot = onSheetRelease(bump);
-    return () => {
-      sub.remove();
-      offOverlay();
-      offSlot();
-    };
-  }, []);
-
-  const clear = useCallback(() => {
-    const s = latest.current;
-    return thanksMayPresent({
-      ready: s.ready,
-      onboarded: s.onboarded,
-      screenshotMode: isScreenshotMode(),
-      root: s.root,
-      overlayOpen: overlayOpen() || sheetClaimed(),
-      winbackHold: surveyHeld(),
-      sheetVisible: s.visible,
-    });
-  }, []);
-
-  const presenter = useRef<ReturnType<typeof createSheetPresenter> | null>(null);
-  if (presenter.current === null) {
-    presenter.current = createSheetPresenter({
-      setTimer: (fn, ms) => setTimeout(fn, ms),
-      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
-      clear,
-      claim: claimSheet,
-      setVisible,
-      clearPending: () => setPending("none"),
-      onSeen: () => {
-        logEvent("trial_converted_seen");
-        void confirmThanksNow("converted");
-      },
-      nudge: () => setTick((n) => n + 1),
-    });
-  }
-
-  // The slot is held from the decision to open until the sheet is gone.
-  useEffect(() => {
-    if (!visible) presenter.current?.releaseClaim();
-  }, [visible]);
-
-  useEffect(() => {
-    if (pending !== "none" || evaluatedIn.current === foreground.current || !clear()) return;
-    evaluatedIn.current = foreground.current;
+    if (!ctl.mayEvaluate(pending)) return;
     void evaluateThanksNow().then(async (outcome) => {
       if (outcome === "none" || !alive.current) return;
       if (outcome === "converted") setShowHealth(await healthCardWanted(latest.current.profileId));
       if (alive.current) setPending(outcome);
     });
-  }, [pending, ready, onboarded, root, visible, tick, clear]);
+  }, [ctl, pending, ready, onboarded, root, visible, tick]);
 
   // The renewal toast: stamped and reported at the moment it is shown.
   useEffect(() => {
-    if (pending !== "renewed" || !clear()) return;
+    if (pending !== "renewed" || !ctl.clear()) return;
     setPending("none");
     toast(t("thanks.renewalToast"), "success");
     logEvent("renewal_seen");
     void confirmThanksNow("renewed");
-  }, [pending, ready, onboarded, root, visible, tick, clear, toast, t]);
+  }, [ctl, pending, ready, onboarded, root, visible, tick, toast, t]);
 
-  // The sheet (lib/thanks/presenter): settle delay, re-check, claim, watchdog.
-  // Stamped as seen only from presenter.confirm (the sheet's onShown).
-  useEffect(() => {
-    if (pending !== "converted" || !clear()) return;
-    return presenter.current?.schedule();
-  }, [pending, ready, onboarded, root, visible, tick, clear]);
+  // The sheet: settle delay, re-check, claim, watchdog (lib/thanks/presenter).
+  useEffect(() => ctl.sheetEffect(pending), [ctl, pending, ready, onboarded, root, visible, tick]);
 
-  const confirmConverted = useCallback(() => presenter.current?.confirm(), []);
+  const confirmConverted = useCallback(() => ctl.confirm(), [ctl]);
 
   const close = useCallback(() => {
     if (!latest.current.visible) return;

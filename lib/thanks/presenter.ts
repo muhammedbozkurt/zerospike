@@ -11,9 +11,13 @@
  *   is stamped), then the flow is nudged to try again, up to MAX attempts.
  * - confirm() is the ONLY place a moment becomes "seen": it clears pending and
  *   reports it, and only once per presentation.
- * - background() drops the timers and any presentation that never confirmed;
- *   foreground() resets the attempt budget and restarts the flow, so a pending
- *   moment that used up its attempts is tried again when the app comes back.
+ * - background() drops the timers and any presentation that never confirmed,
+ *   and keeps the presenter inert (schedule() and a late settle callback do
+ *   nothing) until foreground(): taking the sheet down re-runs the host's
+ *   effects, which would otherwise set up a fresh presentation in the
+ *   background. foreground() resets the attempt budget and restarts the flow
+ *   once, so a pending moment that used up its attempts is tried again when the
+ *   app comes back.
  */
 
 export const SETTLE_MS = 1200;
@@ -49,6 +53,7 @@ export function createSheetPresenter(d: PresenterDeps) {
   let settle: unknown = null;
   let watchdog: unknown = null;
   let release: (() => void) | null = null;
+  let inBackground = false;
 
   const stop = (handle: unknown) => {
     if (handle !== null) d.clearTimer(handle);
@@ -77,9 +82,10 @@ export function createSheetPresenter(d: PresenterDeps) {
     /** Starts (or restarts) the settle wait. Returns the cancel for the effect cleanup. */
     schedule(): () => void {
       cancelSettle();
+      if (inBackground) return cancelSettle;
       settle = d.setTimer(() => {
         settle = null;
-        if (!d.clear() || attempts >= maxAttempts) return;
+        if (inBackground || !d.clear() || attempts >= maxAttempts) return;
         const claim = d.claim();
         if (!claim) return;
         attempts += 1;
@@ -106,11 +112,13 @@ export function createSheetPresenter(d: PresenterDeps) {
     /** The slot is held only while the sheet is up. */
     releaseClaim,
     background(): void {
+      inBackground = true;
       cancelSettle();
       cancelWatchdog();
       if (!confirmed) abandon();
     },
     foreground(): void {
+      inBackground = false;
       attempts = 0;
       d.nudge();
     },

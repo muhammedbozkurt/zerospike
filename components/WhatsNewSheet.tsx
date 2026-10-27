@@ -18,7 +18,7 @@ import {
 import { currentAppVersion, whatsNewKv } from "../lib/whatsNewStore";
 import { useOverlayPresence } from "../lib/useOverlayPresence";
 import { claimSheet, onSheetRelease } from "../lib/sheetClaim";
-import { attemptWhatsNew, createWhatsNewScheduler } from "../lib/whatsNewAttempt";
+import { createWhatsNewHostController, whatsNewEffectKey } from "../lib/whatsNewAttempt";
 
 export function WhatsNewSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -73,58 +73,29 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
   // release never wakes it, and an attempt that found nothing to show ends the
   // polling for the session (lib/whatsNewAttempt, which holds all of that logic).
   const [slotTick, setSlotTick] = useState(0);
-  const releaseSlot = useRef<(() => void) | null>(null);
-  const scheduler = useRef<ReturnType<typeof createWhatsNewScheduler> | null>(null);
-  if (scheduler.current === null) {
-    scheduler.current = createWhatsNewScheduler({
+  const controller = useRef<ReturnType<typeof createWhatsNewHostController> | null>(null);
+  if (controller.current === null) {
+    controller.current = createWhatsNewHostController({
       setTimer: (fn, ms) => setTimeout(fn, ms),
       clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
       delayMs: WHATS_NEW_DELAY_MS,
-      eligible: () => {
-        const s = latest.current;
-        return s.ready && s.onboarded && !s.visible && isWhatsNewRoute(s.root);
-      },
-      gateOpen: () => {
-        const s = latest.current;
-        return (
-          askedAtStart.current !== null &&
-          whatsNewMayPresent({
-            ready: s.ready,
-            onboarded: s.onboarded,
-            screenshotMode: isScreenshotMode(),
-            root: s.root,
-            winbackHold: surveyHeld(),
-            // A thank-you sheet may already be up: two Modals cannot present together.
-            surveyBusy: overlayOpen(),
-          })
-        );
-      },
-      attempt: () =>
-        attemptWhatsNew({
-          claim: claimSheet,
-          kv: whatsNewKv,
-          askedAtStart: askedAtStart.current === true,
-          latest: () => latest.current,
-          surveyHeld,
-          appVersion: currentAppVersion(),
-          open: (slot) => {
-            releaseSlot.current = slot;
-            setVisible(true);
-          },
-        }),
-      rerun: () => setSlotTick((n) => n + 1),
+      latest: () => latest.current,
+      screenshotMode: isScreenshotMode,
+      surveyHeld,
+      overlayOpen,
+      askedAtStart: () => askedAtStart.current,
+      claim: claimSheet,
+      kv: whatsNewKv,
+      appVersion: currentAppVersion,
+      setVisible,
+      bumpTick: () => setSlotTick((n) => n + 1),
+      onSheetRelease,
+      onSurveyRelease,
     });
   }
+  const ctl = controller.current;
 
-  useEffect(() => {
-    const wake = () => scheduler.current?.onRelease();
-    const offSlot = onSheetRelease(wake);
-    const offOverlay = onSurveyRelease(wake);
-    return () => {
-      offSlot();
-      offOverlay();
-    };
-  }, []);
+  useEffect(() => ctl.listen(), [ctl]);
 
   useEffect(() => {
     let alive = true;
@@ -141,19 +112,14 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
     };
   }, []);
 
-  useEffect(() => scheduler.current?.start(), [ready, onboarded, root, visible, slotTick]);
+  const effectKey = whatsNewEffectKey({ ready, onboarded, root, visible }, slotTick);
+  useEffect(() => ctl.start(), [ctl, effectKey]);
 
-  useEffect(() => {
-    if (visible) return;
-    releaseSlot.current?.();
-    releaseSlot.current = null;
-  }, [visible]);
+  useEffect(() => ctl.onVisible(visible), [ctl, visible]);
 
-  useEffect(() => () => releaseSlot.current?.(), []);
+  useEffect(() => ctl.dispose, [ctl]);
 
-  useEffect(() => {
-    if (visible && !isWhatsNewRoute(root)) setVisible(false);
-  }, [visible, root]);
+  useEffect(() => ctl.onRoute(visible, root), [ctl, visible, root]);
 
   const close = useCallback(() => setVisible(false), []);
 
