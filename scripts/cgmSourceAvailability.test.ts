@@ -23,7 +23,7 @@ function ok(name: string, cond: boolean): void {
 }
 
 console.log("A. availability");
-ok("the connector flag is an explicit constant, off until the connector ships", NIGHTSCOUT_ENABLED === false);
+ok("the connector flag is an explicit constant, on now that the connector ships", NIGHTSCOUT_ENABLED === true);
 ok("nightscoutAvailable follows the flag by default", nightscoutAvailable() === NIGHTSCOUT_ENABLED);
 ok("and can be forced on for the check below", nightscoutAvailable(true) === true && nightscoutAvailable(false) === false);
 

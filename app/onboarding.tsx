@@ -75,6 +75,7 @@ import { healthStoreLabelKey } from "../lib/cgm/sourceLabel";
 import { hasHealthProvider, requestHealthPermissions } from "../lib/services/health";
 import { nightscoutAllowed } from "../lib/cgm/pro";
 import { nightscoutAvailable } from "../lib/cgm/sourceAvailability";
+import { secureStoreAvailable } from "../lib/secureStore";
 import {
   clampHypoThreshold,
   clampTarget,
@@ -1652,7 +1653,7 @@ export default function OnboardingScreen() {
         const store = t(healthStoreLabelKey(Platform.OS));
         const options = measureOptionsFor({
           hasHealth: hasHealthProvider(),
-          nightscout: nightscoutAvailable(),
+          nightscout: nightscoutAvailable() && secureStoreAvailable(),
         });
         return (
           <View>
