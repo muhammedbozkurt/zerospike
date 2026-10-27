@@ -29,9 +29,9 @@ function ok(name: string, cond: boolean): void {
 
 const db = new DatabaseSync(":memory:");
 db.exec(
-  "CREATE TABLE sugar_logs(id TEXT, profile_id TEXT, logged_at TEXT, glucose_level_mgdl INT, source TEXT, is_cgm INT NOT NULL DEFAULT 0)"
+  "CREATE TABLE sugar_logs(id TEXT, profile_id TEXT, logged_at TEXT, glucose_level_mgdl INT, source TEXT, is_cgm INT NOT NULL DEFAULT 0, source_app TEXT)"
 );
-const ins = db.prepare("INSERT INTO sugar_logs VALUES(?,?,?,?,?,?)");
+const ins = db.prepare("INSERT INTO sugar_logs (id, profile_id, logged_at, glucose_level_mgdl, source, is_cgm) VALUES(?,?,?,?,?,?)");
 const now = Date.now();
 const iso = (minAgo: number) => new Date(now - minAgo * 60_000).toISOString();
 

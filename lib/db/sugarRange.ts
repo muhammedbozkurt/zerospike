@@ -8,6 +8,7 @@
  * scripts/cgmPerfInsights.test.ts runs the real statements on node:sqlite.
  */
 import type { DateRange } from "../insights";
+import { notSensorTwinSql } from "./cgmSql";
 import { parseTags } from "./types";
 import type { SugarLog } from "./types";
 import type { GlucosePoint } from "../cgm/metrics";
@@ -28,11 +29,17 @@ export function glucosePointsSql(
   scope: GlucoseScope = "all",
   withLimit = false
 ): string {
+  // A non-sensor row that mirrors a sensor value is not a reading of its own
+  // (notSensorTwinSql): left out of the manual and the whole set.
   const scopeClause =
-    scope === "cgm" ? " AND is_cgm = 1" : scope === "manual" ? " AND is_cgm = 0" : "";
-  return `SELECT logged_at, glucose_level_mgdl, source, is_cgm FROM sugar_logs
-      WHERE profile_id = ?${withRange ? " AND logged_at BETWEEN ? AND ?" : ""}${scopeClause}
-      ORDER BY logged_at${withLimit ? " DESC LIMIT ?" : ""};`;
+    scope === "cgm"
+      ? " AND s.is_cgm = 1"
+      : scope === "manual"
+        ? ` AND s.is_cgm = 0 AND ${notSensorTwinSql("s")}`
+        : ` AND (s.is_cgm = 1 OR ${notSensorTwinSql("s")})`;
+  return `SELECT s.logged_at, s.glucose_level_mgdl, s.source, s.is_cgm FROM sugar_logs s
+      WHERE s.profile_id = ?${withRange ? " AND s.logged_at BETWEEN ? AND ?" : ""}${scopeClause}
+      ORDER BY s.logged_at${withLimit ? " DESC LIMIT ?" : ""};`;
 }
 
 function isoBounds(range?: DateRange): string[] {
@@ -108,8 +115,9 @@ export async function readInsightsSugar(
 ): Promise<SugarPoint[]> {
   const [manual, cgm] = await Promise.all([
     db.getAllAsync<FullRow>(
-      `SELECT * FROM sugar_logs WHERE profile_id = ? AND logged_at BETWEEN ? AND ? AND is_cgm = 0
-        ORDER BY logged_at DESC LIMIT ?;`,
+      `SELECT * FROM sugar_logs s WHERE s.profile_id = ? AND s.logged_at BETWEEN ? AND ? AND s.is_cgm = 0
+          AND ${notSensorTwinSql("s")}
+        ORDER BY s.logged_at DESC LIMIT ?;`,
       [profileId, ...isoBounds(range), manualLimit]
     ),
     readGlucosePoints(db, profileId, range, "cgm"),

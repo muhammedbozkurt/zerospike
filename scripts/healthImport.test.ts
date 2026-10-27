@@ -181,7 +181,7 @@ section("J. the old source-scoped dedupe query is gone (regression)");
   ok(
     "insertHealthSugarLogs routes its insert decision through the shared planner",
     /importHealthSamples\(db, profileId, samples, uuid\)/.test(logsSrc) &&
-      /planGlucoseImport\(rows, existing, tombstones, mirrorStreams\)/.test(sqlSrc)
+      /planGlucoseImport\(rows, existing, tombstones\)/.test(sqlSrc)
   );
 }
 
@@ -291,11 +291,11 @@ section("N. another source's copy of the same reading: 150 s and 1 mg/dL");
   eq("and it is the earlier one", twoApps.insert[0], 0);
 }
 
-section("O. a typed row is never touched and blocks its sensor twin");
+section("O. a typed row is never touched, and a sensor value beside it is kept");
 {
   const typed = row(0, 150, { source: "manual", sourceApp: null, externalId: null, isCgm: false });
   const plan = planGlucoseImport([cand(1, 150, { externalId: "u9" })], [typed]);
-  eq("the sensor copy of a typed reading is not added", plan.insert.length, 0);
+  eq("the sensor copy of a typed reading is kept (no sensor value is dropped for a non-sensor row)", plan.insert.length, 1);
   eq("the typed row is not taken over", plan.own.length, 0);
   eq("a different value minutes later is added", planGlucoseImport([cand(3, 170)], [typed]).insert.length, 1);
   const manualOnly = planGlucoseImport([cand(0.2, 150, { source: "manual", externalId: "u1" })], [typed]);
@@ -348,7 +348,7 @@ section("S. non-sensor readings keep the 15 minute rule, but not against sensor 
   eq("same value 10 min after a stored finger-stick: skipped", planGlucoseImport([meter(10, 130)], [row(0, 130, { isCgm: false, sourceApp: "com.meter", externalId: "q" })]).insert.length, 0);
   eq("same value 10 min after a SENSOR row: kept", planGlucoseImport([meter(10, 130)], [row(0, 130)]).insert.length, 1);
   eq("same value within 150 s of a sensor row of another app: kept (a meter reading is its own measurement)", planGlucoseImport([meter(1, 130)], [row(0, 130)]).insert.length, 1);
-  eq("a sensor value within 150 s of a stored meter reading: skipped (same reading twice)", planGlucoseImport([cand(1, 130, { sourceApp: "com.sensor.b", externalId: "s-1" })], [row(0, 130, { isCgm: false, sourceApp: "com.meter", externalId: "q" })]).insert.length, 0);
+  eq("a sensor value within 150 s of a stored meter reading: kept (the mirror is told apart on read)", planGlucoseImport([cand(1, 130, { sourceApp: "com.sensor.b", externalId: "s-1" })], [row(0, 130, { isCgm: false, sourceApp: "com.meter", externalId: "q" })]).insert.length, 1);
 }
 
 section("T. tombstones: a sensor reading is matched tightly, others by the old rule");

@@ -548,9 +548,10 @@ async function main(): Promise<void> {
     eq("a second run of the same ids adds nothing", await run([cgm(0, 110, "a"), cgm(5, 110, "b")]), 0);
     eq("the columns are written", (db.prepare("SELECT COUNT(*) AS c FROM sugar_logs WHERE source_app = 'com.sensor.a' AND is_cgm = 1 AND external_id IS NOT NULL;").get() as { c: number }).c, 3);
 
-    // A typed row: never taken over, never deleted, blocks its twin.
+    // A typed row: never taken over, never deleted. A sensor reading beside it is
+    // kept (the import never drops a sensor value for a non-sensor row).
     db.exec(`INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at) VALUES ('typed','p1',150,'manual','${iso(100)}');`);
-    eq("the sensor twin of a typed row is not added", await run([cgm(101, 150, "t1")]), 0);
+    eq("a sensor reading beside a typed row is kept", await run([cgm(101, 150, "t1")]), 1);
     eq("the typed row is unchanged", JSON.stringify(db.prepare("SELECT source, external_id, is_cgm, glucose_level_mgdl FROM sugar_logs WHERE id = 'typed';").get()), JSON.stringify({ source: "manual", external_id: null, is_cgm: 0, glucose_level_mgdl: 150 }));
 
     // An old Health row (no ids) is taken over once.
