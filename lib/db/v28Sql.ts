@@ -26,6 +26,9 @@
  * sample is imported again. Only the user's own delete or edit leaves a trace.
  */
 
+/** The trigger an older build created without the source-delete marker check. */
+export const V28_DELETE_TRIGGER = "trg_health_tombstone_delete";
+
 export const V28_CREATE: string[] = [
   `CREATE TABLE IF NOT EXISTS health_import_tombstones (
     profile_id TEXT NOT NULL,
@@ -40,7 +43,7 @@ export const V28_CREATE: string[] = [
   `CREATE TABLE IF NOT EXISTS health_import_source_delete (
     k INTEGER PRIMARY KEY NOT NULL
   );`,
-  `CREATE TRIGGER IF NOT EXISTS trg_health_tombstone_delete
+  `CREATE TRIGGER IF NOT EXISTS ${V28_DELETE_TRIGGER}
     AFTER DELETE ON sugar_logs
     WHEN OLD.source = 'health'
       AND NOT EXISTS (SELECT 1 FROM health_import_source_delete)

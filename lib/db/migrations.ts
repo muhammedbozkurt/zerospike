@@ -67,7 +67,7 @@ import { V24_CREATE } from "./v24Sql";
 import { V25_EMPTY_DEFAULT_NAMES } from "./v25Sql";
 import { V26_MEAL_COLUMNS, V26_INJECTION_COLUMNS } from "./v26Sql";
 import { V27_RESET_RATIO_CONFIRMATION } from "./v27Sql";
-import { V28_CREATE } from "./v28Sql";
+import { V28_CREATE, V28_DELETE_TRIGGER } from "./v28Sql";
 import {
   V29_BACKFILL_CHUNK_SIZE,
   V29_COLUMNS,
@@ -845,6 +845,33 @@ export async function migrateToV28(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(statement);
     }
     await stampSchemaVersion(db, 28);
+  });
+}
+
+/**
+ * Open-time repair for a developer or simulator database that reached v28/v30
+ * while the source-delete marker was still being designed: it has no
+ * health_import_source_delete table and keeps the older delete trigger, which
+ * CREATE TRIGGER IF NOT EXISTS would never replace, so every source delete
+ * failed with "no such table" or wrote a tombstone. Reads one schema row and
+ * returns on a current database; otherwise drops the two tombstone triggers and
+ * re-runs V28_CREATE (idempotent) in one transaction. No version stamp: the
+ * schema version is unchanged.
+ */
+export async function repairV28SourceDeleteGuard(db: SQLite.SQLiteDatabase): Promise<void> {
+  const rows = await db.getAllAsync<{ name: string; sql: string | null }>(
+    `SELECT name, sql FROM sqlite_master
+      WHERE (type = 'table' AND name = 'health_import_source_delete')
+         OR (type = 'trigger' AND name = '${V28_DELETE_TRIGGER}');`
+  );
+  const hasTable = rows.some((r) => r.name === "health_import_source_delete");
+  const trigger = rows.find((r) => r.name === V28_DELETE_TRIGGER);
+  if (hasTable && trigger && (trigger.sql ?? "").includes("health_import_source_delete")) return;
+  await db.withTransactionAsync(async () => {
+    await db.execAsync(`DROP TRIGGER IF EXISTS ${V28_DELETE_TRIGGER};`);
+    for (const statement of V28_CREATE) {
+      await db.execAsync(statement);
+    }
   });
 }
 

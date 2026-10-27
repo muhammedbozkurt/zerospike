@@ -86,6 +86,16 @@ export async function runCgmRetention(
         [profileId, fromIso, toIso]
       );
       removed = gone[0]?.c ?? 0;
+      // expo-sqlite's transaction connection runs with foreign_keys off, so the
+      // ON DELETE SET NULL of meal_logs.sugar_log_id does not fire: do it here.
+      await txn.runAsync(
+        `UPDATE meal_logs SET sugar_log_id = NULL
+          WHERE sugar_log_id IN (
+            SELECT id FROM sugar_logs
+             WHERE profile_id = ? AND ${V30_FOLDABLE}
+               AND logged_at >= ? AND logged_at < ?);`,
+        [profileId, fromIso, toIso]
+      );
       await txn.runAsync(V30_DELETE_SLICE, [profileId, fromIso, toIso]);
       await txn.runAsync(V30_DROP_STALE_TOMBSTONES, [profileId, cutoffIso]);
     });

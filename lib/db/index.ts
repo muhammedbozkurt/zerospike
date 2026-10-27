@@ -27,6 +27,7 @@ import {
   migrateToV29,
   migrateToV30,
   missingColumns,
+  repairV28SourceDeleteGuard,
   ensureFoodNameColumns,
   stampSchemaVersion,
 } from "./migrations";
@@ -403,6 +404,11 @@ export async function initDatabase(): Promise<void> {
   if (currentVersion >= 1 && currentVersion < 30) {
     await migrateToV30(db);
   }
+
+  // A database that reached v28/v30 before the source-delete marker existed has no
+  // marker table and keeps the older delete trigger; no migration step re-runs for
+  // it. One schema read on a current database (see migrations.ts).
+  await repairV28SourceDeleteGuard(db);
 
   // The fresh-install stamp, and a backstop for a database that entered the chain
   // above SCHEMA_VERSION (a downgrade). createSchemaV1 builds the current shape

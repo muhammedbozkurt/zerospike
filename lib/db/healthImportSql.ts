@@ -69,6 +69,10 @@ export const IMPORT_FUTURE_RETRY_MAX_MS = 24 * 60 * 60_000;
 /** A legacy untagged non-sensor row this close in time and equal in value is
  *  the same reading a sensor candidate now describes (take-over). */
 const TAKE_OVER_LEGACY_MS = 60_000;
+/** A NON-sensor candidate this close in time (and within the tolerance in value)
+ *  to a sensor row of another stream is that sensor value mirrored by a second
+ *  app, not a glucometer reading: a real fingerstick a minute away stays. */
+const SENSOR_MIRROR_WINDOW_MS = 10_000;
 
 /**
  * True when some row was refused only for being dated ahead of the clock (more
@@ -155,6 +159,24 @@ function canTakeOver(c: PlanCandidate, e: PlanExisting, dt: number, dv: number):
   return !e.tagged && dv === 0 && dt <= TAKE_OVER_LEGACY_MS;
 }
 
+/** Rule 4b: see SENSOR_MIRROR_WINDOW_MS. */
+function isSensorMirror(
+  c: PlanCandidate,
+  otherIsCgm: boolean,
+  cStream: string,
+  otherStream: string,
+  dt: number,
+  dv: number
+): boolean {
+  return (
+    !c.isCgm &&
+    otherIsCgm &&
+    otherStream !== cStream &&
+    dt <= SENSOR_MIRROR_WINDOW_MS &&
+    dv <= SAME_READING_TOLERANCE_MGDL
+  );
+}
+
 function streamKey(source: string, sourceApp: string | null): string {
   return `${source}\u0000${sourceApp ?? ""}`;
 }
@@ -181,6 +203,10 @@ function streamKey(source: string, sourceApp: string | null): string {
  *     NON-sensor candidate is never dropped for sitting next to a sensor row:
  *     a glucometer reading one minute after a sensor value is its own
  *     measurement.
+ *  4b. A NON-sensor candidate within 10 s and +-1 mg/dL of a sensor row of
+ *     another stream is that sensor value mirrored by a second app: skip, or it
+ *     would be stored as a hand-read row (double count, and the dose path would
+ *     take it for a typed reading). A glucometer reading further away stays.
  *  5. A sensor reading closer than 270 s to a kept reading of the same app is
  *     thinned away (a 1 minute stream becomes about 5 minutes).
  *  6. A NON-sensor reading with the same value within 15 minutes of a
@@ -264,6 +290,10 @@ export function planGlucoseImport(
         skip = true;
         break;
       }
+      if (isSensorMirror(c, e.isCgm, cStream, streamKey(e.source, e.sourceApp), dt, dv)) {
+        skip = true;
+        break;
+      }
       if (c.isCgm && e.isCgm && dt < CGM_THINNING_MS && streamKey(e.source, e.sourceApp) === cStream) {
         skip = true;
         break;
@@ -288,6 +318,10 @@ export function planGlucoseImport(
       const dv = Math.abs(a.mgdl - c.mgdl);
       const tight = dt <= SAME_READING_WINDOW_MS && dv <= SAME_READING_TOLERANCE_MGDL;
       if (tight && (c.isCgm || !a.isCgm) && streamKey(a.source, a.sourceApp) !== cStream) {
+        skip = true;
+        break;
+      }
+      if (isSensorMirror(c, a.isCgm, cStream, streamKey(a.source, a.sourceApp), dt, dv)) {
         skip = true;
         break;
       }
@@ -674,6 +708,16 @@ export async function deleteImportedGlucose(
       // source's delete, not the user's: no tombstone. It never outlives the
       // transaction.
       await txn.runAsync("INSERT OR IGNORE INTO health_import_source_delete (k) VALUES (1);", []);
+      // The transaction connection has foreign_keys off, so meal_logs.sugar_log_id
+      // would keep pointing at a deleted row: unlink first, same statement scope.
+      await txn.runAsync(
+        `UPDATE meal_logs SET sugar_log_id = NULL
+          WHERE sugar_log_id IN (
+            SELECT id FROM sugar_logs
+             WHERE profile_id = ? AND source = ? AND source <> 'manual'
+               AND external_id IN (${part.map(() => "?").join(",")}));`,
+        [profileId, source, ...part]
+      );
       // RETURNING hands back what went, so no count query has to run before it.
       const gone = await txn.getAllAsync<{ id: string }>(
         `DELETE FROM sugar_logs

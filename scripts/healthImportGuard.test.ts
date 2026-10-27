@@ -82,7 +82,7 @@ const SCHEMA = `
     is_cgm INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE
   );
-  CREATE TABLE meal_logs (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL);
+  CREATE TABLE meal_logs (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, sugar_log_id TEXT);
   CREATE TABLE injection_logs (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL);
   CREATE TABLE med_logs (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL);
   INSERT INTO user_profiles VALUES ('p1');
@@ -377,7 +377,7 @@ async function main(): Promise<void> {
     const old = [sample(110, 0), sample(120, 100), sample(130, 200)];
     await importHealthSamples(makeHost(path).host, "p1", old, newId);
     db.exec(`INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at) VALUES ('mm','p1',177,'manual','${iso(50)}');`);
-    db.exec(`INSERT INTO meal_logs VALUES ('ml','p1'); INSERT INTO meal_logs VALUES ('mlo','p2');`);
+    db.exec(`INSERT INTO meal_logs (id, profile_id) VALUES ('ml','p1'); INSERT INTO meal_logs (id, profile_id) VALUES ('mlo','p2');`);
     db.exec(`INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at) VALUES ('o2','p2',90,'manual','${iso(10)}');`);
 
     const clearedAt = iso(300);
@@ -565,7 +565,7 @@ async function main(): Promise<void> {
     const deleting = makeHost(path);
     const removed = await deleteImportedGlucose(deleting.host, "p1", "health", ["b", "nope"]);
     eq("one imported row removed", removed, 1);
-    ok("the source-delete marker is the first statement after the pragma, then the delete", /^INSERT OR IGNORE INTO health_import_source_delete/.test(deleting.txns[0].statements[1] ?? "") && /^DELETE FROM sugar_logs/.test(deleting.txns[0].statements[2] ?? ""));
+    ok("the source-delete marker is the first statement after the pragma, then the delete", /^INSERT OR IGNORE INTO health_import_source_delete/.test(deleting.txns[0].statements[1] ?? "") && /^UPDATE meal_logs SET sugar_log_id = NULL/.test(deleting.txns[0].statements[2] ?? "") && /^DELETE FROM sugar_logs/.test(deleting.txns[0].statements[3] ?? ""));
     eq("the typed row sharing that id stays", countRows(db, "id = 'typed2'"), 1);
     eq("a manual source cannot be deleted through this door", await deleteImportedGlucose(makeHost(path).host, "p1", "manual" as never, ["b"]), 0);
 

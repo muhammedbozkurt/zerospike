@@ -60,6 +60,7 @@ function makeDb() {
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL);
+    CREATE TABLE meal_logs (id TEXT PRIMARY KEY, sugar_log_id TEXT);
     CREATE TABLE sugar_logs (
       id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL,
       glucose_level_mgdl INTEGER NOT NULL, period_tag TEXT NOT NULL DEFAULT 'manual',
