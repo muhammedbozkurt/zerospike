@@ -266,7 +266,7 @@ section("J. the Insights screen reads sensor data uncapped and keeps the percent
   const block = src.slice(at, at + 1800);
   ok("percentile scale is locked low to high (row-reverse under RTL)", /I18nManager\.isRTL \? "row-reverse" : "row"/.test(block));
   ok("sensor basis swaps the readings count for coverage", src.includes('t("cgmInsights.coverage")') && src.includes("basisLine(t, Platform.OS, data)"));
-  ok("GMI from the sensor is named by its abbreviation", src.includes('"cgmInsights.gmiLabel"') && src.includes('"cgmInsights.gmiNote"'));
+  ok("GMI is named by its abbreviation and explained on the screen", src.includes('t("insights.gmi")') && src.includes('t("insights.gmiExplain")'));
 }
 
 activity().then(() => {

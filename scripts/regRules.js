@@ -807,6 +807,91 @@ const PATTERNS = {
   ],
 };
 
+// G252: the computed value is the GMI, never an "estimated A1C" (that reads as
+// the app predicting a lab result). Both orders are listed per language, for
+// "A1C" and "HbA1c": "estimated A1C" and "A1C estimate". A bare "A1C" (the
+// user's own lab field) and "GMI" never match. Phrases are literal (only a
+// trailing "*" is a stem), so the lists spell out the common inflections.
+// "<gap3>" inside a pattern means zero to three whole words (ja: up to six
+// characters) between the two parts, so "estimativa <gap3>A1C" also catches
+// "uma estimativa do seu A1C". Patterns without the token behave as before.
+const GAP_TOKEN = "<gap3>";
+const GAP_WORDS = "(?:[\\p{L}\\p{M}\\p{N}'’-]+\\s+){0,3}";
+const GAP_JA = "[^\\s、。，,.（）()]{0,6}";
+const A1C_NAMES = ["A1C", "HbA1c"];
+const A1C_NAMES_SUBSTR = ["A1C", "A1c", "HbA1c", "HbA1C"];
+const A1C_NAMES_AR = [...A1C_NAMES_SUBSTR, "السكر التراكمي", "للسكر التراكمي", "الهيموغلوبين السكري"];
+function a1cEstimatePatterns(before, after, names = A1C_NAMES, sep = " ") {
+  const out = [];
+  for (const n of names) {
+    for (const b of before) {
+      out.push({ pattern: /['’]$/.test(b) ? b + n : b + sep + GAP_TOKEN + n });
+    }
+    for (const a of after) out.push({ pattern: a.startsWith("-") ? n + a : n + sep + GAP_TOKEN + a });
+  }
+  return out;
+}
+const A1C_ESTIMATE_PATTERNS = {
+  en: [
+    ...a1cEstimatePatterns(
+      ["estimated", "estimate", "estimates", "estimating", "estimate of", "estimate of your", "estimate your", "estimates your"],
+      ["estimat*", "-estimat*"]
+    ),
+    { pattern: "eA1C" },
+  ],
+  tr: a1cEstimatePatterns(
+    ["tahmini", "tahmin edilen", "tahmini laboratuvar", "tahmini hemoglobin"],
+    ["tahmin*", "değerini tahmin*", "değerinizi tahmin*", "sonucunu tahmin*"]
+  ),
+  de: a1cEstimatePatterns(
+    [
+      "geschätzt", "geschätzter", "geschätzte", "geschätztes", "geschätzten", "geschätztem",
+      "Schätzung des", "Schätzung der", "Schätzung für den", "Schätzung für die",
+      "Schätzwert des", "Schätzwert der", "Schätzwert für den", "Schätzwert für die",
+    ],
+    ["geschätzt*", "Schätzung*", "Schätzwert*", "-Schätzung*", "-Schätzwert*"]
+  ),
+  fr: a1cEstimatePatterns(
+    [
+      "estimée", "estimé", "estimation de l'", "estimation de l’", "estimation de la", "estimation de votre",
+      "estimation d'", "estimation d’", "estimation de", "estimation du", "estimer l'", "estimer l’", "estimer la",
+    ],
+    ["estimé*", "estimation*"]
+  ),
+  es: a1cEstimatePatterns(
+    ["estimada", "estimado", "estimación de la", "estimación de su", "estimación del", "estimación de", "estimar la", "estimar su"],
+    ["estimad*", "estimaci*"]
+  ),
+  it: a1cEstimatePatterns(
+    [
+      "stimata", "stimato", "stima", "stima di", "stima della", "stima dell'", "stima dell’", "stima del",
+      "stima della Sua", "stima del Suo", "stimare la", "stimare l'", "stimare l’",
+    ],
+    ["stima*"]
+  ),
+  pt: a1cEstimatePatterns(
+    [
+      "estimada", "estimado", "estimativa", "estimativa de", "estimativa da", "estimativa do",
+      "estimativa da sua", "estimativa para", "estimar a",
+    ],
+    ["estimad*", "estimativa*"]
+  ),
+  ar: a1cEstimatePatterns(
+    ["تقدير", "تقديري", "تقديرية", "التقديري"],
+    ["تقدير", "تقديري", "تقديرية", "المقدر", "المقدّر", "المقدرة", "التقديري"],
+    A1C_NAMES_AR
+  ),
+  ja: a1cEstimatePatterns(
+    ["推定", "推定値の", "推定された"],
+    ["推定", "の推定", "を推定", "予測"],
+    A1C_NAMES_SUBSTR,
+    ""
+  ),
+};
+for (const locale of Object.keys(A1C_ESTIMATE_PATTERNS)) {
+  PATTERNS[locale].push(...A1C_ESTIMATE_PATTERNS[locale]);
+}
+
 // Glucose-context terms: a requiresContext pattern only counts when one of
 // these also appears in the same string. Applied as one flat multilingual
 // list regardless of the locale being scanned.
@@ -1073,7 +1158,18 @@ function latinRegExp(pattern, flags, opts = {}) {
     opts.except && opts.except.length
       ? `(?!${opts.except.map((x) => escapeRegExp(foldTr(opts.locale, x))).join("|")})`
       : "";
-  return new RegExp(left + escapeRegExp(base) + except + right, flags);
+  const body = base.split(GAP_TOKEN).map(escapeRegExp).join(GAP_WORDS);
+  return new RegExp(left + body + except + right, flags);
+}
+
+// Gap patterns in a substring locale (ar, ja) need a regex; plain ones keep
+// the indexOf path. ar: no left boundary (clitics such as "و" attach), but a
+// right one, so "تقديرات" (estimates) is not "تقدير" (estimate).
+function substringGapRegExp(pattern, locale) {
+  if (!pattern.includes(GAP_TOKEN)) return null;
+  const ja = locale === "ja";
+  const body = pattern.split(GAP_TOKEN).map(escapeRegExp).join(ja ? GAP_JA : GAP_WORDS);
+  return new RegExp(body + (ja ? "" : "(?![\\p{L}\\p{N}])"), "gu");
 }
 
 // opts: { locale, except }. For tr the text is folded first; folding keeps the
@@ -1083,7 +1179,15 @@ function buildLatinMatcher(pattern, opts = {}) {
   return (text) => re.exec(foldTr(opts.locale, text));
 }
 
-function buildSubstringMatcher(pattern) {
+function buildSubstringMatcher(pattern, locale) {
+  const gap = substringGapRegExp(pattern, locale);
+  if (gap) {
+    return (text) => {
+      gap.lastIndex = 0;
+      const m = gap.exec(text);
+      return m ? { index: m.index, 0: m[0] } : null;
+    };
+  }
   return (text) => {
     const idx = text.indexOf(pattern);
     return idx === -1 ? null : { index: idx, 0: pattern };
@@ -1094,6 +1198,10 @@ function buildSubstringMatcher(pattern) {
 // by position, so a second occurrence must not hide behind an excused first one.
 function buildAllMatcher(pattern, substringMode, opts = {}) {
   if (substringMode) {
+    const gap = substringGapRegExp(pattern, opts.locale);
+    if (gap) {
+      return (text) => Array.from(text.matchAll(gap), (m) => ({ index: m.index, length: m[0].length }));
+    }
     return (text) => {
       const hits = [];
       for (let i = text.indexOf(pattern); i !== -1; i = text.indexOf(pattern, i + pattern.length)) {

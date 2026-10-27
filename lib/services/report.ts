@@ -775,10 +775,10 @@ export function buildHtml(
   const generated = new Date();
 
   const t = (k: string, o?: Record<string, unknown>) => esc(i18n.t(k, o));
-  // From sensor data the indicator is named by its abbreviation alone and
-  // described, never called an estimate of a lab value.
-  const gmiLabel = t(insights.basis === "cgm" ? "cgmInsights.gmiLabel" : "insights.gmi");
-  const gmiNote = t(insights.basis === "cgm" ? "cgmInsights.gmiNote" : "insights.gmiNote");
+  // The indicator is named by its abbreviation alone and described, never
+  // called an estimate of a lab value.
+  const gmiLabel = t("insights.gmi");
+  const gmiNote = t("insights.gmiExplain");
 
   // Arabic is the one bundle written right-to-left, and a PDF has no viewer to
   // guess for it: without `dir` the tables came out left-aligned with the labels
@@ -800,7 +800,10 @@ export function buildHtml(
   const summaryRows: [string, string][] = [
     [t("insights.avgGlucose"), fmtG(insights.avgGlucose)],
     [t("insights.timeInRange"), insights.inRangePct == null ? "-" : esc(pct(insights.inRangePct))],
-    [gmiLabel, insights.gmi == null ? "-" : esc(pct(insights.gmi, 1))],
+    [
+      insights.gmi == null ? gmiLabel : `${gmiLabel}<div class="sub">${gmiNote}</div>`,
+      insights.gmi == null ? "-" : esc(pct(insights.gmi, 1)),
+    ],
     [t("insights.variability"), fmtG(insights.glucoseSD)],
     [t("insights.cv"), insights.glucoseCV == null ? "-" : esc(pct(insights.glucoseCV))],
     [t("insights.lows"), String(insights.hypoCount)],
@@ -984,6 +987,7 @@ export function buildHtml(
   .bandhead .bd { font-weight: 700; color: #222; }
   .evh { font-size: 12px; margin: 12px 0 4px; color: #333; }
   .kpi .kd { font-size: 10px; color: #777; margin-top: 4px; }
+  td.k .sub { font-size: 10px; color: #777; margin-top: 2px; }
   /* Physically LTR always (00 -> 24 left to right), same fixed-order lock as
      app/insights.tsx's own heat strip: a clock, not a reading-direction list.
      Without this, [dir="rtl"] on <body> (Arabic) flips the flex order and
@@ -1043,7 +1047,7 @@ export function buildHtml(
 
   <div class="foot">
     ${t("disclaimer.body")}<br/>
-    ${insights.gmi != null ? `${gmiNote}<br/>` : ""}
+    ${summaryMode && insights.gmi != null ? `${gmiNote}<br/>` : ""}
     ${t("insights.disclaimer")}${opts.listNote ? `<br/>${esc(opts.listNote)}` : ""}
   </div>
 </body>
