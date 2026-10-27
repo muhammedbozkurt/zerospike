@@ -44,6 +44,7 @@ interface ModeOption {
   label: string;
   hint: string;
   badge?: string;
+  lockedHint?: string;
 }
 
 function ModeCard({
@@ -61,7 +62,7 @@ function ModeCard({
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       accessibilityLabel={option.badge ? `${option.label}, ${option.badge}` : option.label}
-      accessibilityHint={option.hint}
+      accessibilityHint={option.badge && option.lockedHint ? option.lockedHint : option.hint}
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -80,7 +81,7 @@ function ModeCard({
           </Txt>
           {option.badge ? (
             <View style={{ flexDirection: "row", alignItems: "center", marginStart: SPACE.sm }}>
-              <Ionicons name="lock-closed" size={12} color={THEME.accent} style={{ marginEnd: 4 }} />
+              <Ionicons name="lock-closed" size={12} color={THEME.accent} style={{ marginEnd: SPACE.xs }} />
               <Txt kind="caption" tone="accent" style={{ fontWeight: "600" }}>
                 {option.badge}
               </Txt>
@@ -403,6 +404,7 @@ export default function DataSourcesScreen() {
             label: t("nightscout.modeLabel"),
             hint: t("nightscout.modeHint"),
             badge: nightscoutAllowed(isProUser) ? undefined : t("nightscout.proTag"),
+            lockedHint: t("nightscout.lockedHint"),
           },
         ]
       : []),

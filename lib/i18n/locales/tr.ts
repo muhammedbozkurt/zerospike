@@ -1838,6 +1838,7 @@ const tr = {
     modeLabel: "Nightscout",
     modeHint: "Kendi Nightscout sunucunuzdaki ölçümler günlüğünüze eklenir. Yalnız okuma yapılır.",
     proTag: "Pro",
+    lockedHint: "Pro ile açılır. Pro sayfasını açar.",
     intro: "Kendi Nightscout sunucunuzdaki glukoz ölçümlerini yalnız okuyarak günlüğünüze aktarır. Veriler yalnız sunucunuz ile bu cihaz arasında gider.",
     urlLabel: "Sunucu adresi",
     urlHint: "https:// ile başlamalıdır.",

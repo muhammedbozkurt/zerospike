@@ -1843,6 +1843,7 @@ const it: TranslationSchema = {
     modeLabel: "Nightscout",
     modeHint: "I valori del Suo server Nightscout vengono aggiunti al Suo diario. Solo lettura.",
     proTag: "Pro",
+    lockedHint: "Bloccato, incluso con Pro. Apre la pagina Pro.",
     intro: "Aggiunge al Suo diario, in sola lettura, i valori di glucosio del Suo server Nightscout. I dati passano solo tra il Suo server e questo dispositivo.",
     urlLabel: "Indirizzo del server",
     urlHint: "Deve iniziare con https://",

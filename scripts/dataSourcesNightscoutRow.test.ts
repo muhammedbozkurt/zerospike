@@ -51,4 +51,19 @@ const src = readFileSync(join(ROOT, "app/settings/data-sources.tsx"), "utf8").re
   );
 }
 
+// The connection panel only renders for a connected or form-open state, behind the flag.
+{
+  assert.ok(
+    /\{profileId && nsEnabled && \(mode === "nightscout" \|\| nsFormOpen\) \? \(\s*<NightscoutPanel/.test(src),
+    "panel kapisi: profileId && nsEnabled && (mode === nightscout || nsFormOpen)"
+  );
+}
+
+// Screen readers hear that the locked row opens the Pro page.
+{
+  assert.ok(/lockedHint: t\("nightscout\.lockedHint"\)/.test(src), "kilitli ipucu anahtari");
+  assert.ok(/accessibilityHint=\{option\.badge && option\.lockedHint \? option\.lockedHint : option\.hint\}/.test(src), "rozet varken ipucu kilitli metin");
+  assert.ok(!/marginEnd: 4\b/.test(src), "bosluk SPACE tokeni");
+}
+
 console.log("dataSourcesNightscoutRow: OK");

@@ -1839,6 +1839,7 @@ const ar: TranslationSchema = {
     modeLabel: "Nightscout",
     modeHint: "تُضاف قراءات خادم Nightscout الخاص بك إلى سجلك. للقراءة فقط.",
     proTag: "Pro",
+    lockedHint: "مقفل ومتاح مع Pro. يفتح صفحة Pro.",
     intro: "يضيف إلى سجلك قراءات الغلوكوز من خادم Nightscout الخاص بك للقراءة فقط. تنتقل البيانات بين خادمك وهذا الجهاز فقط.",
     urlLabel: "عنوان الخادم",
     urlHint: "يجب أن يبدأ بـ https://",

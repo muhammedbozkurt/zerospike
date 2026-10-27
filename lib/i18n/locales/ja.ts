@@ -1840,6 +1840,7 @@ const ja: TranslationSchema = {
     modeLabel: "Nightscout",
     modeHint: "ご自身のNightscoutサーバーの値を、記録に追加します。読み取り専用です。",
     proTag: "Pro",
+    lockedHint: "ロックされています。Proで利用できます。Proのページが開きます。",
     intro: "ご自身のNightscoutサーバーの血糖値を、読み取り専用で記録に取り込みます。データは、お使いのサーバーとこの端末の間でのみやり取りされます。",
     urlLabel: "サーバーのアドレス",
     urlHint: "https://で始まる必要があります。",
