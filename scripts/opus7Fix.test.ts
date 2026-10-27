@@ -104,30 +104,31 @@ async function main(): Promise<void> {
     at: T(10, sec), mgdl: mg, source: "health", sourceApp: "com.mirror", externalId: ext, isCgm: false,
   });
   const dose = (db: DatabaseSync) => (db.prepare(recentManualSugarSql(false)).all("P", T(-15)) as unknown[]).length;
-  const cgmRows = (db: DatabaseSync) => count(db, "SELECT COUNT(*) AS c FROM sugar_logs WHERE is_cgm = 1");
-
-  console.log("1. reverse order: the mirror arrives before the sensor value");
+  const cgmRows = (db: DatabaseSync) => count(db, `SELECT COUNT(*) AS c FROM sugar_logs WHERE is_cgm = 1 AND logged_at >= '${T(0)}'`);
+  const recent = (db: DatabaseSync) => count(db, `SELECT COUNT(*) AS c FROM sugar_logs WHERE logged_at >= '${T(0)}'`);
+  console.log("1. reverse order: the mirror arrives before the sensor value (nothing is dropped or converted)");
   {
     const a = makeDb();
     await importGlucoseRows(a.host, "P", [mirror(0, 120), sensor(17, 120)], nid, NOW);
-    eq("R6 same batch (mirror 17 s earlier): one row", count(a.db), 1);
-    eq("R6 the row is a sensor row", cgmRows(a.db), 1);
-    eq("R6 dose path empty", dose(a.db), 0);
+    eq("R6 same batch (mirror 17 s earlier): both rows stored", recent(a.db), 2);
+    eq("R6 only the sensor row is a sensor row", cgmRows(a.db), 1);
+    eq("R6 dose path empty (the mirror is a sensor twin)", dose(a.db), 0);
 
     const b = makeDb();
     await importGlucoseRows(b.host, "P", [mirror(0, 120)], nid, NOW);
     eq("R7 mirror stored first, plain row", cgmRows(b.db), 0);
+    eq("R7 before the sensor value arrives it is the only reading", dose(b.db), 1);
     await importGlucoseRows(b.host, "P", [sensor(17, 120)], nid, NOW);
-    eq("R7 sensor arrives later: still one row", count(b.db), 1);
-    eq("R7 that row is now a sensor row", cgmRows(b.db), 1);
-    eq("R7 dose path empty", dose(b.db), 0);
+    eq("R7 sensor arrives later: both rows stored", recent(b.db), 2);
+    eq("R7 the mirror row stays a plain row", (b.db.prepare("SELECT is_cgm AS v FROM sugar_logs WHERE external_id='h1'").get() as { v: number }).v, 0);
+    eq("R7 dose path empty once the sensor value is there", dose(b.db), 0);
     eq("R7 re-import of both adds nothing", (await importGlucoseRows(b.host, "P", [mirror(0, 120), sensor(17, 120)], nid, NOW)), 0);
-    eq("R7 still one row", count(b.db), 1);
+    eq("R7 still two rows", recent(b.db), 2);
 
     const c = makeDb();
     await importGlucoseRows(c.host, "P", [mirror(5, 120)], nid, NOW);
     await importGlucoseRows(c.host, "P", [sensor(0, 121)], nid, NOW);
-    eq("R8 dv 1, mirror 5 s later: one sensor row", cgmRows(c.db) === 1 && count(c.db) === 1, true);
+    eq("R8 dv 1, mirror 5 s later: sensor row and mirror row", cgmRows(c.db) === 1 && recent(c.db) === 2, true);
     eq("R8 dose path empty", dose(c.db), 0);
   }
 
@@ -137,21 +138,31 @@ async function main(): Promise<void> {
     t.db.prepare("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, source_app, external_id, is_cgm) VALUES ('t1','P',120,'fasting','health',?, 'com.mirror','h9',0)").run(T(10, 0));
     await importGlucoseRows(t.host, "P", [sensor(10, 120)], nid, NOW);
     eq("a labelled row stays a hand-read row", (t.db.prepare("SELECT is_cgm AS v FROM sugar_logs WHERE id='t1'").get() as { v: number }).v, 0);
+    eq("and the sensor value is its own row", cgmRows(t.db), 1);
 
     const m = makeDb();
     m.db.prepare("INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, is_cgm) VALUES ('m1','P',120,'unset','manual',?,0)").run(T(10, 0));
     await importGlucoseRows(m.host, "P", [sensor(10, 120)], nid, NOW);
     eq("a manual row is never converted", (m.db.prepare("SELECT is_cgm AS v FROM sugar_logs WHERE id='m1'").get() as { v: number }).v, 0);
+    eq("a typed row is never a sensor twin: it stays in the dose path", dose(m.db), 1);
 
     const far = makeDb();
     await importGlucoseRows(far.host, "P", [mirror(0, 120)], nid, NOW);
     await importGlucoseRows(far.host, "P", [sensor(40, 120)], nid, NOW);
-    eq("a row 40 s away stays its own measurement", cgmRows(far.db), 0);
+    // FIX-N (OPUS-10): within 150 s of a sensor row of another stream an
+    // imported row stays out of the dose path whatever its value; farther it is
+    // its own measurement.
+    eq("a row 40 s away is out of the dose path (value-independent proximity)", dose(far.db), 0);
+    eq("and nothing was converted", cgmRows(far.db), 1);
+    const farther = makeDb();
+    await importGlucoseRows(farther.host, "P", [mirror(0, 120)], nid, NOW);
+    await importGlucoseRows(farther.host, "P", [sensor(200, 120)], nid, NOW);
+    eq("a row 200 s from the sensor row stays its own measurement (dose path)", dose(farther.db), 1);
 
     const meter = makeDb();
     await importGlucoseRows(meter.host, "P", [mirror(0, 120)], nid, NOW);
     await importGlucoseRows(meter.host, "P", [sensor(10, 125)], nid, NOW);
-    eq("a value 5 mg/dL off is not converted", cgmRows(meter.db), 1);
+    eq("a value 5 mg/dL off is out of the dose path too (FIX-N: value-independent)", dose(meter.db), 0);
     eq("and both rows exist", count(meter.db), 2);
   }
 

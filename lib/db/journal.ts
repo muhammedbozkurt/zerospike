@@ -155,8 +155,9 @@ export async function getJournal(
   range?: DateRange,
   options?: {
     excludeCalculatorInjections?: boolean;
-    /** 'exclude' leaves sensor readings out of the feed (see ./journalSql). */
-    cgm?: "include" | "exclude";
+    /** 'exclude' leaves sensor readings out of the feed, 'twins' only their
+     *  non-sensor mirrors (see ./journalSql). */
+    cgm?: "include" | "exclude" | "twins";
     /** One kind only, filtered in SQL before the limit (G15). */
     kind?: JournalKind;
   }

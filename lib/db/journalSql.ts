@@ -1,4 +1,5 @@
 import type { DateRange } from "../insights";
+import { notSensorTwinSql } from "./cgmSql";
 
 /**
  * The journal feed query, kept dependency-free (no expo-sqlite import) so
@@ -69,8 +70,10 @@ export type JournalKind = "glucose" | "meal" | "injection" | "med";
 
 export interface JournalFeedOptions {
   /** 'exclude' leaves sensor readings out (the list never shows them one by
-   *  one); default 'include', which is what reports and exports read. */
-  cgm?: "include" | "exclude";
+   *  one); 'twins' keeps every row except the non-sensor mirrors of a sensor
+   *  stream (manual-mode stats); default 'include', which is what reports and
+   *  exports read. */
+  cgm?: "include" | "exclude" | "twins";
   /** Keep one kind only. Applied in each branch's WHERE, so it is decided
    *  before the outer LIMIT: a screen that filtered the newest N rows in JS
    *  showed "no entries" for a kind the database held (G15). */
@@ -84,7 +87,14 @@ export function journalFeedSql(
 ): string {
   const kind = options.kind;
   const only = (k: JournalKind) => (kind != null && kind !== k ? " AND 0" : "");
-  const notCgm = options.cgm === "exclude" ? " AND s.is_cgm = 0" : "";
+  // A non-sensor row that only mirrors a sensor value (cgmSql notSensorTwinSql)
+  // goes with the sensor rows, or a day of a mirroring app fills the list.
+  const notCgm =
+    options.cgm === "exclude"
+      ? ` AND s.is_cgm = 0 AND ${notSensorTwinSql("s")}`
+      : options.cgm === "twins"
+        ? ` AND (s.is_cgm = 1 OR ${notSensorTwinSql("s")})`
+        : "";
   const bounds = (col: string) =>
     withRange ? ` AND ${col} BETWEEN ? AND ?` : "";
   const notCalculator = excludeCalculatorInjections

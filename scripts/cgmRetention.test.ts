@@ -307,6 +307,22 @@ async function main(): Promise<void> {
     db.close();
   }
 
+  section("L. no non-sensor row is ever deleted, twin or not");
+  {
+    const { db, host } = makeDb();
+    const t = CUTOFF - 2 * DAY;
+    add(db, "p1", t, 120, { source: "nightscout", app: null });
+    add(db, "p1", t + 10_000, 120, { source: "health", app: "com.mirror", isCgm: 0 });
+    add(db, "p1", t + 20_000, 121, { source: "health", app: "com.contour", isCgm: 0 });
+    add(db, "p1", t + 30_000, 120, { source: "manual", app: null, isCgm: 0 });
+    const before = count(db, "is_cgm = 0");
+    const r = await runCgmRetention(host, "p1", NOW);
+    eq("the sensor row folded", r.folded, 1);
+    eq("every non-sensor row is still there", count(db, "is_cgm = 0"), before);
+    eq("no sensor row is left in the folded span", count(db, "is_cgm = 1"), 0);
+    db.close();
+  }
+
   section("K. the wiring");
   {
     const logsSrc = readFileSync(join(import.meta.dirname, "..", "lib", "db", "logs.ts"), "utf8");

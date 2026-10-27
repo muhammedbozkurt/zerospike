@@ -39,6 +39,7 @@ db.exec(`CREATE TABLE sugar_logs (
   logged_at TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]', healthkit_uuid TEXT);`);
 for (const col of V29_COLUMNS) db.exec(`ALTER TABLE sugar_logs ADD COLUMN ${col.name} ${col.type};`);
 db.exec("CREATE INDEX idx_sugar_profile ON sugar_logs (profile_id, logged_at DESC);");
+db.exec("CREATE TABLE meal_logs (id TEXT PRIMARY KEY NOT NULL, sugar_log_id TEXT);");
 for (const stmt of V29_INDEXES) db.exec(stmt);
 
 const insert = db.prepare(

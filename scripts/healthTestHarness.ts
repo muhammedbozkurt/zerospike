@@ -233,7 +233,7 @@ const dbLogs = {
   },
   getImportedSourceHistory: async (profileId: string, source: string, sourceApp: string | null) => {
     const mine = rows.sugar.filter((r) => r.profile_id === profileId && r.source === source && (r.source_app ?? null) === sourceApp);
-    return { timesMs: mine.map((r) => Date.parse(r.logged_at)), knownCgm: mine.some((r) => r.is_cgm === 1) };
+    return { timesMs: mine.map((r) => Date.parse(r.logged_at)), knownCgm: mine.filter((r) => r.is_cgm === 1).length >= 12 };
   },
   listHealthBackfillRows: async () => [],
   listHealthMirrorRows: async () => [],

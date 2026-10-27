@@ -4,8 +4,9 @@
  * (count, mean, min, max). Dependency-free (no expo-sqlite) so
  * scripts/cgmRetention.test.ts runs the real SQL against node:sqlite.
  *
- * Hand-typed readings are never touched: every statement shares V30_FOLDABLE
- * (imported sensor rows with the source's id and no user label). The fold and the delete of one slice
+ * Hand-typed readings are never touched: every sensor statement shares
+ * V30_FOLDABLE (imported sensor rows with the source's id and no user label).
+ * No non-sensor row is ever deleted. The fold and the delete of one slice
  * share a transaction, so a crash leaves either both or neither, and a re-run
  * finds nothing left to fold (idempotent).
  */
