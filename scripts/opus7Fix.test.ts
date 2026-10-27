@@ -173,7 +173,7 @@ async function main(): Promise<void> {
       "data-sources reads the flag from sourceAvailability",
       /import \{ nightscoutAvailable as nightscoutEnabled \} from "\.\.\/\.\.\/lib\/cgm\/sourceAvailability"/.test(src)
     );
-    ok("and combines it with the secure store", /nsAvailable = nightscoutEnabled\(\) && nightscoutAvailable\(\)/.test(src));
+    ok("row visibility follows the flag only; the secure store is checked on tap", /nsEnabled = nightscoutEnabled\(\);/.test(src) && !/nsEnabled = [^;]*nightscoutAvailable/.test(src));
   }
 
   console.log("4. profile delete clears Nightscout and waits for idle before the delete");

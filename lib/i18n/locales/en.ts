@@ -1840,6 +1840,7 @@ const en: TranslationSchema = {
     modeLabel: "Nightscout",
     modeHint: "Readings from your own Nightscout server are added to your journal. Read only.",
     proTag: "Pro",
+    lockedHint: "Locked, included with Pro. Opens the Pro page.",
     intro: "Adds the glucose readings from your own Nightscout server to your journal, read only. Data goes only between your server and this device.",
     urlLabel: "Server address",
     urlHint: "Must start with https://",

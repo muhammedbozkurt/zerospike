@@ -1843,6 +1843,7 @@ const pt: TranslationSchema = {
     modeLabel: "Nightscout",
     modeHint: "As medições do seu próprio servidor Nightscout são adicionadas ao seu diário. Somente leitura.",
     proTag: "Pro",
+    lockedHint: "Bloqueado, incluído no Pro. Abre a página do Pro.",
     intro: "Adiciona ao seu diário, somente por leitura, as medições de glicose do seu próprio servidor Nightscout. Os dados trafegam apenas entre o seu servidor e este dispositivo.",
     urlLabel: "Endereço do servidor",
     urlHint: "Deve começar com https://",

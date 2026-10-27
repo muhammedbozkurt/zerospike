@@ -1845,6 +1845,7 @@ const de: TranslationSchema = {
     modeLabel: "Nightscout",
     modeHint: "Werte von Ihrem eigenen Nightscout-Server werden in Ihr Tagebuch übernommen. Es wird nur gelesen.",
     proTag: "Pro",
+    lockedHint: "Gesperrt, mit Pro verfügbar. Öffnet die Pro-Seite.",
     intro: "Übernimmt die Glukosewerte Ihres eigenen Nightscout-Servers ausschließlich lesend in Ihr Tagebuch. Die Daten laufen nur zwischen Ihrem Server und diesem Gerät.",
     urlLabel: "Serveradresse",
     urlHint: "Muss mit https:// beginnen.",

@@ -103,7 +103,7 @@ must("components/Feedback.tsx", "announceForAccessibility", "toast is announced"
 const ds = "app/settings/data-sources.tsx";
 must(ds, 'accessibilityRole="radio"', "mode cards are radios");
 must(ds, "accessibilityState={{ selected }}", "mode card state");
-must(ds, "accessibilityHint={option.hint}", "mode card hint");
+must(ds, "accessibilityHint={option.badge && option.lockedHint ? option.lockedHint : option.hint}", "mode card hint");
 must(ds, 'accessibilityRole="radiogroup"', "mode cards are grouped");
 must(ds, "announceForAccessibility(message.text)", "test and connect result is announced on iOS too");
 const field = slice("components/ui.tsx", "export const Field", "interface SegmentedProps");

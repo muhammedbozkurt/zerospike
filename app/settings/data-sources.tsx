@@ -44,6 +44,7 @@ interface ModeOption {
   label: string;
   hint: string;
   badge?: string;
+  lockedHint?: string;
 }
 
 function ModeCard({
@@ -61,7 +62,7 @@ function ModeCard({
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       accessibilityLabel={option.badge ? `${option.label}, ${option.badge}` : option.label}
-      accessibilityHint={option.hint}
+      accessibilityHint={option.badge && option.lockedHint ? option.lockedHint : option.hint}
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -79,9 +80,12 @@ function ModeCard({
             {option.label}
           </Txt>
           {option.badge ? (
-            <Txt kind="caption" tone="accent" style={{ marginStart: SPACE.sm, fontWeight: "600" }}>
-              {option.badge}
-            </Txt>
+            <View style={{ flexDirection: "row", alignItems: "center", marginStart: SPACE.sm }}>
+              <Ionicons name="lock-closed" size={12} color={THEME.accent} style={{ marginEnd: SPACE.xs }} />
+              <Txt kind="caption" tone="accent" style={{ fontWeight: "600" }}>
+                {option.badge}
+              </Txt>
+            </View>
           ) : null}
         </View>
         <Txt kind="caption" tone="muted" style={{ marginTop: 2 }}>
@@ -359,7 +363,7 @@ export default function DataSourcesScreen() {
   const [mode, setMode] = useState<CgmMode>("manual");
   const [detected, setDetected] = useState<boolean | null>(null);
   const [nsFormOpen, setNsFormOpen] = useState(false);
-  const nsAvailable = nightscoutEnabled() && nightscoutAvailable();
+  const nsEnabled = nightscoutEnabled();
 
   const refresh = useCallback(async () => {
     if (!profileId) return;
@@ -391,14 +395,16 @@ export default function DataSourcesScreen() {
           },
         ]
       : []),
-    // Without the build flag or the secure store (an older binary) the row is not offered at all.
-    ...(nsAvailable
+    // Visibility follows the build flag only. The secure store (missing on an older binary) is
+    // checked on tap, so the row never silently disappears.
+    ...(nsEnabled
       ? [
           {
             mode: "nightscout" as const,
             label: t("nightscout.modeLabel"),
             hint: t("nightscout.modeHint"),
             badge: nightscoutAllowed(isProUser) ? undefined : t("nightscout.proTag"),
+            lockedHint: t("nightscout.lockedHint"),
           },
         ]
       : []),
@@ -470,6 +476,10 @@ export default function DataSourcesScreen() {
         router.push({ pathname: "/paywall", params: { reason: "health" } });
         return;
       }
+      if (!nightscoutAvailable()) {
+        toast(t("nightscout.errUnavailable"), "info");
+        return;
+      }
       if (mode !== "nightscout") setNsFormOpen(true);
       return;
     }
@@ -501,7 +511,7 @@ export default function DataSourcesScreen() {
         ))}
       </View>
 
-      {profileId && nsAvailable && (mode === "nightscout" || nsFormOpen) ? (
+      {profileId && nsEnabled && (mode === "nightscout" || nsFormOpen) ? (
         <NightscoutPanel
           profileId={profileId}
           connected={mode === "nightscout"}
