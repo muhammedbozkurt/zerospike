@@ -46,7 +46,8 @@ const {
   validateAllowlist,
   loadAllowlist,
   buildAllMatcher,
-  hasGlucoseContext,
+  contextOk,
+  googleDisclosureSpans,
 } = require("./regRules");
 
 function scanLocaleEntries(locale, entries, opts = {}) {
@@ -55,10 +56,10 @@ function scanLocaleEntries(locale, entries, opts = {}) {
   const exemptions = opts.exemptions || KEY_EXEMPTIONS;
   const substringMode = SUBSTRING_LOCALES.has(locale);
   const allowAnchors = validateAllowlist(allowlist);
-  const matchers = patterns.map(({ pattern, requiresContext, except }) => ({
-    pattern,
-    requiresContext: !!requiresContext,
-    all: buildAllMatcher(pattern, substringMode, { locale, except }),
+  const matchers = patterns.map((entry) => ({
+    pattern: entry.pattern,
+    entry,
+    all: buildAllMatcher(entry.pattern, substringMode, { locale, except: entry.except }),
   }));
   const findings = [];
   let excused = 0;
@@ -66,10 +67,10 @@ function scanLocaleEntries(locale, entries, opts = {}) {
     const allowSpans = allowAnchors.has(`${locale}.${key}`)
       ? anchorSpans(locale, value, allowAnchors.get(`${locale}.${key}`))
       : [];
-    for (const { pattern, requiresContext, all } of matchers) {
+    for (const { pattern, entry, all } of matchers) {
       const hits = all(value);
       if (hits.length === 0) continue;
-      if (requiresContext && !hasGlucoseContext(value, locale)) continue;
+      if (!contextOk(entry, value, locale)) continue;
       for (const { index, length } of hits) {
         if (insideSpans(allowSpans, index, length) || isKeyExempt(exemptions, locale, key, value, index, length)) {
           excused++;
@@ -232,10 +233,10 @@ function scanStore(allowlist, findings) {
   const anchorsByFile = loadStoreAnchors(allowlist);
   const matchers = LOCALES.map((locale) => ({
     locale,
-    list: (PATTERNS[locale] || []).map(({ pattern, requiresContext, except }) => ({
-      pattern,
-      requiresContext: !!requiresContext,
-      all: buildAllMatcher(pattern, SUBSTRING_LOCALES.has(locale), { locale, except }),
+    list: (PATTERNS[locale] || []).map((entry) => ({
+      pattern: entry.pattern,
+      entry,
+      all: buildAllMatcher(entry.pattern, SUBSTRING_LOCALES.has(locale), { locale, except: entry.except }),
     })),
   }));
   let excused = 0;
@@ -249,14 +250,15 @@ function scanStore(allowlist, findings) {
     const lines = fs.readFileSync(abs, "utf8").split(/\r?\n/);
     lines.forEach((line, i) => {
       const seen = new Set();
+      const disclosure = googleDisclosureSpans(own, line);
       for (const { locale, list } of ordered) {
-        for (const { pattern, requiresContext, all } of list) {
+        for (const { pattern, entry, all } of list) {
           for (const { index, length } of all(line)) {
             const span = `${index}:${length}`;
             if (seen.has(span)) continue;
-            if (requiresContext && !hasGlucoseContext(line, locale)) continue;
+            if (!contextOk(entry, line, locale)) continue;
             seen.add(span);
-            if (insideAnchor(anchors, line, index, length)) {
+            if (insideAnchor(anchors, line, index, length) || insideSpans(disclosure, index, length)) {
               excused++;
               continue;
             }
