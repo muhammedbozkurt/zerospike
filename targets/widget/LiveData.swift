@@ -73,7 +73,7 @@ struct LiveData: Codable {
   /// decodes and the memberwise initializer keeps working; nil reads as manual.
   var mode: String?
 
-  /// The newest SENSOR reading with its trend and age. Present only in a sensor
+  /// The newest SENSOR reading with its age. Present only in a sensor
   /// mode; read it through `activeCgm`. Same decode-compatibility reasoning as
   /// `mode`.
   var cgm: Cgm?
@@ -81,7 +81,7 @@ struct LiveData: Codable {
   struct Cgm: Codable {
     let mgdl: Double
     let at: Double
-    /// "up2" | "up" | "up45" | "flat" | "down45" | "down" | "down2", or nil when there is no arrow.
+    /// Always nil: the app sends no trend and no surface draws an arrow.
     let trend: String?
     let ageMin: Double?
     /// The value pre-formatted in the display unit and the active locale.
@@ -232,7 +232,7 @@ extension LiveData {
 }
 
 extension LiveData.Cgm {
-  /// Older than this the value is drawn faded and without an arrow.
+  /// Older than this the value is drawn faded.
   static let staleAfterMinutes = 20
 
   func ageMinutes(now: Date) -> Int {
@@ -243,25 +243,8 @@ extension LiveData.Cgm {
     ageMinutes(now: now) > Self.staleAfterMinutes
   }
 
-  /// Trend arrow, empty once the value is stale. Same glyphs as
-  /// cgmTrendGlyph in lib/services/liveDataCgm.ts.
-  func arrow(now: Date) -> String {
-    if isStale(now: now) { return "" }
-    switch trend {
-    case "up2": return "↑↑"
-    case "up": return "↑"
-    case "up45": return "↗"
-    case "flat": return "→"
-    case "down45": return "↘"
-    case "down": return "↓"
-    case "down2": return "↓↓"
-    default: return ""
-    }
-  }
-
   func readingText(now: Date) -> String {
-    let glyph = arrow(now: now)
-    return glyph.isEmpty ? display : "\(display) \(glyph)"
+    display
   }
 
   /// "4 dk önce" (or "4 dk" when `short`), hand-composed from the app's own

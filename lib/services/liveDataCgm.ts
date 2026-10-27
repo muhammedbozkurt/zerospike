@@ -38,9 +38,6 @@ export interface CgmReading {
 /** Older than this the reading is drawn stale (faded). */
 export const CGM_STALE_MIN = 20;
 
-/** How many of the newest sensor rows are loaded for the snapshot. */
-export const CGM_RECENT_LIMIT = 30;
-
 export function isCgmStale(ageMin: number): boolean {
   return ageMin > CGM_STALE_MIN;
 }
@@ -82,14 +79,14 @@ export function cgmLiveFields(
   return cgm ? { mode, cgm } : { mode };
 }
 
-/** Newest sensor rows of a profile, newest first. Reads idx_sugar_cgm. */
+/** Newest sensor row of a profile (at most one). Reads idx_sugar_cgm. */
 export async function loadCgmReadings(profileId: string): Promise<CgmReading[]> {
   const { getDb } = await import("../db/index");
   const db = await getDb();
   const rows = await db.getAllAsync<{ glucose_level_mgdl: number; logged_at: string }>(
     `SELECT glucose_level_mgdl, logged_at FROM sugar_logs
-      WHERE profile_id = ? AND is_cgm = 1 ORDER BY logged_at DESC LIMIT ?;`,
-    [profileId, CGM_RECENT_LIMIT]
+      WHERE profile_id = ? AND is_cgm = 1 ORDER BY logged_at DESC LIMIT 1;`,
+    [profileId]
   );
   return rows.map((r) => ({
     at: new Date(r.logged_at).getTime(),

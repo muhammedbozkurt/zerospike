@@ -825,9 +825,9 @@ const it: TranslationSchema = {
     change: "Modifica",
     msgDexcom: "Attivi nell'app Dexcom la condivisione con {{store}}. Le letture arrivano qui con un ritardo di circa 3 ore.",
     msgLibre: "Al momento non esiste un percorso verificato con cui le app Libre scrivano le letture in {{store}}.",
-    msgOther: "Se l'app del suo sensore scrive le letture in {{store}}, appariranno qui. In caso contrario, può continuare a registrare le sue misurazioni manualmente.",
+    msgOther: "Se l'app del Suo sensore scrive le letture in {{store}}, appariranno qui. In caso contrario, può continuare a registrare le Sue misurazioni manualmente.",
     nightscoutLine: "Se ha un proprio server Nightscout, può usare l'opzione Nightscout.",
-    manualLine: "Può continuare a registrare le sue misurazioni manualmente.",
+    manualLine: "Può continuare a registrare le Sue misurazioni manualmente.",
   },
   cgmCurve: {
     hours: "{{n}} h",

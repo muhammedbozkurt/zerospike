@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Pressable, View } from "react-native";
+import { AccessibilityInfo, Platform, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
@@ -31,7 +31,7 @@ export function CgmBrandNote({
   return (
     <View style={{ marginTop: SPACE.md }}>
       {open ? (
-        <View accessibilityRole="radiogroup">
+        <View accessibilityRole="radiogroup" accessibilityLabel={t("cgmBrand.question")}>
           <Txt kind="body" style={{ fontWeight: "600", marginBottom: SPACE.sm }}>
             {t("cgmBrand.question")}
           </Txt>
@@ -46,7 +46,16 @@ export function CgmBrandNote({
                 onPress={() => {
                   hapticSelect();
                   setEditing(false);
-                  if (b !== brand) onChange(b);
+                  if (b !== brand) {
+                    onChange(b);
+                    if (Platform.OS === "ios") {
+                      AccessibilityInfo.announceForAccessibility(
+                        cgmBrandMessageKeys(b, nightscout)
+                          .map((key) => t(key, { store }))
+                          .join(" ")
+                      );
+                    }
+                  }
                 }}
                 style={{
                   flexDirection: "row",
@@ -80,7 +89,7 @@ export function CgmBrandNote({
           </Txt>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t("cgmBrand.change")}
+            accessibilityLabel={`${t("cgmBrand.change")}: ${t(`cgmBrand.${brand}`)}`}
             onPress={() => setEditing(true)}
             hitSlop={8}
             style={{ minHeight: 44, justifyContent: "center", marginStart: SPACE.md }}
@@ -91,13 +100,15 @@ export function CgmBrandNote({
           </Pressable>
         </View>
       )}
-      {brand != null && !open
-        ? cgmBrandMessageKeys(brand, nightscout).map((key) => (
-            <Txt key={key} kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>
-              {t(key, { store })}
-            </Txt>
-          ))
-        : null}
+      <View accessibilityLiveRegion="polite">
+        {brand != null && !open
+          ? cgmBrandMessageKeys(brand, nightscout).map((key) => (
+              <Txt key={key} kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>
+                {t(key, { store })}
+              </Txt>
+            ))
+          : null}
+      </View>
     </View>
   );
 }

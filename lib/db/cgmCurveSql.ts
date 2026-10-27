@@ -15,9 +15,9 @@ import { recentDayRanges } from "../cgm/curve";
 export const CGM_WINDOW_SQL =
   "SELECT logged_at, glucose_level_mgdl, is_cgm FROM sugar_logs WHERE profile_id = ? AND logged_at >= ? AND logged_at <= ? ORDER BY logged_at;";
 
-/** Placeholders: profile_id. The newest sensor readings, newest first. */
+/** Placeholders: profile_id. The newest sensor reading. */
 export const CGM_LATEST_SQL =
-  "SELECT logged_at, glucose_level_mgdl FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 ORDER BY logged_at DESC LIMIT 6;";
+  "SELECT logged_at, glucose_level_mgdl FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 ORDER BY logged_at DESC LIMIT 1;";
 
 /** Placeholders: low, high, profile_id, since (ISO), until (ISO). */
 export const CGM_RANGE_STATS_SQL =

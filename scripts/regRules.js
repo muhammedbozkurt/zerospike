@@ -14,12 +14,14 @@ const LOCALES = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
 // substrings instead of trying to apply \p{L} boundary lookarounds.
 const SUBSTRING_LOCALES = new Set(["ar", "ja"]);
 
-// Alert/warning vocabulary per language. A "notif*" style pattern fires on
-// glucose wording OR on one of the NOTIF_CONTEXT terms; "alarm" is left out
-// there on purpose, because the reminder feature rings a real alarm and says
-// "switch to a notification" (store-legal, not a glucose claim). An
-// `onlyContext` pattern ("threshold*") fires only next to one of the wider
-// ALERT_TERMS, never on glucose wording alone.
+// Alert/warning vocabulary per language. A "notif*" style pattern is an
+// `onlyContext` pattern: it fires only next to one of the NOTIF_CONTEXT terms,
+// never on glucose wording alone; "alarm" is left out there on purpose, because
+// the reminder feature rings a real alarm and says "switch to a notification"
+// (store-legal, not a glucose claim). Notification wording that names a glucose
+// event ("notification if your blood sugar drops") is caught by the separate
+// requiresContext phrases ("notification if"). "threshold*" is an
+// `onlyContext` pattern too, against the wider ALERT_TERMS.
 const NOTIF_CONTEXT = {
   en: ["alert*", "warn*"],
   tr: ["uyarı*", "uyarır*", "uyaran*"],
@@ -41,6 +43,14 @@ const ALERT_TERMS = {
   pt: ["alert*", "alarm*", "avis*"],
   ar: ["تنبيه", "إنذار", "تحذير"],
   ja: ["アラーム", "アラート", "警報", "警告"],
+};
+
+// Phrases that stay allowed next to a monitoring stem (the CGM device
+// category, a Pro-label code description): a pattern entry with `allow` is skipped when every match of its stem sits
+// inside one of these phrases (see contextOk).
+const DEVICE_ALLOW = {
+  en: ["continuous glucose monitor", "continuous glucose monitors"],
+  tr: ["paywall kapılarını izler"],
 };
 
 // Turkish inflects by suffix and its dotted/dotless I does not fold under JS
@@ -106,6 +116,10 @@ const PATTERNS = {
     { pattern: "notified when", requiresContext: true },
     { pattern: "notifications when", requiresContext: true },
     { pattern: "notification when", requiresContext: true },
+    { pattern: "notification if", requiresContext: true },
+    { pattern: "notifications if", requiresContext: true },
+    { pattern: "monitor*", requiresContext: true, allow: DEVICE_ALLOW.en },
+    { pattern: "trend analy*", requiresContext: true },
     { pattern: "notifications for low", requiresContext: true },
     { pattern: "notifications for high", requiresContext: true },
     { pattern: "monitors your" },
@@ -218,6 +232,9 @@ const PATTERNS = {
     { pattern: "bildirim gönderir", requiresContext: true },
     { pattern: "bildirim alırsınız", requiresContext: true },
     { pattern: "bildirim gelir", requiresContext: true },
+    { pattern: "izle*", requiresContext: true, allow: DEVICE_ALLOW.tr },
+    { pattern: "trend analiz*", requiresContext: true },
+    { pattern: "eğilim analiz*", requiresContext: true },
     { pattern: "sizi izler" },
     { pattern: "şekerinizi izler" },
     { pattern: "glukozunuzu izler" },
@@ -313,6 +330,12 @@ const PATTERNS = {
     { pattern: "Benachrichtigungen bei", requiresContext: true },
     { pattern: "Benachrichtigung, wenn", requiresContext: true },
     { pattern: "Benachrichtigungen, wenn", requiresContext: true },
+    { pattern: "Benachrichtigung, falls", requiresContext: true },
+    { pattern: "Benachrichtigungen, falls", requiresContext: true },
+    { pattern: "überwach*", requiresContext: true },
+    { pattern: "Trendanalyse*", requiresContext: true },
+    { pattern: "Trend-Analyse*", requiresContext: true },
+    { pattern: "Trend Analyse*", requiresContext: true },
     { pattern: "überwacht Ihre" },
     { pattern: "überwacht Sie" },
     { pattern: "überwachen Ihre" },
@@ -398,6 +421,13 @@ const PATTERNS = {
     { pattern: "notification quand", requiresContext: true },
     { pattern: "notification lorsque", requiresContext: true },
     { pattern: "notifications lorsque", requiresContext: true },
+    { pattern: "notification si", requiresContext: true },
+    { pattern: "notifications si", requiresContext: true },
+    { pattern: "surveill*", requiresContext: true },
+    { pattern: "analyse de tendance*", requiresContext: true },
+    { pattern: "analyse des tendances", requiresContext: true },
+    { pattern: "analyse de la tendance", requiresContext: true },
+    { pattern: "analyse de vos tendances", requiresContext: true },
     { pattern: "surveille votre" },
     { pattern: "surveille vos" },
     { pattern: "surveillance de la glycémie" },
@@ -475,6 +505,13 @@ const PATTERNS = {
     { pattern: "notificaciones cuando", requiresContext: true },
     { pattern: "notificación si", requiresContext: true },
     { pattern: "notificaciones si", requiresContext: true },
+    { pattern: "monitoriz*", requiresContext: true },
+    { pattern: "monitore*", requiresContext: true },
+    { pattern: "monitoric*", requiresContext: true },
+    { pattern: "análisis de tendencia*", requiresContext: true },
+    { pattern: "análisis de las tendencias", requiresContext: true },
+    { pattern: "análisis de la tendencia", requiresContext: true },
+    { pattern: "análisis de sus tendencias", requiresContext: true },
     { pattern: "monitorea su" },
     { pattern: "monitorea sus" },
     { pattern: "monitoriza su" },
@@ -550,6 +587,15 @@ const PATTERNS = {
     { pattern: "notifiche quando", requiresContext: true },
     { pattern: "notifica se", requiresContext: true },
     { pattern: "notifiche se", requiresContext: true },
+    { pattern: "monitora*", requiresContext: true },
+    { pattern: "monitori la", requiresContext: true },
+    { pattern: "monitori il", requiresContext: true },
+    { pattern: "analisi delle tendenze", requiresContext: true },
+    { pattern: "analisi di tendenz*", requiresContext: true },
+    { pattern: "analisi della tendenza", requiresContext: true },
+    { pattern: "analisi del trend", requiresContext: true },
+    { pattern: "analisi dei trend", requiresContext: true },
+    { pattern: "analisi dei Suoi trend", requiresContext: true },
     { pattern: "monitora la Sua" },
     { pattern: "monitora il Suo" },
     { pattern: "monitoraggio del glucosio" },
@@ -617,6 +663,13 @@ const PATTERNS = {
     { pattern: "notificações quando", requiresContext: true },
     { pattern: "notificação se", requiresContext: true },
     { pattern: "notificações se", requiresContext: true },
+    { pattern: "monitora*", requiresContext: true },
+    { pattern: "monitoriz*", requiresContext: true },
+    { pattern: "monitore*", requiresContext: true },
+    { pattern: "análise de tendência*", requiresContext: true },
+    { pattern: "análise das tendências", requiresContext: true },
+    { pattern: "análise da tendência", requiresContext: true },
+    { pattern: "análise das suas tendências", requiresContext: true },
     { pattern: "monitora sua" },
     { pattern: "monitora suas" },
     { pattern: "monitoramento de glicose" },
@@ -673,6 +726,9 @@ const PATTERNS = {
     { pattern: "يخطرك", requiresContext: true },
     { pattern: "إشعار عند", requiresContext: true },
     { pattern: "إشعارات عند", requiresContext: true },
+    { pattern: "تحليل الاتجاه" },
+    { pattern: "تحليل التوجه" },
+    { pattern: "تحليل الترند" },
     { pattern: "يراقب", requiresContext: true },
     { pattern: "مراقبة الجلوكوز" },
     { pattern: "مراقبة السكر" },
@@ -723,6 +779,9 @@ const PATTERNS = {
     { pattern: "通知が届", requiresContext: true },
     { pattern: "モニタリング" },
     { pattern: "を監視" },
+    { pattern: "トレンド分析" },
+    { pattern: "傾向分析" },
+    { pattern: "トレンド解析" },
     { pattern: "予測", requiresContext: true },
     { pattern: "予報", requiresContext: true },
     { pattern: "即時", requiresContext: true },
@@ -1076,6 +1135,18 @@ function termMatchers(terms, locale) {
   return list;
 }
 
+function onlyInsideAllowed(entry, text, locale) {
+  const hits = buildAllMatcher(entry.pattern, SUBSTRING_LOCALES.has(locale), { locale, except: entry.except })(text);
+  if (hits.length === 0) return false;
+  const folded = foldTr(locale, text);
+  const spans = [];
+  for (const phrase of entry.allow) {
+    const re = new RegExp(escapeRegExp(foldTr(locale, phrase)) + "(?![\\p{L}\\p{N}_])", "giu");
+    for (const m of folded.matchAll(re)) spans.push({ index: m.index, length: m[0].length });
+  }
+  return hits.every((h) => spans.some((sp) => h.index >= sp.index && h.index + h.length <= sp.index + sp.length));
+}
+
 // Whether a pattern entry's context condition holds for `text`:
 //   requiresContext: glucose wording (or, with orContext, one of those terms)
 //   onlyContext:     one of those terms; glucose wording alone is not enough
@@ -1085,6 +1156,7 @@ function termMatchers(terms, locale) {
 function contextOk(entry, text, locale) {
   const { requiresContext, onlyContext, orContext } = entry;
   const anyTerm = (terms) => termMatchers(terms, locale).some((match) => match(text) !== null);
+  if (entry.allow && onlyInsideAllowed(entry, text, locale)) return false;
   if (onlyContext) return anyTerm(onlyContext);
   if (!requiresContext) return true;
   if (hasGlucoseContext(text, locale)) return true;

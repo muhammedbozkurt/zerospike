@@ -160,10 +160,8 @@ for (const f of [
   assert.match(s, /var cgm: Cgm\?/, `${f}: cgm opsiyonel`);
   assert.match(s, /let cgm: String\?/, `${f}: labels.cgm opsiyonel`);
   assert.match(s, /staleAfterMinutes = 20/, `${f}: 20 dk esigi`);
-  for (const [state, glyph] of [["up2", "↑↑"], ["up", "↑"], ["up45", "↗"], ["flat", "→"], ["down45", "↘"], ["down", "↓"], ["down2", "↓↓"]]) {
-    assert.match(s, new RegExp(`case "${state}": return "${glyph}"`), `${f}: ${state} -> ${glyph}`);
-  }
-  assert.match(s, /default: return ""/, `${f}: bilinmeyen durum ok cizmez`);
+  assert.doesNotMatch(s, /[↑↗→↘↓↕⬆⬇➚➘]/, `${f}: Swift kaynaginda ok glifi olmamali`);
+  assert.doesNotMatch(s, /func arrow\(/, `${f}: ok fonksiyonu olmamali`);
   for (const field of ["mgdl", "at", "trend", "ageMin", "display"]) {
     assert.match(s, new RegExp(`struct Cgm: Codable \\{[\\s\\S]*let ${field}: `), `${f}: Cgm.${field}`);
   }
