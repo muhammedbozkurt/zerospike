@@ -28,7 +28,7 @@ export const V29_INDEXES: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_sugar_manual ON sugar_logs (profile_id, logged_at DESC) WHERE is_cgm = 0;`,
 ];
 
-export const V29_SELECT_HEALTH_ROWS = `SELECT id, profile_id, logged_at FROM sugar_logs WHERE source = 'health' ORDER BY profile_id, logged_at;`;
+export const V29_SELECT_HEALTH_ROWS = `SELECT id, profile_id, logged_at, period_tag FROM sugar_logs WHERE source = 'health' ORDER BY profile_id, logged_at;`;
 
 export const V29_BACKFILL_CHUNK_SIZE = 500;
 
@@ -40,9 +40,13 @@ export const V29_RUN_MIN_LENGTH = 36;
 /**
  * Ids of the rows that belong to a long, evenly spaced run per profile. Input
  * must be ordered by profile_id then logged_at (V29_SELECT_HEALTH_ROWS).
+ *
+ * A row the user labelled (period_tag other than 'unset') is theirs, typically a
+ * glucometer reading that sits inside a sensor's run: it is never marked and
+ * does not take part in the run (the sensor rows around it still form theirs).
  */
 export function findCgmRunIds(
-  rows: readonly { id: string; profile_id: string; logged_at: string }[]
+  rows: readonly { id: string; profile_id: string; logged_at: string; period_tag?: string | null }[]
 ): string[] {
   const out: string[] = [];
   let run: string[] = [];
@@ -53,6 +57,7 @@ export function findCgmRunIds(
     run = [];
   };
   for (const r of rows) {
+    if (r.period_tag != null && r.period_tag !== "unset") continue;
     const ms = Date.parse(r.logged_at);
     if (!Number.isFinite(ms)) {
       flush();

@@ -1097,6 +1097,12 @@ const tr = {
     colSite: "Bölge",
     colTags: "Etiketler",
     colUnit: "Birim",
+    hourlyTitle: "Saatlik sensör özeti (bir yıldan eski okumalar)",
+    hourlyNote: "Bir yıldan eski sensör okumaları tek tek listelenmez, saatlik özet olarak saklanır (sayı, ortalama, en düşük, en yüksek).",
+    colReadings: "Okuma sayısı",
+    colMean: "Ortalama",
+    colMin: "En düşük",
+    colMax: "En yüksek",
   },
   report: {
     summary: "Özet",

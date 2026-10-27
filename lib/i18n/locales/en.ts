@@ -1099,6 +1099,12 @@ const en: TranslationSchema = {
     colSite: "Site",
     colTags: "Tags",
     colUnit: "Unit",
+    hourlyTitle: "Hourly sensor summary (readings older than a year)",
+    hourlyNote: "Sensor readings older than a year are not listed one by one. They are kept as hourly summaries (count, average, lowest, highest).",
+    colReadings: "Readings",
+    colMean: "Average",
+    colMin: "Lowest",
+    colMax: "Highest",
   },
   report: {
     summary: "Summary",

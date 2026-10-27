@@ -1099,6 +1099,12 @@ const pt: TranslationSchema = {
     colSite: "Local",
     colTags: "Etiquetas",
     colUnit: "Unidade",
+    hourlyTitle: "Resumo por hora do sensor (leituras com mais de um ano)",
+    hourlyNote: "As leituras do sensor com mais de um ano não são listadas uma a uma. Ficam guardadas como resumos por hora (quantidade, média, mínimo, máximo).",
+    colReadings: "Leituras",
+    colMean: "Média",
+    colMin: "Mínimo",
+    colMax: "Máximo",
   },
   report: {
     summary: "Resumo",

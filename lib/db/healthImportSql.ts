@@ -62,6 +62,30 @@ export const SAME_READING_TOLERANCE_MGDL = 1;
 export const CGM_THINNING_MS = 270_000;
 /** A sample dated further ahead than this (clock skew) is rejected. */
 export const IMPORT_FUTURE_SLACK_MS = 5 * 60_000;
+/** A rejected future sample is worth reading again only when it is this close
+ *  to now (a few minutes of clock skew, a timezone slip); one further out would
+ *  hold the sync cursor back for good. */
+export const IMPORT_FUTURE_RETRY_MAX_MS = 24 * 60 * 60_000;
+/** A legacy untagged non-sensor row this close in time and equal in value is
+ *  the same reading a sensor candidate now describes (take-over). */
+const TAKE_OVER_LEGACY_MS = 60_000;
+
+/**
+ * True when some row was refused only for being dated ahead of the clock (more
+ * than the slack, less than a day). The caller then keeps its read cursor where
+ * it is, so the next sync reads the row again once its time has come.
+ */
+export function hasRetryableFutureRow(
+  rows: readonly { at: string }[],
+  nowMs: number = Date.now()
+): boolean {
+  for (const r of rows) {
+    const ms = Date.parse(r.at);
+    if (!Number.isFinite(ms)) continue;
+    if (ms > nowMs + IMPORT_FUTURE_SLACK_MS && ms <= nowMs + IMPORT_FUTURE_RETRY_MAX_MS) return true;
+  }
+  return false;
+}
 /** Sensor readings outside this range are not sensor values (LOW/HIGH codes). */
 export const CGM_MGDL_MIN = 20;
 export const CGM_MGDL_MAX = 600;
@@ -88,6 +112,9 @@ export interface PlanExisting {
   sourceApp: string | null;
   externalId: string | null;
   isCgm: boolean;
+  /** True when the user labelled the row (period_tag other than 'unset'): such a
+   *  row is theirs and never becomes a sensor reading. */
+  tagged?: boolean;
 }
 
 /** A reading the user deleted or corrected (schema v28). */
@@ -115,6 +142,19 @@ function lowerBound(sortedMs: number[], target: number): number {
   return lo;
 }
 
+/**
+ * Whether a stored id-less row may be taken over by candidate c. A sensor
+ * candidate never turns a labelled row into a sensor reading, and a plain
+ * (non-sensor) stored row only when it is the very same value a minute apart at
+ * most; a sensor row is taken over by a sensor candidate, a plain row by a plain
+ * one.
+ */
+function canTakeOver(c: PlanCandidate, e: PlanExisting, dt: number, dv: number): boolean {
+  if (e.isCgm === c.isCgm) return true;
+  if (!c.isCgm) return false;
+  return !e.tagged && dv === 0 && dt <= TAKE_OVER_LEGACY_MS;
+}
+
 function streamKey(source: string, sourceApp: string | null): string {
   return `${source}\u0000${sourceApp ?? ""}`;
 }
@@ -132,10 +172,15 @@ function streamKey(source: string, sourceApp: string | null): string {
  *     sensor reading: inside 150 s and +-1 mg/dL) means the user removed it: skip.
  *  3. An old row of the same source without an external id, within 150 s and
  *     +-1 mg/dL, is the same reading imported before ids existed: take it over
- *     (never a 'manual' row), insert nothing.
+ *     (never a 'manual' row), insert nothing. A sensor candidate takes over a
+ *     sensor row, or a plain untagged row of the very same value a minute
+ *     apart at most; a row the user labelled never becomes a sensor reading.
  *  4. A row of ANOTHER source or app within 150 s and +-1 mg/dL is the same
  *     reading seen twice: skip. This is what keeps a typed reading, or the one
- *     Nightscout already delivered, from appearing twice. First in stays.
+ *     Nightscout already delivered, from appearing twice. First in stays. A
+ *     NON-sensor candidate is never dropped for sitting next to a sensor row:
+ *     a glucometer reading one minute after a sensor value is its own
+ *     measurement.
  *  5. A sensor reading closer than 270 s to a kept reading of the same app is
  *     thinned away (a 1 minute stream becomes about 5 minutes).
  *  6. A NON-sensor reading with the same value within 15 minutes of a
@@ -206,6 +251,7 @@ export function planGlucoseImport(
         e.source === c.source &&
         e.source !== "manual" &&
         (e.sourceApp == null || e.sourceApp === c.sourceApp) &&
+        canTakeOver(c, e, dt, dv) &&
         !owned.has(i) &&
         dt < takeOverDt
       ) {
@@ -214,7 +260,7 @@ export function planGlucoseImport(
         takeOverDt = dt;
         continue;
       }
-      if (tight && streamKey(e.source, e.sourceApp) !== cStream) {
+      if (tight && (c.isCgm || !e.isCgm) && streamKey(e.source, e.sourceApp) !== cStream) {
         skip = true;
         break;
       }
@@ -241,7 +287,7 @@ export function planGlucoseImport(
       if (dt > MAX_WINDOW_MS) break;
       const dv = Math.abs(a.mgdl - c.mgdl);
       const tight = dt <= SAME_READING_WINDOW_MS && dv <= SAME_READING_TOLERANCE_MGDL;
-      if (tight && streamKey(a.source, a.sourceApp) !== cStream) {
+      if (tight && (c.isCgm || !a.isCgm) && streamKey(a.source, a.sourceApp) !== cStream) {
         skip = true;
         break;
       }
@@ -392,6 +438,7 @@ interface ExistingRowSql {
   source_app: string | null;
   external_id: string | null;
   is_cgm: number;
+  period_tag: string;
 }
 
 interface NormalizedRow {
@@ -468,7 +515,7 @@ async function importChunk(
     const from = new Date(fromMs).toISOString();
     const to = new Date(toMs).toISOString();
     const found = await txn.getAllAsync<ExistingRowSql>(
-      `SELECT id, logged_at, glucose_level_mgdl, source, source_app, external_id, is_cgm
+      `SELECT id, logged_at, glucose_level_mgdl, source, source_app, external_id, is_cgm, period_tag
          FROM sugar_logs
         WHERE profile_id = ? AND logged_at BETWEEN ? AND ?;`,
       [profileId, from, to]
@@ -492,13 +539,14 @@ async function importChunk(
     sourceApp: r.source_app,
     externalId: r.external_id,
     isCgm: r.is_cgm === 1,
+    tagged: r.period_tag !== "unset",
   }));
   const plan = planGlucoseImport(rows, existing, tombstones);
 
   for (const o of plan.own) {
     const c = rows[o.candidate];
     await txn.runAsync(
-      `UPDATE sugar_logs SET external_id = ?, source_app = ?, is_cgm = ?
+      `UPDATE OR IGNORE sugar_logs SET external_id = ?, source_app = ?, is_cgm = ?
         WHERE id = ? AND source <> 'manual' AND external_id IS NULL;`,
       [c.externalId, c.sourceApp, c.isCgm ? 1 : 0, o.existingId]
     );
@@ -621,7 +669,11 @@ export async function deleteImportedGlucose(
     const part = ids.slice(i, i + DELETE_BY_ID_CHUNK);
     await host.withExclusiveTransactionAsync(async (txn) => {
       await txn.execAsync(BUSY_TIMEOUT_SQL);
-      // The delete is the first statement (a write, see WRITE_FIRST_CLAMP_FLOOR_SQL);
+      // The marker insert is the first statement (a write, see
+      // WRITE_FIRST_CLAMP_FLOOR_SQL) and tells the v28 delete trigger this is the
+      // source's delete, not the user's: no tombstone. It never outlives the
+      // transaction.
+      await txn.runAsync("INSERT OR IGNORE INTO health_import_source_delete (k) VALUES (1);", []);
       // RETURNING hands back what went, so no count query has to run before it.
       const gone = await txn.getAllAsync<{ id: string }>(
         `DELETE FROM sugar_logs
@@ -631,6 +683,7 @@ export async function deleteImportedGlucose(
         [profileId, source, ...part]
       );
       removed += gone.length;
+      await txn.runAsync("DELETE FROM health_import_source_delete;", []);
     });
   }
   return removed;

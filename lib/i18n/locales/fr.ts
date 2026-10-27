@@ -1099,6 +1099,12 @@ const fr: TranslationSchema = {
     colSite: "Zone",
     colTags: "Étiquettes",
     colUnit: "Unité",
+    hourlyTitle: "Résumé horaire du capteur (mesures de plus d'un an)",
+    hourlyNote: "Les mesures du capteur de plus d'un an ne sont pas listées une par une. Elles sont conservées sous forme de résumés horaires (nombre, moyenne, minimum, maximum).",
+    colReadings: "Mesures",
+    colMean: "Moyenne",
+    colMin: "Minimum",
+    colMax: "Maximum",
   },
   report: {
     summary: "Résumé",

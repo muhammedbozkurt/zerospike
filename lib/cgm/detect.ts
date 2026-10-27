@@ -163,7 +163,14 @@ export function detectCgmSource(
   if (times.length === 0) {
     return { isCgm: false, reason: samples.length > 0 ? "manual" : "none" };
   }
+  // An app that writes each reading several times under one timestamp must not
+  // pass for a dense stream: equal times count once.
   times.sort((a, b) => a - b);
+  let unique = 0;
+  for (let i = 0; i < times.length; i++) {
+    if (i === 0 || times[i] !== times[unique - 1]) times[unique++] = times[i];
+  }
+  times.length = unique;
 
   if (hasSensorCadence(times)) return { isCgm: true, reason: "cadence" };
 

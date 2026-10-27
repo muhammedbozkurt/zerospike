@@ -2,6 +2,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import i18n from "../i18n";
 import { getJournal } from "../db/journal";
+import { countSugarHourly, eachSugarHourlyPage } from "../db/sugarHourly";
 import { currentLang } from "../i18n";
 import type { GlucoseUnit, InsulinType, LogTag, PeriodTag } from "../db/types";
 import { formatGlucose, glucoseUnitLabel } from "../glucose";
@@ -126,7 +127,10 @@ export async function exportLogsCsv(
   const truncation: ExportTruncation | undefined = plan.cut
     ? { limit: CSV_MAX_ROWS, listOnly: false }
     : undefined;
-  if (plan.total === 0) return { ok: false, reason: "noData" };
+  // Sensor readings older than a year live on as hourly summaries (schema v30);
+  // a range that reaches back that far gets them as a second table.
+  const hourlyCount = await countSugarHourly(profileId, span);
+  if (plan.total === 0 && hourlyCount === 0) return { ok: false, reason: "noData" };
 
   // Mode changes must never hide already-logged data (lib/insulinMode): a
   // profile that switched insulin_mode to "none" still gets the insulin/site
@@ -284,9 +288,55 @@ export async function exportLogsCsv(
         append: true,
       }),
     header,
-    footerRows,
+    footerRows: hourlyCount > 0 ? [] : footerRows,
     onProgress,
   });
+
+  if (hourlyCount > 0) {
+    const unitName = glucoseUnitLabel(unit);
+    await FileSystem.writeAsStringAsync(
+      fileUri,
+      "\r\n" +
+        esc(i18n.t("export.hourlyTitle")) +
+        "\r\n" +
+        [
+          i18n.t("export.colDate"),
+          i18n.t("export.colTime"),
+          i18n.t("export.colReadings"),
+          i18n.t("export.colMean"),
+          i18n.t("export.colMin"),
+          i18n.t("export.colMax"),
+          i18n.t("export.colUnit"),
+        ]
+          .map(esc)
+          .join(delim),
+      { encoding: FileSystem.EncodingType.UTF8, append: true }
+    );
+    await eachSugarHourlyPage(profileId, span, async (rows) => {
+      const lines = rows.map((h) => {
+        const { date, time } = fmtDate(h.hour_utc);
+        return [
+          date,
+          time,
+          h.n,
+          formatGlucose(h.mean, unit),
+          formatGlucose(h.min, unit),
+          formatGlucose(h.max, unit),
+          unitName,
+        ]
+          .map(esc)
+          .join(delim);
+      });
+      await FileSystem.writeAsStringAsync(fileUri, "\r\n" + lines.join("\r\n"), {
+        encoding: FileSystem.EncodingType.UTF8,
+        append: true,
+      });
+    });
+    await FileSystem.writeAsStringAsync(fileUri, "\r\n" + footerRows.join("\r\n"), {
+      encoding: FileSystem.EncodingType.UTF8,
+      append: true,
+    });
+  }
 
   if (!(await Sharing.isAvailableAsync())) {
     return { ok: false, reason: "sharingUnavailable" };

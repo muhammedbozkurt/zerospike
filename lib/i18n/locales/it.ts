@@ -1099,6 +1099,12 @@ const it: TranslationSchema = {
     colSite: "Sede",
     colTags: "Etichette",
     colUnit: "Unità",
+    hourlyTitle: "Riepilogo orario del sensore (letture di oltre un anno)",
+    hourlyNote: "Le letture del sensore di oltre un anno non sono elencate una per una. Sono conservate come riepiloghi orari (numero, media, minimo, massimo).",
+    colReadings: "Letture",
+    colMean: "Media",
+    colMin: "Minimo",
+    colMax: "Massimo",
   },
   report: {
     summary: "Riepilogo",

@@ -18,6 +18,12 @@
  *    delete trigger skips readings the floor already covers.
  *
  * Only source = 'health' rows qualify: a manual reading was never imported.
+ *
+ * health_import_source_delete is a one-row marker, inserted and removed inside
+ * the single transaction of deleteImportedGlucose: a delete the SOURCE asked for
+ * (the user removed it in Apple Health or Health Connect, or an app deleted and
+ * re-wrote a sample under a new id) leaves no tombstone, so the re-written
+ * sample is imported again. Only the user's own delete or edit leaves a trace.
  */
 
 export const V28_CREATE: string[] = [
@@ -31,9 +37,13 @@ export const V28_CREATE: string[] = [
     profile_id TEXT PRIMARY KEY NOT NULL,
     floor_at TEXT NOT NULL
   );`,
+  `CREATE TABLE IF NOT EXISTS health_import_source_delete (
+    k INTEGER PRIMARY KEY NOT NULL
+  );`,
   `CREATE TRIGGER IF NOT EXISTS trg_health_tombstone_delete
     AFTER DELETE ON sugar_logs
     WHEN OLD.source = 'health'
+      AND NOT EXISTS (SELECT 1 FROM health_import_source_delete)
       AND NOT EXISTS (
         SELECT 1 FROM health_import_floor f
          WHERE f.profile_id = OLD.profile_id AND f.floor_at >= OLD.logged_at

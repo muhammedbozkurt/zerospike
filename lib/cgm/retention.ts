@@ -4,8 +4,8 @@
  * (count, mean, min, max). Dependency-free (no expo-sqlite) so
  * scripts/cgmRetention.test.ts runs the real SQL against node:sqlite.
  *
- * Hand-typed readings are never touched: every statement filters
- * source <> 'manual' next to is_cgm = 1. The fold and the delete of one slice
+ * Hand-typed readings are never touched: every statement shares V30_FOLDABLE
+ * (imported sensor rows with the source's id and no user label). The fold and the delete of one slice
  * share a transaction, so a crash leaves either both or neither, and a re-run
  * finds nothing left to fold (idempotent).
  */
@@ -16,6 +16,7 @@ import {
   CGM_RETENTION_MIN_INTERVAL_MS,
   CGM_RETENTION_SLICE_DAYS,
   V30_DELETE_SLICE,
+  V30_FOLDABLE,
   V30_DROP_STALE_TOMBSTONES,
   V30_FOLD_SLICE,
   V30_SELECT_OLDEST_RAW,
@@ -80,7 +81,7 @@ export async function runCgmRetention(
       await txn.runAsync(V30_FOLD_SLICE, [profileId, fromIso, toIso]);
       const gone = await txn.getAllAsync<{ c: number }>(
         `SELECT COUNT(*) AS c FROM sugar_logs
-          WHERE profile_id = ? AND is_cgm = 1 AND source <> 'manual'
+          WHERE profile_id = ? AND ${V30_FOLDABLE}
             AND logged_at >= ? AND logged_at < ?;`,
         [profileId, fromIso, toIso]
       );

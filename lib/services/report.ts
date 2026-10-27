@@ -56,6 +56,7 @@ import {
 } from "../cgm/metrics";
 import { basisLine, coverageLine, type BasisSummary } from "../cgm/basisText";
 import { listGlucosePoints, pointAsSugar } from "../db/sugarRange";
+import { countSugarHourly } from "../db/sugarHourly";
 import { isDuringTrial } from "./purchases";
 import { getReportName } from "../reportName";
 import {
@@ -1161,6 +1162,9 @@ export function buildReportDocument(
      *  the figures, the AGP, the timeline and the periods table, and are never
      *  listed one by one: `entries` is read without them. */
     cgmPoints?: GlucosePoint[];
+    /** Set when the range reaches back past a year of sensor readings: they
+     *  exist only as hourly summaries there (listed in the CSV export). */
+    hourlyNote?: string;
   }
 ): { html: string; count: number; truncated?: ExportTruncation } | null {
   const effectiveDays = rangeWindowDays(r);
@@ -1344,14 +1348,20 @@ export function buildReportDocument(
     {
       reportName: opts.reportName,
       mode: opts.mode,
-      listNote: truncated
-        ? truncationMessage(
-            (k, o) => i18n.t(k, o),
-            truncated,
-            num(truncated.limit),
-            truncated.listLimit != null ? num(truncated.listLimit) : undefined
-          )
-        : undefined,
+      listNote:
+        [
+          truncated
+            ? truncationMessage(
+                (k, o) => i18n.t(k, o),
+                truncated,
+                num(truncated.limit),
+                truncated.listLimit != null ? num(truncated.listLimit) : undefined
+              )
+            : "",
+          opts.hourlyNote ?? "",
+        ]
+          .filter(Boolean)
+          .join(" ") || undefined,
       cgm: cgmSummaryOf(insights, effectiveDays),
     }
   );
@@ -1411,6 +1421,7 @@ export async function exportLogsPdf(
   const cgmPoints = cgmCut ? cgmNewest.slice(cgmNewest.length - ANALYSIS_MAX_ROWS) : cgmNewest;
   const analysisCut = feedCut || cgmCut;
   const reportName = await getReportName(profile.id);
+  const hourlyNote = (await countSugarHourly(profile.id, r)) > 0 ? i18n.t("export.hourlyNote") : undefined;
   opts?.onProgress?.({ stage: "analyzing" });
   await yieldToUi();
   const doc = buildReportDocument(profile, r, entries, {
@@ -1418,6 +1429,7 @@ export async function exportLogsPdf(
     mode,
     analysisLimit: analysisCut ? ANALYSIS_MAX_ROWS : undefined,
     cgmPoints,
+    hourlyNote,
   });
   if (!doc) return { ok: false, reason: "noData" };
   const { html } = doc;

@@ -347,7 +347,8 @@ section("S. non-sensor readings keep the 15 minute rule, but not against sensor 
   const meter = (m: number, v: number) => cand(m, v, { isCgm: false, sourceApp: "com.meter", externalId: `m-${m}` });
   eq("same value 10 min after a stored finger-stick: skipped", planGlucoseImport([meter(10, 130)], [row(0, 130, { isCgm: false, sourceApp: "com.meter", externalId: "q" })]).insert.length, 0);
   eq("same value 10 min after a SENSOR row: kept", planGlucoseImport([meter(10, 130)], [row(0, 130)]).insert.length, 1);
-  eq("same value within 150 s of a sensor row of another app: skipped", planGlucoseImport([meter(1, 130)], [row(0, 130)]).insert.length, 0);
+  eq("same value within 150 s of a sensor row of another app: kept (a meter reading is its own measurement)", planGlucoseImport([meter(1, 130)], [row(0, 130)]).insert.length, 1);
+  eq("a sensor value within 150 s of a stored meter reading: skipped (same reading twice)", planGlucoseImport([cand(1, 130, { sourceApp: "com.sensor.b", externalId: "s-1" })], [row(0, 130, { isCgm: false, sourceApp: "com.meter", externalId: "q" })]).insert.length, 0);
 }
 
 section("T. tombstones: a sensor reading is matched tightly, others by the old rule");

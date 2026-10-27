@@ -10,7 +10,9 @@ declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (c: number) => void };
 import { eq, fake, finish, kv, ok, resetAll, rows, section } from "./healthTestHarness";
 
-const BASE = Date.now() - 3 * 86_400_000;
+// 4500 readings 5 minutes apart span 15.6 days: all of them in the past, or a future-dated
+// page would (rightly) hold the sync anchor back.
+const BASE = Date.now() - 17 * 86_400_000;
 const at = (minutes: number) => new Date(Math.floor(BASE / 60_000) * 60_000 + minutes * 60_000).toISOString();
 const sensor = (minutes: number, mgdl: number, id: string, extra: Record<string, unknown> = {}) => ({
   value: mgdl,
@@ -138,6 +140,22 @@ async function main(): Promise<void> {
     eq("the pass runs", second.ran, true);
     eq("a record deleted in Health Connect leaves with its import", mine().filter((x) => x.external_id === "h-1").length, 0);
     eq("and the token is committed after the pass", fake.commits, 2);
+  }
+
+  section("G. a future-dated sample keeps the anchor where it was");
+  {
+    resetAll("ios");
+    const nowAt = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+    fake.glucose = [
+      { ...sensor(0, 110, "past"), date: nowAt(-60) },
+      { ...sensor(0, 111, "ahead"), date: nowAt(10) },
+    ];
+    const r = await S.importHealthGlucose("P", "manual");
+    eq("the sync is fine", r.status, "ok");
+    eq("the anchor did not move", kv.get("zerospike.healthHkAnchor.P"), undefined);
+    fake.glucose = [{ ...sensor(0, 110, "past"), date: nowAt(-60) }];
+    await S.importHealthGlucose("P", "manual");
+    ok("a page without future samples writes it", kv.get("zerospike.healthHkAnchor.P") !== undefined);
   }
 
   finish();

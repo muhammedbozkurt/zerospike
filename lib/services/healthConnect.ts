@@ -7,6 +7,7 @@ import {
   type HealthWriteMeta,
 } from "../healthMeta";
 import { autoPeriodTagFor } from "../periodTag";
+import { drainChanges } from "./healthChangesCore";
 import { pickMgdl, snapIso } from "./healthMath";
 import { OWN_BUNDLE_ID } from "./healthTypes";
 import type {
@@ -486,22 +487,22 @@ async function peekGlucoseChanges(): Promise<{
     if (!(await ensureReady())) return full;
     const HC = require("react-native-health-connect");
     const token = await AsyncStorage.getItem(CHANGES_TOKEN_KEY);
-    const res = await HC.getChanges(
-      token
-        ? { changesToken: token }
-        : { recordTypes: ["BloodGlucose"] }
-    );
-    const next: string | undefined = res?.nextChangesToken;
+    if (!token) {
+      const first = await HC.getChanges({ recordTypes: ["BloodGlucose"] });
+      const firstNext: string | undefined = first?.nextChangesToken;
+      return {
+        changed: true,
+        commit: async () => {
+          if (firstNext) await AsyncStorage.setItem(CHANGES_TOKEN_KEY, firstNext);
+        },
+      };
+    }
+    const drained = await drainChanges((t) => HC.getChanges({ changesToken: t }), token);
     const commit = async () => {
-      if (next) await AsyncStorage.setItem(CHANGES_TOKEN_KEY, next);
+      if (drained.next) await AsyncStorage.setItem(CHANGES_TOKEN_KEY, drained.next);
     };
-    if (!token || res?.changesTokenExpired || res?.hasMore) return { changed: true, commit };
-    const changed =
-      (res?.upsertionChanges?.length ?? 0) > 0 || (res?.deletionChanges?.length ?? 0) > 0;
-    const deletedIds: string[] = (res?.deletionChanges ?? [])
-      .map((d: any) => d?.recordId)
-      .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
-    return { changed, deletedIds, commit };
+    if (drained.expired) return { changed: true, commit };
+    return { changed: drained.changed, deletedIds: drained.deletedIds, commit };
   } catch {
     return full;
   }
