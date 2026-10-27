@@ -23,8 +23,11 @@ set -euo pipefail
 
 SCHEME="zerospike"
 BUNDLE_ID="com.greeneyeapp.zerospike"
-LANGS=(tr en de es fr it pt ar ja)
+# SHOTS_LANGS (space separated) narrows or extends the list, e.g. "en-GB en-AU en-CA".
+read -r -a LANGS <<< "${SHOTS_LANGS:-tr en de es fr it pt ar ja}"
 OUT="raw"
+# SIM_UDID pins the iOS simulator (two booted iOS sims make "booted" ambiguous).
+SIMD="${SIM_UDID:-booted}"
 # Seconds to wait after a cold launch before the app is considered settled. A
 # debug build pulls its whole bundle from Metro, so this is much longer than the
 # warm deep-link settle below.
@@ -69,7 +72,7 @@ declare -a SHOTS=(
 
 open_url() { # $1 = full url
   if [[ "$PLATFORM" == "ios" ]]; then
-    xcrun simctl openurl booted "$1"
+    xcrun simctl openurl "$SIMD" "$1"
   else
     # adb joins argv into one string and hands it to the DEVICE shell, so the
     # url must survive a second round of shell parsing: "(tabs)" is a subshell
@@ -90,7 +93,7 @@ shoot() { # $1 = device dir, $2 = lang, $3 = shot key
   local tmp
   tmp="$(mktemp "${TMPDIR:-/tmp}/shot.XXXXXX")"
   if [[ "$PLATFORM" == "ios" ]]; then
-    xcrun simctl io booted screenshot --type=png "$tmp"
+    xcrun simctl io "$SIMD" screenshot --type=png "$tmp"
   else
     # App activity brings the tablet satellite glyph back; re-assert demo mode right before the capture.
     status_bar_android >/dev/null 2>&1
@@ -120,7 +123,7 @@ is_rtl_lang() { [[ "$1" == "ar" ]]; }
 
 app_terminate() {
   if [[ "$PLATFORM" == "ios" ]]; then
-    xcrun simctl terminate booted "$BUNDLE_ID" >/dev/null 2>&1 || true
+    xcrun simctl terminate "$SIMD" "$BUNDLE_ID" >/dev/null 2>&1 || true
   else
     adb shell am force-stop "$BUNDLE_ID" >/dev/null 2>&1 || true
   fi
@@ -228,7 +231,7 @@ capture_lang() { # $1 = device output dir label, $2 = lang
 }
 
 status_bar_ios() {
-  xcrun simctl status_bar booted override \
+  xcrun simctl status_bar "$SIMD" override \
     --time "9:41" --batteryLevel 100 --batteryState charged \
     --cellularBars 4 --wifiBars 3 --dataNetwork wifi
 }
@@ -272,9 +275,75 @@ status_bar_android() {
       -e speakerphone hide -e zen hide -e cast hide -e hotspot hide >/dev/null
 }
 
+# iOS draws the status bar (clock side, battery side) from the SIMULATOR's system
+# language and region, which scLang does not touch: a sim left on Arabic mirrors
+# every LTR frame (clock right, battery left) and no app-level RTL guard sees it.
+# So each language gets its own AppleLanguages + AppleLocale and a sim reboot
+# (the status bar only re-reads them at boot) before it is captured.
+# Folder name -> "AppleLocale AppleLanguages".
+ios_system_locale() { # $1 = lang folder
+  case "$1" in
+    tr) echo "tr_TR tr" ;;
+    de) echo "de_DE de" ;;
+    fr) echo "fr_FR fr" ;;
+    es) echo "es_ES es" ;;
+    it) echo "it_IT it" ;;
+    pt) echo "pt_BR pt-BR" ;;
+    ja) echo "ja_JP ja" ;;
+    en) echo "en_US en" ;;
+    en-GB) echo "en_GB en-GB" ;;
+    en-AU) echo "en_AU en-AU" ;;
+    en-CA) echo "en_CA en-CA" ;;
+    ar) echo "ar_SA ar" ;;
+    *) echo "no iOS system locale mapping for '$1'" >&2; return 1 ;;
+  esac
+}
+
+# The reboot needs a real udid: SIM_UDID, or the single booted iOS sim.
+resolve_ios_udid() {
+  if [[ "$SIMD" != "booted" ]]; then echo "$SIMD"; return 0; fi
+  local ids
+  ids="$(xcrun simctl list devices booted | grep -E 'iPhone|iPad' | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')"
+  if [[ "$(echo "$ids" | grep -c .)" != "1" ]]; then
+    echo "need exactly one booted iOS simulator or SIM_UDID, got: ${ids:-none}" >&2
+    return 1
+  fi
+  echo "$ids"
+}
+
+set_ios_system_locale() { # $1 = lang folder
+  local udid loc langs
+  udid="$(resolve_ios_udid)" || return 1
+  read -r loc langs < <(ios_system_locale "$1") || return 1
+  echo " simulator system locale -> $loc / $langs (reboot)"
+  # simctl spawn only works on a booted sim; a shut-down one would silently keep
+  # its old language (that is how a first capture came out mirrored).
+  xcrun simctl boot "$udid" >/dev/null 2>&1 || true
+  xcrun simctl bootstatus "$udid" >/dev/null
+  xcrun simctl spawn "$udid" defaults write -g AppleLocale "$loc"
+  xcrun simctl spawn "$udid" defaults write -g AppleLanguages -array "$langs"
+  xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
+  sleep 3
+  xcrun simctl boot "$udid"
+  xcrun simctl bootstatus "$udid" >/dev/null
+  sleep 5
+  # Dev client: reconnect to Metro without the launcher screen.
+  xcrun simctl spawn "$udid" defaults write "$BUNDLE_ID" RCT_jsLocation "localhost:${METRO_PORT:-8081}"
+  xcrun simctl launch "$udid" "$BUNDLE_ID" >/dev/null
+  sleep 4
+  xcrun simctl openurl "$udid" "${BUNDLE_ID}://expo-development-client/?url=http%3A%2F%2Flocalhost%3A${METRO_PORT:-8081}"
+  # The app sees the system language it was launched under; verify on the frame.
+  local got
+  got="$(xcrun simctl spawn "$udid" defaults read -g AppleLocale)"
+  [[ "$got" == "$loc" ]] || { echo "AppleLocale is '$got', wanted '$loc'" >&2; return 1; }
+}
+
 capture_group() { # $1 = device output dir label, $2.. = languages of one group
   local devdir="$1"; shift
   (($#)) || return 0
+  # iOS: system language/region first (reboots the sim), so the direction
+  # launches and the status bar override below run on the right system locale.
+  if [[ "$PLATFORM" == "ios" ]]; then set_ios_system_locale "$1"; fi
   establish_direction "$1"
   # A cold launch drops the status bar override, so re-assert it per group.
   if [[ "$PLATFORM" == "ios" ]]; then status_bar_ios; else status_bar_android; fi
@@ -297,6 +366,13 @@ capture_for_device() { # $1 = device output dir label
   done
   # ${arr[@]+"${arr[@]}"}: macOS ships bash 3.2, where an empty array expanded
   # under `set -u` is an unbound-variable error.
+  if [[ "$PLATFORM" == "ios" ]]; then
+    # One sim reboot per language: the system locale is per language on iOS.
+    for lang in ${ltr[@]+"${ltr[@]}"} ${rtl[@]+"${rtl[@]}"}; do
+      capture_group "$devdir" "$lang"
+    done
+    return 0
+  fi
   capture_group "$devdir" ${ltr[@]+"${ltr[@]}"}
   capture_group "$devdir" ${rtl[@]+"${rtl[@]}"}
 }
