@@ -18,7 +18,7 @@ import {
 import { currentAppVersion, whatsNewKv } from "../lib/whatsNewStore";
 import { useOverlayPresence } from "../lib/useOverlayPresence";
 import { claimSheet, onSheetRelease } from "../lib/sheetClaim";
-import { attemptWhatsNew, createAttemptMemory } from "../lib/whatsNewAttempt";
+import { attemptWhatsNew, createWhatsNewScheduler } from "../lib/whatsNewAttempt";
 
 export function WhatsNewSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -65,21 +65,59 @@ export function WhatsNewSheet({ visible, onClose }: { visible: boolean; onClose:
 export function WhatsNewHost({ root }: { root: string | undefined }) {
   const { ready, onboarded } = useApp();
   const [visible, setVisible] = useState(false);
-  const latest = useRef({ ready, onboarded, root });
-  latest.current = { ready, onboarded, root };
+  const latest = useRef({ ready, onboarded, root, visible });
+  latest.current = { ready, onboarded, root, visible };
   const askedAtStart = useRef<boolean | null>(null);
   // Bumped when the slot or an overlay is released AND this host was turned away
   // by it, so a sheet that had to wait looks again instead of being lost. Its own
   // release never wakes it, and an attempt that found nothing to show ends the
-  // polling for the session (lib/whatsNewAttempt).
+  // polling for the session (lib/whatsNewAttempt, which holds all of that logic).
   const [slotTick, setSlotTick] = useState(0);
   const releaseSlot = useRef<(() => void) | null>(null);
-  const memory = useRef(createAttemptMemory());
+  const scheduler = useRef<ReturnType<typeof createWhatsNewScheduler> | null>(null);
+  if (scheduler.current === null) {
+    scheduler.current = createWhatsNewScheduler({
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      delayMs: WHATS_NEW_DELAY_MS,
+      eligible: () => {
+        const s = latest.current;
+        return s.ready && s.onboarded && !s.visible && isWhatsNewRoute(s.root);
+      },
+      gateOpen: () => {
+        const s = latest.current;
+        return (
+          askedAtStart.current !== null &&
+          whatsNewMayPresent({
+            ready: s.ready,
+            onboarded: s.onboarded,
+            screenshotMode: isScreenshotMode(),
+            root: s.root,
+            winbackHold: surveyHeld(),
+            // A thank-you sheet may already be up: two Modals cannot present together.
+            surveyBusy: overlayOpen(),
+          })
+        );
+      },
+      attempt: () =>
+        attemptWhatsNew({
+          claim: claimSheet,
+          kv: whatsNewKv,
+          askedAtStart: askedAtStart.current === true,
+          latest: () => latest.current,
+          surveyHeld,
+          appVersion: currentAppVersion(),
+          open: (slot) => {
+            releaseSlot.current = slot;
+            setVisible(true);
+          },
+        }),
+      rerun: () => setSlotTick((n) => n + 1),
+    });
+  }
 
   useEffect(() => {
-    const wake = () => {
-      if (memory.current.takeWake()) setSlotTick((n) => n + 1);
-    };
+    const wake = () => scheduler.current?.onRelease();
     const offSlot = onSheetRelease(wake);
     const offOverlay = onSurveyRelease(wake);
     return () => {
@@ -103,41 +141,7 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!ready || !onboarded || visible || !isWhatsNewRoute(root) || memory.current.isDone()) return;
-    const timer = setTimeout(() => {
-      const s = latest.current;
-      const gate = {
-        ready: s.ready,
-        onboarded: s.onboarded,
-        screenshotMode: isScreenshotMode(),
-        root: s.root,
-        winbackHold: surveyHeld(),
-        // A thank-you sheet may already be up: two Modals cannot present together.
-        surveyBusy: overlayOpen(),
-      };
-      if (!whatsNewMayPresent(gate) || askedAtStart.current === null) {
-        memory.current.markWaiting();
-        return;
-      }
-      void attemptWhatsNew({
-        claim: claimSheet,
-        kv: whatsNewKv,
-        askedAtStart: askedAtStart.current === true,
-        latest: () => latest.current,
-        surveyHeld,
-        appVersion: currentAppVersion(),
-        open: (slot) => {
-          releaseSlot.current = slot;
-          setVisible(true);
-        },
-      }).then((result) => {
-        if (result === "nothing" || result === "opened") memory.current.markDone();
-        else if (result === "busy" || result === "retry") memory.current.markWaiting();
-      });
-    }, WHATS_NEW_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [ready, onboarded, root, visible, slotTick]);
+  useEffect(() => scheduler.current?.start(), [ready, onboarded, root, visible, slotTick]);
 
   useEffect(() => {
     if (visible) return;

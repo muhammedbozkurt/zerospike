@@ -20,16 +20,12 @@ import { getHealthConnectStatus, getHealthSyncEnabled, hasHealthProvider } from 
 import { maybeRequestReview } from "../lib/services/review";
 import { thanksMayPresent } from "../lib/thanks/gate";
 import { claimSheet, onSheetRelease, sheetClaimed } from "../lib/sheetClaim";
+import { createSheetPresenter } from "../lib/thanks/presenter";
 import { useOverlayPresence } from "../lib/useOverlayPresence";
 import type { ThanksOutcome } from "../lib/thanks/detect";
 
 /** Lets the sheet finish sliding out before the native review dialog goes up. */
 const REVIEW_DELAY_MS = 700;
-/** Let a Modal that is still sliding out finish before this one is presented. */
-const SETTLE_MS = 1200;
-/** A Modal that has not reported onShow by now was refused by the OS; try again later. */
-const SHOW_TIMEOUT_MS = 4000;
-const MAX_SHOW_ATTEMPTS = 5;
 /** The sheet slides out before a route is pushed, so the two never overlap. */
 const NAVIGATE_DELAY_MS = 450;
 
@@ -168,10 +164,6 @@ export function ThanksHost({ root }: { root: string | undefined }) {
   const evaluatedIn = useRef(-1);
   const alive = useRef(true);
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
-  const claimRef = useRef<(() => void) | null>(null);
-  const confirmed = useRef(true);
-  const attempts = useRef(0);
-  const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileId = activeProfile?.id ?? null;
   const latest = useRef({ ready, onboarded, root, visible, profileId });
   latest.current = { ready, onboarded, root, visible, profileId };
@@ -191,16 +183,16 @@ export function ThanksHost({ root }: { root: string | undefined }) {
       alive.current = false;
       pendingTimers.forEach(clearTimeout);
       pendingTimers.clear();
-      claimRef.current?.();
-      claimRef.current = null;
-      if (showTimer.current) clearTimeout(showTimer.current);
+      presenter.current?.dispose();
     };
   }, []);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
+      if (state === "background") presenter.current?.background();
       if (state !== "active") return;
       foreground.current += 1;
+      presenter.current?.foreground();
       setTick((n) => n + 1);
     });
     const bump = () => setTick((n) => n + 1);
@@ -212,13 +204,6 @@ export function ThanksHost({ root }: { root: string | undefined }) {
       offSlot();
     };
   }, []);
-
-  // The slot is held from the decision to open until the sheet is gone.
-  useEffect(() => {
-    if (visible) return;
-    claimRef.current?.();
-    claimRef.current = null;
-  }, [visible]);
 
   const clear = useCallback(() => {
     const s = latest.current;
@@ -232,6 +217,28 @@ export function ThanksHost({ root }: { root: string | undefined }) {
       sheetVisible: s.visible,
     });
   }, []);
+
+  const presenter = useRef<ReturnType<typeof createSheetPresenter> | null>(null);
+  if (presenter.current === null) {
+    presenter.current = createSheetPresenter({
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      clear,
+      claim: claimSheet,
+      setVisible,
+      clearPending: () => setPending("none"),
+      onSeen: () => {
+        logEvent("trial_converted_seen");
+        void confirmThanksNow("converted");
+      },
+      nudge: () => setTick((n) => n + 1),
+    });
+  }
+
+  // The slot is held from the decision to open until the sheet is gone.
+  useEffect(() => {
+    if (!visible) presenter.current?.releaseClaim();
+  }, [visible]);
 
   useEffect(() => {
     if (pending !== "none" || evaluatedIn.current === foreground.current || !clear()) return;
@@ -252,41 +259,14 @@ export function ThanksHost({ root }: { root: string | undefined }) {
     void confirmThanksNow("renewed");
   }, [pending, ready, onboarded, root, visible, tick, clear, toast, t]);
 
-  // The sheet: opens after a settle delay once the way is clear (a Modal that
-  // is still dismissing would make iOS refuse this one). A Modal that has not
-  // reported onShow by SHOW_TIMEOUT_MS was refused: it is taken down, the slot
-  // is given back and the moment stays pending on disk for the next clear
-  // moment. Stamped as seen only from confirmConverted (onShown).
+  // The sheet (lib/thanks/presenter): settle delay, re-check, claim, watchdog.
+  // Stamped as seen only from presenter.confirm (the sheet's onShown).
   useEffect(() => {
     if (pending !== "converted" || !clear()) return;
-    const timer = setTimeout(() => {
-      if (!clear() || attempts.current >= MAX_SHOW_ATTEMPTS) return;
-      const claim = claimSheet();
-      if (!claim) return;
-      attempts.current += 1;
-      claimRef.current = claim;
-      confirmed.current = false;
-      setVisible(true);
-      showTimer.current = setTimeout(() => {
-        showTimer.current = null;
-        if (confirmed.current) return;
-        confirmed.current = true;
-        setVisible(false);
-        setTick((n) => n + 1);
-      }, SHOW_TIMEOUT_MS);
-    }, SETTLE_MS);
-    return () => clearTimeout(timer);
+    return presenter.current?.schedule();
   }, [pending, ready, onboarded, root, visible, tick, clear]);
 
-  const confirmConverted = useCallback(() => {
-    if (confirmed.current) return;
-    confirmed.current = true;
-    if (showTimer.current) clearTimeout(showTimer.current);
-    showTimer.current = null;
-    setPending("none");
-    logEvent("trial_converted_seen");
-    void confirmThanksNow("converted");
-  }, []);
+  const confirmConverted = useCallback(() => presenter.current?.confirm(), []);
 
   const close = useCallback(() => {
     if (!latest.current.visible) return;

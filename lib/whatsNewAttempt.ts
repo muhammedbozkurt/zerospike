@@ -70,3 +70,50 @@ export function createAttemptMemory() {
     },
   };
 }
+
+export type AttemptMemory = ReturnType<typeof createAttemptMemory>;
+
+/** What each answer means for the host's memory (the loop-safety rules). */
+export function applyAttemptResult(memory: AttemptMemory, result: WhatsNewAttempt): void {
+  if (result === "nothing" || result === "opened") memory.markDone();
+  else memory.markWaiting();
+}
+
+export interface SchedulerDeps {
+  setTimer: (fn: () => void, ms: number) => unknown;
+  clearTimer: (handle: unknown) => void;
+  delayMs: number;
+  /** The host's own preconditions: ready, onboarded, a tab screen, sheet not up. */
+  eligible: () => boolean;
+  /** Nothing else (winback, an open Modal, the survey's state) is in the way. */
+  gateOpen: () => boolean;
+  attempt: () => Promise<WhatsNewAttempt>;
+  /** Run the host's effect again. */
+  rerun: () => void;
+}
+
+/**
+ * The host's effect and its release listener as one testable unit. start() is
+ * the effect body (returns the cleanup); onRelease() is the slot/overlay
+ * release listener, which re-runs the host only if it was turned away.
+ */
+export function createWhatsNewScheduler(d: SchedulerDeps) {
+  const memory = createAttemptMemory();
+  return {
+    start(): () => void {
+      if (!d.eligible() || memory.isDone()) return () => {};
+      const handle = d.setTimer(() => {
+        if (!d.gateOpen()) {
+          memory.markWaiting();
+          return;
+        }
+        void d.attempt().then((result) => applyAttemptResult(memory, result));
+      }, d.delayMs);
+      return () => d.clearTimer(handle);
+    },
+    onRelease(): void {
+      if (memory.takeWake()) d.rerun();
+    },
+    isDone: () => memory.isDone(),
+  };
+}

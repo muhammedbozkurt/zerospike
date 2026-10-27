@@ -131,8 +131,10 @@ export function detectThanks(input: DetectInput): { outcome: ThanksOutcome; next
 
   // Someone else's subscription: never thanked, but the snapshot follows it.
   if (current.familyShared) return { outcome: "none", next };
-  // A failed charge: the old snapshot stays, so the payment that goes through
-  // later is still seen as the change it is (trial to paid, or a renewal).
+  // A failed charge: the old snapshot (and its observedAt) stays, so the payment
+  // that goes through later is still seen as the change it is (trial to paid, or
+  // a renewal). Limit: if grace plus trial outlast SNAPSHOT_MAX_AGE_MS (45 days)
+  // the conversion is only seeded and stays silent.
   if (current.billingIssueDetectedAt !== null && prev && prev.active) {
     return { outcome: "none", next: prev };
   }

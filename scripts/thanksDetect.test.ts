@@ -23,7 +23,14 @@ import {
 import { confirmThanksShown, evaluateThanks, type ThanksDeps } from "../lib/thanks/evaluate";
 import { claimSheet, onSheetRelease, sheetClaimed } from "../lib/sheetClaim";
 import { mapEntitlement } from "../lib/thanks/map";
-import { attemptWhatsNew, createAttemptMemory } from "../lib/whatsNewAttempt";
+import { applyAttemptResult, attemptWhatsNew, createAttemptMemory, createWhatsNewScheduler } from "../lib/whatsNewAttempt";
+import {
+  MAX_SHOW_ATTEMPTS,
+  SETTLE_MS,
+  SHOW_TIMEOUT_MS,
+  createSheetPresenter,
+  type PresenterDeps,
+} from "../lib/thanks/presenter";
 import { thanksMayPresent, type ThanksGate } from "../lib/thanks/gate";
 
 const fs = require("fs");
@@ -443,15 +450,15 @@ async function main() {
     // The real hosts: simultaneous triggers, one after the other.
     const thanks = src("components/ThanksSheet.tsx");
     const whats = src("components/WhatsNewSheet.tsx");
-    ok("thanks claims the slot before opening", /claimSheet\(\)[\s\S]{0,200}setVisible\(true\)/.test(thanks));
+    ok("thanks claims the slot through the presenter", /claim: claimSheet/.test(thanks));
     ok("thanks waits on a held slot or open overlay", /overlayOpen: overlayOpen\(\) \|\| sheetClaimed\(\)/.test(thanks));
     ok("thanks looks again when the slot or an overlay is released", /onSheetRelease\(bump\)/.test(thanks) && /onSurveyRelease\(bump\)/.test(thanks));
-    ok("thanks releases the slot once the sheet is gone", /if \(visible\) return;\s*claimRef\.current\?\.\(\);/.test(thanks));
+    ok("thanks releases the slot once the sheet is gone", /if \(!visible\) presenter\.current\?\.releaseClaim\(\)/.test(thanks));
     const attempt = src("lib/whatsNewAttempt.ts");
     ok("what's new claims the slot before it consumes its flag", /d\.claim\(\)[\s\S]{0,700}takeWhatsNew/.test(attempt) && /claim: claimSheet/.test(whats));
     ok("what's new gives the slot back when it does not open", /if \(!opened\) slot\(\)/.test(attempt));
-    ok("what's new wakes only when it was turned away", /takeWake\(\)\) setSlotTick/.test(whats) && /onSheetRelease\(wake\)/.test(whats) && /slotTick\]/.test(whats));
-    ok("what's new stops polling once there is nothing to show", /markDone\(\)/.test(whats) && /memory\.current\.isDone\(\)/.test(whats));
+    ok("what's new wakes on both the slot and the overlay release", /onSheetRelease\(wake\)/.test(whats) && /onSurveyRelease\(wake\)/.test(whats));
+    ok("what's new is driven by the tested scheduler", /createWhatsNewScheduler\(/.test(whats) && /scheduler\.current\?\.onRelease\(\)/.test(whats) && /scheduler\.current\?\.start\(\)/.test(whats));
     ok("both sheets register as overlays", /useOverlayPresence\(visible\)/.test(thanks) && /useOverlayPresence\(visible\)/.test(whats));
   }
 
@@ -509,17 +516,43 @@ async function main() {
     eq("a missing ownershipType is not shared", mapEntitlement(rc({ ownershipType: undefined })).familyShared, false);
     eq("billingIssueDetectedAt is parsed", mapEntitlement(rc({ billingIssueDetectedAt: "2026-10-20T08:30:00Z" })).billingIssueDetectedAt, Date.parse("2026-10-20T08:30:00Z"));
     eq("a null billing issue stays null", mapEntitlement(rc({ billingIssueDetectedAt: null })).billingIssueDetectedAt, null);
+    eq("an empty product id is null", mapEntitlement(rc({ productIdentifier: "" })).productId, null);
     eq("a garbage date is null", mapEntitlement(rc({ billingIssueDetectedAt: "soon", expirationDate: "later" })).expiresAt, null);
     eq("a lifetime (no expiration) has no expiry", mapEntitlement(rc({ expirationDate: null, productIdentifier: "zerospike_pro_lifetime" })).expiresAt, null);
     eq("Android base-plan id is kept whole", mapEntitlement(rc({ productIdentifier: "zerospike_pro:annual" })).productId, "zerospike_pro:annual");
     ok("purchases.ts maps through the pure mapper", /return mapEntitlement\(info\?\.entitlements\?\.active\?\.\[ENTITLEMENT_ID\]\);/.test(src("lib/services/purchases.ts")));
   }
 
-  section("J3. the What's new host does not poll");
+  section("J3. the What's new host does not poll (real scheduler, fake clock)");
   {
-    // The real attempt function and memory, the real slot; only React's effect and
-    // timer are replaced by a tiny scheduler that mirrors the host's effect.
-    const DELAY = 20;
+    /** A fake clock: timers fire in order as time is advanced. */
+    const makeClock = () => {
+      let now = 0;
+      let seq = 0;
+      const timers = new Map<number, { at: number; fn: () => void }>();
+      return {
+        setTimer: (fn: () => void, ms: number) => {
+          const id = ++seq;
+          timers.set(id, { at: now + ms, fn });
+          return id;
+        },
+        clearTimer: (h: unknown) => void timers.delete(h as number),
+        pending: () => timers.size,
+        advance: async (ms: number) => {
+          const end = now + ms;
+          for (;;) {
+            const next = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+            if (!next) break;
+            now = next[1].at;
+            timers.delete(next[0]);
+            next[1].fn();
+            await new Promise((r) => setImmediate(r));
+            await new Promise((r) => setImmediate(r));
+          }
+          now = end;
+        },
+      };
+    };
     const makeKv = (seen: string | null) => {
       const m = new Map<string, string>();
       if (seen) m.set("zerospike.whatsNew.seen", seen);
@@ -533,77 +566,81 @@ async function main() {
       };
       return { kv, stats, m };
     };
-    function runHost(kv: any, appVersion = "2.5.0") {
-      const mem = createAttemptMemory();
-      const host = { attempts: 0, visible: false, slot: null as null | (() => void), timer: null as any, results: [] as string[] };
-      const effect = () => {
-        clearTimeout(host.timer);
-        if (host.visible || mem.isDone()) return;
-        host.timer = setTimeout(() => {
+    const DELAY = 3000;
+    function runHost(kv: any, opts: { gateOpen?: () => boolean; appVersion?: string } = {}) {
+      const clock = makeClock();
+      const host = { attempts: 0, visible: false, slot: null as null | (() => void), cleanup: (() => {}) as () => void, results: [] as string[], reruns: 0 };
+      const sch = createWhatsNewScheduler({
+        setTimer: clock.setTimer,
+        clearTimer: clock.clearTimer,
+        delayMs: DELAY,
+        eligible: () => !host.visible,
+        gateOpen: opts.gateOpen ?? (() => true),
+        attempt: () => {
           host.attempts++;
-          void attemptWhatsNew({
+          return attemptWhatsNew({
             claim: claimSheet,
             kv,
             askedAtStart: false,
             latest: () => ({ root: "(tabs)", onboarded: true }),
             surveyHeld: () => false,
-            appVersion,
+            appVersion: opts.appVersion ?? "2.5.0",
             open: (slot) => {
               host.slot = slot;
               host.visible = true;
             },
           }).then((r) => {
             host.results.push(r);
-            if (r === "nothing" || r === "opened") mem.markDone();
-            else if (r === "busy" || r === "retry") mem.markWaiting();
+            return r;
           });
-        }, DELAY);
-      };
-      const wake = () => {
-        if (mem.takeWake()) effect();
-      };
-      const off1 = onSheetRelease(wake);
-      effect();
+        },
+        rerun: () => {
+          host.reruns++;
+          host.cleanup();
+          host.cleanup = sch.start();
+        },
+      });
+      const off = onSheetRelease(() => sch.onRelease());
+      host.cleanup = sch.start();
       return {
         host,
+        clock,
+        sch,
         close: () => {
           host.visible = false;
           host.slot?.();
           host.slot = null;
-          effect();
+          host.cleanup();
+          host.cleanup = sch.start();
         },
         stop: () => {
-          clearTimeout(host.timer);
-          off1();
+          host.cleanup();
+          off();
         },
       };
     }
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    // Already seen: at most one attempt in the whole session, however long it runs.
+    // Already seen: one attempt in the whole session, however long it runs.
     {
       const k = makeKv("2.5.0");
       const h = runHost(k.kv);
-      let thanksWakes = 0;
-      const offT = onSheetRelease(() => thanksWakes++);
-      await sleep(DELAY * 40);
+      await h.clock.advance(DELAY * 40);
       h.stop();
-      offT();
       eq("nothing to show: one attempt in 40 delays", h.host.attempts, 1);
       eq("nothing to show: the answer was final", h.host.results, ["nothing"]);
-      eq("nothing to show: the slot was released once only", thanksWakes, 1);
       ok("nothing to show: a handful of reads, not one set per delay", k.stats.reads <= 4);
+      eq("nothing to show: no timer left running", h.clock.pending(), 0);
       ok("the slot is free afterwards", !sheetClaimed());
     }
     // Due: opens once, and closing it does not start another round.
     {
       const k = makeKv(null);
       const h = runHost(k.kv);
-      await sleep(DELAY * 6);
+      await h.clock.advance(DELAY + 10);
       eq("due: it opened", h.host.visible, true);
       ok("due: the slot is held while it is up", sheetClaimed());
       h.close();
-      await sleep(DELAY * 10);
+      await h.clock.advance(DELAY * 10);
       h.stop();
       eq("due: one attempt only, the flag is spent", h.host.attempts, 1);
       ok("due: the slot is free once it closed", !sheetClaimed());
@@ -613,62 +650,291 @@ async function main() {
       const k = makeKv(null);
       const thanksSlot = claimSheet() as () => void;
       const h = runHost(k.kv);
-      await sleep(DELAY * 6);
+      await h.clock.advance(DELAY * 4);
       eq("held slot: it did not open over the thank-you sheet", h.host.visible, false);
       eq("held slot: it was turned away once, not polling", h.host.results, ["busy"]);
       eq("held slot: the flag is untouched", k.m.get("zerospike.whatsNew.seen"), undefined);
+      eq("held slot: not done, it is waiting", h.sch.isDone(), false);
       thanksSlot();
-      await sleep(DELAY * 6);
+      await h.clock.advance(DELAY + 10);
       eq("released slot: it opens after all", h.host.visible, true);
       eq("released slot: exactly two attempts, busy then opened", h.host.results, ["busy", "opened"]);
       h.close();
-      await sleep(DELAY * 6);
+      await h.clock.advance(DELAY * 6);
       h.stop();
       eq("and nothing more after it closes", h.host.attempts, 2);
     }
+    // A refused gate (winback, an open Modal) also waits for a release, and is not final.
+    {
+      const k = makeKv(null);
+      let open = false;
+      const h = runHost(k.kv, { gateOpen: () => open });
+      await h.clock.advance(DELAY * 3);
+      eq("gate refused: no attempt, no polling", h.host.attempts, 0);
+      eq("gate refused: not done", h.sch.isDone(), false);
+      open = true;
+      const other = claimSheet() as () => void;
+      other();
+      await h.clock.advance(DELAY + 10);
+      eq("gate refused: a release wakes it and it opens", h.host.visible, true);
+      h.close();
+      h.stop();
+    }
+    // Its own release never wakes it.
+    {
+      const k = makeKv("2.5.0");
+      const h = runHost(k.kv);
+      await h.clock.advance(DELAY + 10);
+      const reruns = h.host.reruns;
+      const s = claimSheet() as () => void;
+      s();
+      await h.clock.advance(DELAY * 5);
+      h.stop();
+      eq("a finished host ignores later releases", [h.host.attempts, h.host.reruns - reruns], [1, 0]);
+    }
+    // The result-to-memory mapping, one answer at a time.
+    {
+      const probe = (r: "busy" | "retry" | "nothing" | "opened") => {
+        const m = createAttemptMemory();
+        applyAttemptResult(m, r);
+        return { done: m.isDone(), waiting: m.takeWake() };
+      };
+      eq("busy waits and is not final", probe("busy"), { done: false, waiting: true });
+      eq("retry waits and is not final", probe("retry"), { done: false, waiting: true });
+      eq("nothing is final", probe("nothing"), { done: true, waiting: false });
+      eq("opened is final", probe("opened"), { done: true, waiting: false });
+      const m = createAttemptMemory();
+      m.markWaiting();
+      eq("a wake is handed out once", [m.takeWake(), m.takeWake()], [true, false]);
+    }
   }
 
-  section("J4. the thank-you host: settle, watchdog, stamp only on onShown");
+  section("J4. the thank-you presenter: settle, re-check, watchdog, attempts, seen only on confirm");
   {
-    const sheet = src("components/ThanksSheet.tsx");
-    /** Text inside the braces that follow `from` (balanced, strings are brace-free here). */
-    const bodyAfter = (text: string, from: number): string => {
-      const open = text.indexOf("{", from);
-      let depth = 0;
-      for (let i = open; i < text.length; i++) {
-        if (text[i] === "{") depth++;
-        else if (text[i] === "}" && --depth === 0) return text.slice(open + 1, i);
-      }
-      return "";
+    const makeClock = () => {
+      let now = 0;
+      let seq = 0;
+      const timers = new Map<number, { at: number; fn: () => void }>();
+      return {
+        setTimer: (fn: () => void, ms: number) => {
+          const id = ++seq;
+          timers.set(id, { at: now + ms, fn });
+          return id;
+        },
+        clearTimer: (h: unknown) => void timers.delete(h as number),
+        pending: () => timers.size,
+        advance: (ms: number) => {
+          const end = now + ms;
+          for (;;) {
+            const next = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+            if (!next) break;
+            now = next[1].at;
+            timers.delete(next[0]);
+            next[1].fn();
+          }
+          now = end;
+        },
+      };
     };
-    const fnBody = (header: string): string => {
-      const at = sheet.indexOf(header);
-      return at === -1 ? "" : bodyAfter(sheet, at);
-    };
-    const confirmBody = fnBody("const confirmConverted = useCallback(() => {");
-    const showEffect = fnBody('useEffect(() => {\n    if (pending !== "converted"');
-    const renewEffect = fnBody('useEffect(() => {\n    if (pending !== "renewed"');
-    const closeBody = fnBody("const close = useCallback(() => {");
-    const cardBody = fnBody("(id: CardId) => {");
-    ok("found the confirm function", confirmBody.length > 20);
-    ok("found the sheet effect", showEffect.length > 20);
-    ok("found the toast effect", renewEffect.length > 20);
+    const SETTLE = 100;
+    const TIMEOUT = 400;
+    const MAX = 3;
+    function make(over: Partial<PresenterDeps> = {}) {
+      const clock = makeClock();
+      const w = {
+        visible: false,
+        pendingCleared: 0,
+        seen: 0,
+        nudges: 0,
+        claims: 0,
+        releases: 0,
+        slotFree: true,
+        gate: true,
+        visibleCalls: [] as boolean[],
+      };
+      const p = createSheetPresenter({
+        setTimer: clock.setTimer,
+        clearTimer: clock.clearTimer,
+        clear: () => w.gate,
+        claim: () => {
+          if (!w.slotFree) return null;
+          w.slotFree = false;
+          w.claims++;
+          let done = false;
+          return () => {
+            if (done) return;
+            done = true;
+            w.slotFree = true;
+            w.releases++;
+          };
+        },
+        setVisible: (v) => {
+          w.visible = v;
+          w.visibleCalls.push(v);
+        },
+        clearPending: () => void w.pendingCleared++,
+        onSeen: () => void w.seen++,
+        nudge: () => void w.nudges++,
+        settleMs: SETTLE,
+        timeoutMs: TIMEOUT,
+        maxAttempts: MAX,
+        ...over,
+      });
+      return { p, clock, w };
+    }
 
-    eq("the seen stamp is written in confirmConverted", /confirmThanksNow\("converted"\)/.test(confirmBody), true);
-    eq("the seen event is logged in confirmConverted", /logEvent\("trial_converted_seen"\)/.test(confirmBody), true);
-    eq("the stamp is written nowhere else in the file", (sheet.match(/confirmThanksNow\("converted"\)/g) ?? []).length, 1);
-    eq("the event is logged nowhere else in the file", (sheet.match(/logEvent\("trial_converted_seen"\)/g) ?? []).length, 1);
-    ok("the sheet effect never stamps, logs or clears pending", !/confirmThanks|logEvent|setPending/.test(showEffect));
-    ok("the sheet effect waits SETTLE_MS before opening", /setTimeout\([\s\S]*SETTLE_MS\)/.test(showEffect));
-    ok("the sheet effect arms the SHOW_TIMEOUT_MS watchdog", /setTimeout\([\s\S]*SHOW_TIMEOUT_MS\)/.test(showEffect));
-    ok("the watchdog takes the sheet down", /showTimer\.current = setTimeout\([\s\S]*setVisible\(false\)[\s\S]*SHOW_TIMEOUT_MS/.test(showEffect));
-    ok("the watchdog leaves the moment pending (no stamp, no pending clear)", !/confirmThanks|setPending/.test(showEffect));
-    ok("the watchdog retries through the tick and is capped", /setTick\(/.test(showEffect) && /MAX_SHOW_ATTEMPTS/.test(showEffect));
-    ok("the settle and timeout constants are set", /const SETTLE_MS = \d+;/.test(sheet) && /const SHOW_TIMEOUT_MS = \d+;/.test(sheet));
-    ok("onShown reaches confirmConverted", /onShown=\{confirmConverted\}/.test(sheet));
-    ok("onShown also stops the watchdog", /clearTimeout\(showTimer\.current\)/.test(confirmBody));
-    ok("the toast is stamped where it is shown", /confirmThanksNow\("renewed"\)/.test(renewEffect) && /toast\(/.test(renewEffect));
-    ok("close asks for the review, a card does not", /maybeRequestReview\("trial_converted"\)/.test(closeBody) && !/maybeRequestReview/.test(cardBody));
+    eq("defaults: a real settle delay", SETTLE_MS > 0, true);
+    eq("defaults: a real timeout", SHOW_TIMEOUT_MS > SETTLE_MS, true);
+    eq("defaults: a real attempt cap", MAX_SHOW_ATTEMPTS >= 1, true);
+
+    // Settle: nothing before it, the sheet after it.
+    {
+      const { p, clock, w } = make();
+      p.schedule();
+      clock.advance(SETTLE - 1);
+      eq("settle: not open before the delay", w.visible, false);
+      clock.advance(1);
+      eq("settle: open after the delay", w.visible, true);
+      eq("settle: the slot is held", w.slotFree, false);
+      eq("settle: one attempt counted", p.attempts(), 1);
+      eq("settle: nothing is seen yet", [w.seen, w.pendingCleared], [0, 0]);
+    }
+    // The way closing during the settle delay.
+    {
+      const { p, clock, w } = make();
+      p.schedule();
+      clock.advance(SETTLE - 1);
+      w.gate = false;
+      clock.advance(1);
+      eq("re-check: a gate that closed during settle keeps the sheet down", w.visible, false);
+      eq("re-check: and no attempt or claim is spent", [p.attempts(), w.claims], [0, 0]);
+    }
+    // The cancel returned to the effect cleanup.
+    {
+      const { p, clock, w } = make();
+      const cancel = p.schedule();
+      cancel();
+      clock.advance(SETTLE * 3);
+      eq("cancel: a cleaned-up effect never opens", [w.visible, w.claims], [false, 0]);
+      eq("cancel: no timer left", clock.pending(), 0);
+    }
+    // A held slot.
+    {
+      const { p, clock, w } = make();
+      w.slotFree = false;
+      p.schedule();
+      clock.advance(SETTLE);
+      eq("slot held elsewhere: no sheet, no attempt", [w.visible, p.attempts()], [false, 0]);
+    }
+    // onShown in time.
+    {
+      const { p, clock, w } = make();
+      p.schedule();
+      clock.advance(SETTLE + TIMEOUT - 10);
+      p.confirm();
+      eq("confirm: the watchdog timer is cancelled right away", clock.pending(), 0);
+      eq("confirm: seen once", w.seen, 1);
+      eq("confirm: the pending mark is cleared", w.pendingCleared, 1);
+      p.confirm();
+      eq("confirm: a second call is ignored", [w.seen, w.pendingCleared], [1, 1]);
+      clock.advance(TIMEOUT * 3);
+      eq("confirm: the watchdog is disarmed", [w.visible, w.nudges], [true, 0]);
+      eq("confirm: no timer left", clock.pending(), 0);
+    }
+    // The watchdog: no onShown.
+    {
+      const { p, clock, w } = make();
+      p.schedule();
+      clock.advance(SETTLE);
+      clock.advance(TIMEOUT - 1);
+      eq("watchdog: waits for the timeout", w.visible, true);
+      clock.advance(1);
+      eq("watchdog: the sheet is taken down", w.visible, false);
+      eq("watchdog: the slot is given back", [w.slotFree, w.releases], [true, 1]);
+      eq("watchdog: nothing was stamped or cleared (the moment stays pending)", [w.seen, w.pendingCleared], [0, 0]);
+      eq("watchdog: the host is nudged to try again", w.nudges, 1);
+      p.confirm();
+      eq("watchdog: a late onShown cannot stamp it", [w.seen, w.pendingCleared], [0, 0]);
+    }
+    // Attempts and the cap.
+    {
+      const { p, clock, w } = make();
+      for (let i = 0; i < MAX; i++) {
+        p.schedule();
+        clock.advance(SETTLE + TIMEOUT);
+      }
+      eq("attempts: counted per presentation", p.attempts(), MAX);
+      eq("attempts: each one claimed and released", [w.claims, w.releases], [MAX, MAX]);
+      p.schedule();
+      clock.advance(SETTLE + TIMEOUT);
+      eq("cap: no more than MAX attempts", [p.attempts(), w.claims, w.visible], [MAX, MAX, false]);
+      eq("cap: the visible calls are only open/close pairs", w.visibleCalls.length, MAX * 2);
+    }
+    // Foreground resets the budget.
+    {
+      const { p, clock, w } = make();
+      for (let i = 0; i < MAX; i++) {
+        p.schedule();
+        clock.advance(SETTLE + TIMEOUT);
+      }
+      const nudges = w.nudges;
+      p.foreground();
+      eq("foreground: the attempt budget is reset", p.attempts(), 0);
+      eq("foreground: the flow is restarted", w.nudges, nudges + 1);
+      p.schedule();
+      clock.advance(SETTLE);
+      eq("foreground: the pending moment is tried again", w.visible, true);
+    }
+    // Background drops the timers and an unconfirmed presentation.
+    {
+      const { p, clock, w } = make();
+      p.schedule();
+      p.background();
+      clock.advance(SETTLE * 5);
+      eq("background during settle: nothing opens", [w.visible, w.claims], [false, 0]);
+      eq("background during settle: no timer left", clock.pending(), 0);
+
+      const b = make();
+      b.p.schedule();
+      b.clock.advance(SETTLE);
+      eq("background during watchdog: sheet is up first", b.w.visible, true);
+      b.p.background();
+      eq("background during watchdog: the unconfirmed sheet is taken down", b.w.visible, false);
+      eq("background during watchdog: slot released, nothing stamped", [b.w.slotFree, b.w.seen, b.w.pendingCleared], [true, 0, 0]);
+      eq("background during watchdog: no timer left", b.clock.pending(), 0);
+      b.clock.advance(TIMEOUT * 3);
+      eq("background during watchdog: the watchdog never fires later", b.w.nudges, 0);
+      b.p.foreground();
+      b.p.schedule();
+      b.clock.advance(SETTLE);
+      eq("foreground after background: the flow restarts", b.w.visible, true);
+
+      // A sheet the user already sees (confirmed) is left alone.
+      const c = make();
+      c.p.schedule();
+      c.clock.advance(SETTLE);
+      c.p.confirm();
+      c.p.background();
+      eq("background with the sheet confirmed: it stays", c.w.visible, true);
+    }
+    // dispose
+    {
+      const { p, clock, w } = make();
+      p.schedule();
+      clock.advance(SETTLE);
+      p.dispose();
+      eq("dispose: timers and slot released", [clock.pending(), w.slotFree], [0, true]);
+    }
+
+    // Wiring: the component only calls the presenter, and stamps nowhere else.
+    const sheet = src("components/ThanksSheet.tsx");
+    ok("the host builds its sheet flow from the presenter", /createSheetPresenter\(/.test(sheet) && /presenter\.current\?\.schedule\(\)/.test(sheet));
+    ok("onShown goes to the presenter's confirm", /onShown=\{confirmConverted\}/.test(sheet) && /presenter\.current\?\.confirm\(\)/.test(sheet));
+    eq("the stamp is written nowhere but the presenter's onSeen", (sheet.match(/confirmThanksNow\("converted"\)/g) ?? []).length, 1);
+    eq("the event is logged nowhere but the presenter's onSeen", (sheet.match(/logEvent\("trial_converted_seen"\)/g) ?? []).length, 1);
+    ok("background and foreground reach the presenter", /presenter\.current\?\.background\(\)/.test(sheet) && /presenter\.current\?\.foreground\(\)/.test(sheet));
+    ok("the toast is stamped where it is shown", /confirmThanksNow\("renewed"\)/.test(sheet) && /toast\(t\("thanks\.renewalToast"\)/.test(sheet));
+    ok("a card tap asks for no review, close does", (sheet.match(/maybeRequestReview\(/g) ?? []).length === 1 && /const close = useCallback\(\(\) => \{[\s\S]*?maybeRequestReview/.test(sheet));
   }
 
   section("K. presentation gate");
