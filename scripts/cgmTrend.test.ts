@@ -1,5 +1,5 @@
 /**
- * lib/cgm/trend.ts harness: five steps from the last readings, or null.
+ * lib/cgm/trend.ts harness: seven steps from the last readings, or null.
  * Run: npx tsx scripts/cgmTrend.test.ts
  */
 declare const console: { log: (...a: unknown[]) => void };
@@ -28,16 +28,32 @@ function run(n: number, step: number, start: number, perMin: number): TrendReadi
 }
 const endOf = (n: number, step: number) => T0 + (n - 1) * step * MIN;
 
-console.log("five steps");
+console.log("seven steps");
 eq("+3 per minute is up2", cgmTrend(run(5, 5, 100, 3)), "up2");
-eq("+2 per minute is up2", cgmTrend(run(5, 5, 100, 2)), "up2");
-eq("+1.5 per minute is up", cgmTrend(run(5, 5, 100, 1.5)), "up");
-eq("+1 per minute is up", cgmTrend(run(5, 5, 100, 1)), "up");
+eq("+2.5 per minute is up", cgmTrend(run(5, 5, 100, 2.5)), "up");
+eq("+2 per minute is up", cgmTrend(run(5, 5, 100, 2)), "up");
+eq("+1.5 per minute is up45", cgmTrend(run(5, 5, 100, 1.5)), "up45");
+eq("+1 per minute is up45", cgmTrend(run(5, 5, 100, 1)), "up45");
 eq("+0.5 per minute is flat", cgmTrend(run(5, 5, 100, 0.5)), "flat");
 eq("0 per minute is flat", cgmTrend(run(5, 5, 120, 0)), "flat");
 eq("-0.5 per minute is flat", cgmTrend(run(5, 5, 120, -0.5)), "flat");
-eq("-1.5 per minute is down", cgmTrend(run(5, 5, 160, -1.5)), "down");
-eq("-2.5 per minute is down2", cgmTrend(run(5, 5, 200, -2.5)), "down2");
+eq("-1.5 per minute is down45", cgmTrend(run(5, 5, 160, -1.5)), "down45");
+eq("-2.5 per minute is down", cgmTrend(run(5, 5, 200, -2.5)), "down");
+eq("-3.5 per minute is down2", cgmTrend(run(5, 5, 300, -3.5)), "down2");
+
+console.log("step edges (exact slopes, no rounding)");
+const exact = (perMin: number): TrendReading[] =>
+  Array.from({ length: 5 }, (_, i) => ({ at: T0 + i * 5 * MIN, mgdl: 200 + perMin * i * 5 }));
+for (const [slope, want] of [
+  [0.99, "flat"], [1, "up45"], [1.99, "up45"], [2, "up"], [2.99, "up"], [3, "up2"], [5, "up2"],
+] as const) {
+  eq(`+${slope} per minute`, cgmTrend(exact(slope)), want);
+}
+for (const [slope, want] of [
+  [-0.99, "flat"], [-1, "down45"], [-1.99, "down45"], [-2, "down"], [-2.99, "down"], [-3, "down2"], [-5, "down2"],
+] as const) {
+  eq(`${slope} per minute`, cgmTrend(exact(slope)), want);
+}
 
 console.log("not enough to say");
 eq("no readings", cgmTrend([]), null);

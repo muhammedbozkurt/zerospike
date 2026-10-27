@@ -47,6 +47,13 @@ const PATTERNS = {
     { pattern: "insulin recommendation" },
     { pattern: "you should inject" },
     { pattern: "take X units" },
+    { pattern: "real-time" },
+    { pattern: "real time" },
+    { pattern: "live glucose" },
+    { pattern: "hypoglycemic event*" },
+    { pattern: "hypoglycemia event*" },
+    { pattern: "hyperglycemic event*" },
+    { pattern: "hypo event*" },
   ],
   tr: [
     { pattern: "alarm*", requiresContext: true },
@@ -67,6 +74,11 @@ const PATTERNS = {
     { pattern: "tavsiye edilen doz*" },
     { pattern: "yapmalısınız" },
     { pattern: "uygulamanız gereken" },
+    { pattern: "gerçek zamanlı" },
+    { pattern: "hipoglisemi olay*" },
+    { pattern: "hipoglisemik olay*" },
+    { pattern: "hiperglisemi olay*" },
+    { pattern: "hipoglisemi atak*" },
   ],
   de: [
     { pattern: "Alarm", requiresContext: true },
@@ -78,6 +90,11 @@ const PATTERNS = {
     { pattern: "empfohlene Dosis" },
     { pattern: "Dosisempfehlung" },
     { pattern: "sollten Sie spritzen" },
+    { pattern: "Echtzeit" },
+    { pattern: "Unterzuckerungsereignis*" },
+    { pattern: "Hypoglykämie-Ereignis*" },
+    { pattern: "hypoglykämisches Ereignis" },
+    { pattern: "hypoglykämische Ereignisse" },
   ],
   fr: [
     { pattern: "alerte", requiresContext: true },
@@ -90,6 +107,9 @@ const PATTERNS = {
     { pattern: "dose recommandée" },
     { pattern: "dose conseillée" },
     { pattern: "vous devriez injecter" },
+    { pattern: "temps réel" },
+    { pattern: "événement hypoglycémique" },
+    { pattern: "événements hypoglycémiques" },
   ],
   es: [
     { pattern: "alarma", requiresContext: true },
@@ -101,6 +121,9 @@ const PATTERNS = {
     { pattern: "dosis recomendada" },
     { pattern: "dosis sugerida" },
     { pattern: "debería inyectar" },
+    { pattern: "tiempo real" },
+    { pattern: "evento hipoglucémico" },
+    { pattern: "eventos hipoglucémicos" },
   ],
   it: [
     { pattern: "allarme", requiresContext: true },
@@ -111,6 +134,9 @@ const PATTERNS = {
     { pattern: "raccomandazione di trattamento" },
     { pattern: "dose consigliata" },
     { pattern: "dose raccomandata" },
+    { pattern: "tempo reale" },
+    { pattern: "evento ipoglicemico" },
+    { pattern: "eventi ipoglicemici" },
   ],
   pt: [
     { pattern: "alarme", requiresContext: true },
@@ -121,6 +147,9 @@ const PATTERNS = {
     { pattern: "recomendação de tratamento" },
     { pattern: "dose recomendada" },
     { pattern: "dose sugerida" },
+    { pattern: "tempo real" },
+    { pattern: "evento hipoglicêmico" },
+    { pattern: "eventos hipoglicêmicos" },
   ],
   ar: [
     { pattern: "تنبيه", requiresContext: true },
@@ -131,6 +160,10 @@ const PATTERNS = {
     { pattern: "يعالج" },
     { pattern: "توصية علاجية" },
     { pattern: "الجرعة الموصى بها" },
+    { pattern: "الوقت الفعلي" },
+    { pattern: "الوقت الحقيقي" },
+    { pattern: "حدث نقص سكر" },
+    { pattern: "نوبة نقص سكر" },
   ],
   ja: [
     { pattern: "アラーム", requiresContext: true },
@@ -142,6 +175,9 @@ const PATTERNS = {
     { pattern: "治療を推奨" },
     { pattern: "推奨用量" },
     { pattern: "推奨量" },
+    { pattern: "リアルタイム" },
+    { pattern: "低血糖イベント" },
+    { pattern: "低血糖発作" },
   ],
 };
 
@@ -236,6 +272,24 @@ const KEY_EXEMPTIONS = LOCALES.flatMap((locale) => [
     reason: NO_DIAGNOSIS_REASON,
   },
 ]);
+
+const LIVE_ACTIVITY_REASON =
+  "Apple's own Italian name for the iOS Live Activities feature (\"Attività in tempo reale\", as shown in iOS settings); the words name a system feature, not a claim about glucose data";
+const LIVE_ACTIVITY_KEYS = [
+  "widgetGuide.postMealBodyAndroid",
+  "widgetGuide.liveTitle",
+  "widgetGuide.liveOn",
+  "widgetGuide.liveOff",
+  "scWidgets.liveActivity",
+];
+KEY_EXEMPTIONS.push(
+  ...LIVE_ACTIVITY_KEYS.map((key) => ({
+    locale: "it",
+    key,
+    terms: ["tempo reale"],
+    reason: LIVE_ACTIVITY_REASON,
+  }))
+);
 
 function isKeyExempt(exemptions, locale, key, matchedText) {
   const lower = matchedText.toLowerCase();

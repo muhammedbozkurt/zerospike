@@ -823,7 +823,9 @@ const tr = {
     trend: {
       up2: "Hızla yükseliyor",
       up: "Yükseliyor",
+      up45: "Yavaş yükseliyor",
       flat: "Sabit",
+      down45: "Yavaş düşüyor",
       down: "Düşüyor",
       down2: "Hızla düşüyor",
     },

@@ -31,9 +31,11 @@ import { Card, Segmented, Txt } from "./ui";
 
 const TREND_ROTATION: Record<CgmTrend, number> = {
   up2: -90,
-  up: -45,
+  up: -90,
+  up45: -45,
   flat: 0,
-  down: 45,
+  down45: 45,
+  down: 90,
   down2: 90,
 };
 

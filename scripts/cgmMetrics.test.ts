@@ -141,6 +141,15 @@ section("D. GMI needs a long enough window, well covered");
   ok("14 days at 69 %: hidden", g(14, 0.69) === null);
   ok("7 days at 100 %: hidden (window too short)", g(7, 1) === null);
   ok("30 days at 100 %: shown", g(30, 1) != null);
+  const mixed = (days: number, covered: number) => {
+    const rows = mk(days, covered);
+    for (let d = 0; d < days; d++) rows.push(sugar(new Date(NOW - d * DAY - 3600_000).toISOString(), 100, "manual", false));
+    return computeInsights(rows, [], [], days, { low: 70, high: 180 });
+  };
+  ok("30 days, 45 % sensor + fingersticks: GMI hidden (was shown from the mix)", mixed(30, 0.45).gmi === null);
+  ok("30 days, 60 % sensor + fingersticks: GMI hidden (below 70 %)", mixed(30, 0.6).gmi === null);
+  ok("30 days, 30 % sensor + fingersticks: GMI hidden", mixed(30, 0.3).gmi === null);
+  ok("30 days, 90 % sensor + fingersticks: GMI shown", mixed(30, 0.9).gmi != null);
   ok("eligibility: manual basis never", !cgmGmiEligible({ kind: "all", coverage: 1 }, w14));
   ok("eligibility: 13-day custom range hidden", !cgmGmiEligible({ kind: "cgm", coverage: 1 }, { start: NOW - 13 * DAY, end: NOW }));
   ok("eligibility: 14-day pick ending 23:59 shown", cgmGmiEligible({ kind: "cgm", coverage: 1 }, { start: NOW - 14 * DAY + 1, end: NOW }));

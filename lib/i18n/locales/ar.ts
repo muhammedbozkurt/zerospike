@@ -825,7 +825,9 @@ const ar: TranslationSchema = {
     trend: {
       up2: "يرتفع بسرعة",
       up: "يرتفع",
+      up45: "يرتفع ببطء",
       flat: "ثابت",
+      down45: "ينخفض ببطء",
       down: "ينخفض",
       down2: "ينخفض بسرعة",
     },

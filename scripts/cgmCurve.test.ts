@@ -16,6 +16,7 @@ import {
   buildCurveModel,
   cgmAgeLabel,
   cgmWindowNeedsPro,
+  freeRowsStartMs,
   hourTicks,
   layoutCurve,
   localDayRange,
@@ -211,6 +212,9 @@ console.log("F. the free 24 hours and the age label");
   ok("a day that ended 23 hours ago is free", !cgmWindowNeedsPro(NOW - 23 * HOUR_MS, NOW));
   ok("a day that ended 25 hours ago is Pro", cgmWindowNeedsPro(NOW - 25 * HOUR_MS, NOW));
   eq("the free span is 24 hours", FREE_CGM_WINDOW_MS, 24 * HOUR_MS);
+  eq("free: yesterday starts at now - 24 h, not at its midnight", freeRowsStartMs(NOW - 30 * HOUR_MS, NOW, false), NOW - 24 * HOUR_MS);
+  eq("free: a day that starts inside the window is whole", freeRowsStartMs(NOW - 10 * HOUR_MS, NOW, false), NOW - 10 * HOUR_MS);
+  eq("Pro: the whole day", freeRowsStartMs(NOW - 30 * HOUR_MS, NOW, true), NOW - 30 * HOUR_MS);
   const labels = { hourShort: "sa", minuteShort: "dk", agoTemplate: "{{t}} önce" };
   eq("4 minutes", cgmAgeLabel(NOW - 4 * MIN - 20_000, NOW, labels), "4 dk önce");
   eq("an hour and five", cgmAgeLabel(NOW - 65 * MIN, NOW, labels), "1 sa 5 dk önce");

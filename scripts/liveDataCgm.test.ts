@@ -20,6 +20,7 @@ import {
 } from "../lib/services/liveDataCgm";
 import { sceneCgmSnapshot, sceneSnapshot } from "../components/scWidgets/sceneData";
 import type { LiveData } from "../lib/services/liveData";
+import { formatTime } from "../lib/format";
 
 const MIN = 60000;
 const NOW = Date.parse("2026-10-27T10:00:00.000Z");
@@ -53,7 +54,7 @@ function readings(values: number[], newestAgeMin: number) {
   assert.equal(c.mgdl, 130);
   assert.equal(c.at, NOW - 4 * MIN);
   assert.equal(c.ageMin, 4);
-  assert.equal(c.trend, "up2");
+  assert.equal(c.trend, "up");
   assert.equal(c.display, "130");
   assert.deepEqual(Object.keys(c).sort(), ["ageMin", "at", "display", "mgdl", "trend"]);
 }
@@ -65,10 +66,12 @@ assert.ok(cgmLiveFields("nightscout", readings([100, 100, 100], 1), NOW, "mgdl")
 // Trend adimlari
 const trendOf = (vals: number[]) => buildLiveCgm(readings(vals, 1), NOW, "mgdl")?.trend;
 assert.equal(trendOf([100, 100, 100, 100]), "flat");
-assert.equal(trendOf([100, 105, 110, 115]), "up");
-assert.equal(trendOf([100, 110, 120, 130]), "up2");
-assert.equal(trendOf([130, 125, 120, 115]), "down");
-assert.equal(trendOf([130, 120, 110, 100]), "down2");
+assert.equal(trendOf([100, 105, 110, 115]), "up45");
+assert.equal(trendOf([100, 110, 120, 130]), "up");
+assert.equal(trendOf([100, 115, 130, 145]), "up2");
+assert.equal(trendOf([130, 125, 120, 115]), "down45");
+assert.equal(trendOf([130, 120, 110, 100]), "down");
+assert.equal(trendOf([145, 130, 115, 100]), "down2");
 // Cok az okuma: trend yok ama deger var
 {
   const c = buildLiveCgm(readings([140, 142], 2), NOW, "mgdl");
@@ -80,7 +83,7 @@ assert.equal(trendOf([130, 120, 110, 100]), "down2");
 assert.equal(CGM_STALE_MIN, 20);
 assert.equal(isCgmStale(20), false);
 assert.equal(isCgmStale(21), true);
-assert.equal(buildLiveCgm(readings([100, 110, 120, 130], 20), NOW, "mgdl")?.trend, "up2");
+assert.equal(buildLiveCgm(readings([100, 110, 120, 130], 20), NOW, "mgdl")?.trend, "up");
 {
   const c = buildLiveCgm(readings([100, 110, 120, 130], 21), NOW, "mgdl");
   assert.equal(c?.ageMin, 21);
@@ -114,9 +117,11 @@ assert.equal(cgmAgeText(4, undefined), "4 min");
 
 // Ok simgeleri
 assert.equal(cgmTrendGlyph("up2"), "↑↑");
-assert.equal(cgmTrendGlyph("up"), "↗");
+assert.equal(cgmTrendGlyph("up"), "↑");
+assert.equal(cgmTrendGlyph("up45"), "↗");
 assert.equal(cgmTrendGlyph("flat"), "→");
-assert.equal(cgmTrendGlyph("down"), "↘");
+assert.equal(cgmTrendGlyph("down45"), "↘");
+assert.equal(cgmTrendGlyph("down"), "↓");
 assert.equal(cgmTrendGlyph("down2"), "↓↓");
 assert.equal(cgmTrendGlyph(null), "");
 
@@ -129,7 +134,7 @@ assert.equal(cgmTrendGlyph(null), "");
   const m = cgmWidgetModel({ mode: "cgm", cgm, labels: { cgm: "CGM", ...labels } }, NOW)!;
   assert.equal(m.label, "CGM");
   assert.equal(m.value, "130");
-  assert.equal(m.glyph, "↑↑");
+  assert.equal(m.glyph, "↑");
   assert.equal(m.stale, false);
   assert.equal(m.ageText, "4 min ago");
   // Android bitmap render aninda yaslanir: payload ageMin 4, 30 dk sonra 34
@@ -173,19 +178,25 @@ for (const f of [
   assert.match(s, /var cgm: Cgm\?/, `${f}: cgm opsiyonel`);
   assert.match(s, /let cgm: String\?/, `${f}: labels.cgm opsiyonel`);
   assert.match(s, /staleAfterMinutes = 20/, `${f}: 20 dk esigi`);
-  for (const glyph of ["↑↑", "↗", "→", "↘", "↓↓"]) assert.ok(s.includes(`"${glyph}"`), `${f}: ${glyph}`);
+  for (const [state, glyph] of [["up2", "↑↑"], ["up", "↑"], ["up45", "↗"], ["flat", "→"], ["down45", "↘"], ["down", "↓"], ["down2", "↓↓"]]) {
+    assert.match(s, new RegExp(`case "${state}": return "${glyph}"`), `${f}: ${state} -> ${glyph}`);
+  }
+  assert.match(s, /default: return ""/, `${f}: bilinmeyen durum ok cizmez`);
   for (const field of ["mgdl", "at", "trend", "ageMin", "display"]) {
     assert.match(s, new RegExp(`struct Cgm: Codable \\{[\\s\\S]*let ${field}: `), `${f}: Cgm.${field}`);
   }
 }
 assert.match(liveData, /cgmReadingText\(data\.cgm/, "Live Activity pill CGM degerini ve oku gostermeli");
 
-// Live Activity metni: deger + ok; eski degerde yalniz sayi
+// Live Activity metni: deger + okuma saati, ok YOK (icerik yalniz esitlemede yazilir)
 {
   const cgm = buildLiveCgm(readings([100, 110, 120, 130], 4), NOW, "mgdl")!;
-  assert.equal(cgmReadingText(cgm, NOW), "130 ↑↑");
-  assert.equal(cgmReadingText(cgm, NOW + 30 * MIN), "130");
-  assert.equal(cgmReadingText({ ...cgm, trend: null }, NOW), "130");
+  const clock = formatTime(new Date(cgm.at).toISOString());
+  assert.equal(cgmReadingText(cgm), `130 · ${clock}`);
+  assert.equal(cgmReadingText({ ...cgm, trend: "up2" }), `130 · ${clock}`);
+  assert.ok(!/[↑↗→↘↓]/.test(cgmReadingText(cgm)), "pill metninde ok olmamali");
+  assert.match(clock, /\d{1,2}[:.]\d{2}/);
+  assert.doesNotMatch(liveData, /cgmReadingText\(data\.cgm, /, "pill metni saate degil okuma saatine bakar");
 }
 
 console.log("liveDataCgm.test.ts OK");

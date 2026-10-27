@@ -825,7 +825,9 @@ const it: TranslationSchema = {
     trend: {
       up2: "In rapido aumento",
       up: "In aumento",
+      up45: "In lieve aumento",
       flat: "Stabile",
+      down45: "In lieve calo",
       down: "In calo",
       down2: "In rapido calo",
     },
@@ -833,7 +835,7 @@ const it: TranslationSchema = {
   cgmHome: {
     waiting: "In attesa del CGM",
     waitingBody: "Le misurazioni compariranno qui non appena arrivano.",
-    watching: "Monitoraggio con CGM",
+    watching: "Registrazione con CGM",
     offerTitle: "Passare alla modalità CGM?",
     offerBody: "In {{store}} sono state trovate misurazioni CGM. Vuole passare alla modalità CGM?",
     offerAccept: "Passa alla modalità CGM",

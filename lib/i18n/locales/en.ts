@@ -825,7 +825,9 @@ const en: TranslationSchema = {
     trend: {
       up2: "Rising quickly",
       up: "Rising",
+      up45: "Rising slowly",
       flat: "Steady",
+      down45: "Falling slowly",
       down: "Falling",
       down2: "Falling quickly",
     },

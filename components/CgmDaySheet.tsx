@@ -9,6 +9,7 @@ import {
   DAY_BUCKET_MS,
   buildCurveModel,
   cgmWindowNeedsPro,
+  freeRowsStartMs,
   localDayRange,
   rowFromLog,
   type CurveRow,
@@ -23,8 +24,8 @@ import { Button, Txt } from "./ui";
 
 /**
  * One day of sensor readings as a 24 hour curve (10 minute buckets). The last
- * 24 hours are free; an older day is a Pro view and shows the upgrade prompt
- * in place of the curve.
+ * 24 hours are free (a day that straddles the limit is cut to them); an older
+ * day is a Pro view and shows the upgrade prompt in place of the curve.
  */
 export function CgmDaySheet({
   dayKey,
@@ -49,7 +50,7 @@ export function CgmDaySheet({
     }
     let alive = true;
     setRows([]);
-    getCgmWindowRows(profileId, range.loMs, range.hiMs - 1)
+    getCgmWindowRows(profileId, freeRowsStartMs(range.loMs, Date.now(), isProUser), range.hiMs - 1)
       .then((list) => {
         if (alive) setRows(list.map(rowFromLog).filter((r): r is CurveRow => r != null));
       })
@@ -59,7 +60,7 @@ export function CgmDaySheet({
     return () => {
       alive = false;
     };
-  }, [range, profileId, locked]);
+  }, [range, profileId, locked, isProUser]);
 
   const unit = activeProfile?.glucose_unit ?? "mgdl";
   const band = useMemo(

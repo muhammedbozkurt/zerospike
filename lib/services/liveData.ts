@@ -548,7 +548,7 @@ export async function syncLiveData(
       void import("../../modules/zerospike-live-activity").then((m) =>
         m.updatePostMealActivityReading({
           lastReading: data.cgm
-            ? cgmReadingText(data.cgm, Date.now())
+            ? cgmReadingText(data.cgm)
             : data.lastGlucoseDisplay,
           unitLabel: glucoseUnitLabel(unit),
         })

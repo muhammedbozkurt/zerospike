@@ -81,7 +81,7 @@ struct LiveData: Codable {
   struct Cgm: Codable {
     let mgdl: Double
     let at: Double
-    /// "up2" | "up" | "flat" | "down" | "down2", or nil when there is no arrow.
+    /// "up2" | "up" | "up45" | "flat" | "down45" | "down" | "down2", or nil when there is no arrow.
     let trend: String?
     let ageMin: Double?
     /// The value pre-formatted in the display unit and the active locale.
@@ -249,9 +249,11 @@ extension LiveData.Cgm {
     if isStale(now: now) { return "" }
     switch trend {
     case "up2": return "↑↑"
-    case "up": return "↗"
+    case "up": return "↑"
+    case "up45": return "↗"
     case "flat": return "→"
-    case "down": return "↘"
+    case "down45": return "↘"
+    case "down": return "↓"
     case "down2": return "↓↓"
     default: return ""
     }

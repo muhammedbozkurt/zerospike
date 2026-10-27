@@ -4,7 +4,9 @@
  * glucose level, no range and no alert.
  */
 
-export type CgmTrend = "up2" | "up" | "flat" | "down" | "down2";
+/** Seven steps, as the common CGM displays draw them: flat, diagonal (up45 /
+ *  down45), single (up / down) and double (up2 / down2). */
+export type CgmTrend = "up2" | "up" | "up45" | "flat" | "down45" | "down" | "down2";
 
 export interface TrendReading {
   /** ISO string or epoch milliseconds. */
@@ -22,9 +24,13 @@ export const TREND_MIN_SPAN_MIN = 8;
 /** A newest reading older than this (against `nowMs`) gives no arrow. */
 export const TREND_MAX_AGE_MIN = 20;
 
-/** mg/dL per minute: below FLAT is flat, from DOUBLE up is a double arrow. */
+/** mg/dL per minute: below FLAT is flat, FLAT to SINGLE a diagonal arrow,
+ *  SINGLE to DOUBLE a single arrow, from DOUBLE up a double arrow. */
 export const TREND_FLAT_PER_MIN = 1;
-export const TREND_DOUBLE_PER_MIN = 2;
+export const TREND_SINGLE_PER_MIN = 2;
+export const TREND_DOUBLE_PER_MIN = 3;
+/** Slopes are sums of floats; this keeps an exact 1, 2 or 3 on its step. */
+const EDGE_EPS = 1e-9;
 
 function toMs(at: string | number): number {
   return typeof at === "number" ? at : Date.parse(at);
@@ -75,7 +81,9 @@ export function cgmTrend(
   const perMin = num / den;
 
   const abs = Math.abs(perMin);
-  if (abs < TREND_FLAT_PER_MIN) return "flat";
-  if (abs >= TREND_DOUBLE_PER_MIN) return perMin > 0 ? "up2" : "down2";
-  return perMin > 0 ? "up" : "down";
+  const up = perMin > 0;
+  if (abs < TREND_FLAT_PER_MIN - EDGE_EPS) return "flat";
+  if (abs >= TREND_DOUBLE_PER_MIN - EDGE_EPS) return up ? "up2" : "down2";
+  if (abs >= TREND_SINGLE_PER_MIN - EDGE_EPS) return up ? "up" : "down";
+  return up ? "up45" : "down45";
 }
