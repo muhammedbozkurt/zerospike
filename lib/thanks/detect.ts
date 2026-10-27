@@ -14,8 +14,13 @@
 export const THANKS_STATE_KEY = "zerospike.thanks.v1";
 
 export const DAY_MS = 86_400_000;
-/** The renewal toast is shown at most once per this many days. */
-export const RENEWAL_MIN_GAP_DAYS = 365;
+/**
+ * The renewal toast is shown at most once per this many days. Below 365 on
+ * purpose: a yearly renewal lands about a year after the last toast, give or
+ * take minutes, and a 365 floor would skip every other year. A monthly
+ * subscriber still sees it about once a year.
+ */
+export const RENEWAL_TOAST_MIN_DAYS = 330;
 /** Expiry must move forward by at least this much to count as a renewal. */
 export const RENEWAL_MIN_ADVANCE_MS = DAY_MS;
 
@@ -105,7 +110,7 @@ export function detectThanks(input: DetectInput): { outcome: ThanksOutcome; next
     if (current.expiresAt - prev.expiresAt < RENEWAL_MIN_ADVANCE_MS) return { outcome: "none", next };
     if (shown.renewalToastAt !== null) {
       // A toast stamped in the future (clock moved) blocks as well.
-      if (now - shown.renewalToastAt < RENEWAL_MIN_GAP_DAYS * DAY_MS) return { outcome: "none", next };
+      if (now - shown.renewalToastAt < RENEWAL_TOAST_MIN_DAYS * DAY_MS) return { outcome: "none", next };
     }
     return { outcome: "renewed", next };
   }

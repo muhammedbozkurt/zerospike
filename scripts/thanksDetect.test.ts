@@ -102,7 +102,7 @@ async function main() {
     eq("trial then intro is silent", run(snap({ periodType: "trial" }), ent({ periodType: "intro" })).outcome, "none");
   }
 
-  section("D. renewal and the 365 day limit");
+  section("D. renewal and the 330 day toast limit");
   {
     const before = snap({ expiresAt: T0 - 1000 });
     const after = ent({ expiresAt: T0 - 1000 + 365 * DAY_MS });
@@ -116,9 +116,21 @@ async function main() {
     eq("expiry going back is silent", run(before, ent({ expiresAt: (before.expiresAt as number) - 5 * DAY_MS })).outcome, "none");
 
     const last = (days: number): ThanksShown => ({ convertedSeenAt: null, renewalToastAt: T0 - days * DAY_MS });
-    eq("last toast 364 days ago: silent", run(before, after, T0, last(364)).outcome, "none");
-    eq("last toast 365 days minus 1 ms ago: silent", run(before, after, T0, { convertedSeenAt: null, renewalToastAt: T0 - 365 * DAY_MS + 1 }).outcome, "none");
-    eq("last toast exactly 365 days ago: shown", run(before, after, T0, last(365)).outcome, "renewed");
+    eq("last toast 329 days ago: silent", run(before, after, T0, last(329)).outcome, "none");
+    eq("last toast 330 days minus 1 ms ago: silent", run(before, after, T0, { convertedSeenAt: null, renewalToastAt: T0 - 330 * DAY_MS + 1 }).outcome, "none");
+    eq("last toast exactly 330 days ago: shown", run(before, after, T0, last(330)).outcome, "renewed");
+    eq("last toast 364 days ago (a year, a bit short): shown", run(before, after, T0, last(364)).outcome, "renewed");
+    eq("last toast 365 days ago: shown", run(before, after, T0, last(365)).outcome, "renewed");
+    {
+      const yearlyPrev = snap({ productId: ANNUAL, expiresAt: T0 - 1000 });
+      const yearlyNow = ent({ productId: ANNUAL, expiresAt: T0 - 1000 + 365 * DAY_MS });
+      const lastToast = T0 - (364 * DAY_MS + 23 * 3600_000);
+      eq("yearly subscriber renewing 364 days 23 hours after the last toast: shown", run(yearlyPrev, yearlyNow, T0, { convertedSeenAt: null, renewalToastAt: lastToast }).outcome, "renewed");
+      const monthlyP = snap({ productId: MONTHLY, expiresAt: T0 - 1000 });
+      const monthlyN = ent({ productId: MONTHLY, expiresAt: T0 - 1000 + 30 * DAY_MS });
+      eq("monthly subscriber at 329 days: silent", run(monthlyP, monthlyN, T0, last(329)).outcome, "none");
+      eq("monthly subscriber at 330 days: shown", run(monthlyP, monthlyN, T0, last(330)).outcome, "renewed");
+    }
     eq("last toast 400 days ago: shown", run(before, after, T0, last(400)).outcome, "renewed");
     eq("last toast in the future (clock moved): silent", run(before, after, T0, last(-10)).outcome, "none");
     eq("a seen conversion does not block a renewal", run(before, after, T0, { convertedSeenAt: T0 - 500 * DAY_MS, renewalToastAt: null }).outcome, "renewed");
