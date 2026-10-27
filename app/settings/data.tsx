@@ -44,6 +44,7 @@ import {
   type HealthWriteStatusRecord,
 } from "../../lib/services/health";
 import { registerHealthBackground, requestHealthBackgroundAccess } from "../../lib/services/healthBackground";
+import { clearNightscoutForProfile, resetNightscoutCursorFor } from "../../lib/services/sourceSync";
 import type { HealthLastSync, HealthWriteKind } from "../../lib/services/healthTypes";
 import {
   countHealthRecordCopies,
@@ -312,6 +313,8 @@ export default function DataSettings() {
     await revokeHealthRecordsBeforeDelete(activeProfile.id);
     await revokeHealthCopiesBeforeDelete(activeProfile.id);
     await clearAllLogs(activeProfile.id);
+    // Readings up to now must not come back from a connected Nightscout server.
+    await resetNightscoutCursorFor(activeProfile.id);
     // The countdown was armed for a meal in the history that was just erased:
     // leaving it running would ring for a record the user asked to be gone.
     const runningTimer = await getPostMealTimerState();
@@ -348,6 +351,8 @@ export default function DataSettings() {
       toast(t("profiles.cannotDeleteLast"), "error");
       return;
     }
+    // The stored Nightscout address and token go with the profile.
+    await clearNightscoutForProfile(activeProfile.id);
     // Its owner no longer exists, so nothing can ever act on it again: the
     // alarm, the notification, the stored end and the lock-screen card all go.
     if (runningTimer?.profileId === activeProfile.id) {
