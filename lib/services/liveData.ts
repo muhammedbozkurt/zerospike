@@ -545,12 +545,15 @@ export async function syncLiveData(
       (Platform.OS === "ios" || Platform.OS === "android") &&
       data.postMealEndsAt != null
     ) {
+      const unitLabel = glucoseUnitLabel(unit);
       void import("../../modules/zerospike-live-activity").then((m) =>
         m.updatePostMealActivityReading({
           lastReading: data.cgm
-            ? cgmReadingText(data.cgm)
+            ? cgmReadingText(data.cgm, unitLabel)
             : data.lastGlucoseDisplay,
-          unitLabel: glucoseUnitLabel(unit),
+          // The CGM text already carries the unit; the native pill appends its
+          // own unit after the whole text, which would glue it to the clock time.
+          unitLabel: data.cgm ? "" : unitLabel,
         })
       );
     }

@@ -41,6 +41,7 @@ import {
   windowPercentiles,
   weeklyDigest,
   FREE_INSIGHTS_WINDOW,
+  gmiWithheldReason,
   GMI_MIN_READINGS,
   GMI_MIN_SPAN_DAYS,
   INSIGHTS_WINDOW_DAYS,
@@ -1415,7 +1416,7 @@ export default function InsightsScreen() {
                     >
                       {data.gmi != null
                         ? t(fromCgm ? "cgmInsights.gmiNote" : "insights.gmiNote")
-                        : fromCgm
+                        : gmiWithheldReason(data) === "coverage"
                           ? t("cgmInsights.gmiNeedCoverage", {
                               days: GMI_MIN_WINDOW_DAYS,
                               pct: pct(GMI_MIN_COVERAGE * 100),

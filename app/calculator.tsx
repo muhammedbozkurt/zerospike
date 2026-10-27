@@ -1714,7 +1714,7 @@ function CalculatorScreen() {
         await schedulePostMealReminder(loggedAt);
       } catch (err) {
         logCrash(err, { screen: "calculator", step: "postMealReminder" });
-        trackSaveFailed("meal", "side");
+        trackSaveFailed("meal", "schedule");
       }
       bumpData();
 

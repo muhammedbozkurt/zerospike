@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   await runGuardedSave({ ...base, write: async () => 1, onSaved: async () => { throw new Error("nav"); } });
   eq("an error after the row -> injection/side", take(), [{ kind: "injection", step: "side" }]);
   await runGuardedSave({ ...base, write: async () => 1, confirm: async () => { throw new Error("read"); } });
-  eq("a confirm read error -> injection/side", take(), [{ kind: "injection", step: "side" }]);
+  eq("a confirm read error (no row written) -> injection/write", take(), [{ kind: "injection", step: "write" }]);
   await runGuardedSave({ ...base, write: async () => 1, confirm: async () => false });
   eq("a cancelled save reports nothing", take(), []);
 
@@ -135,6 +135,11 @@ async function main(): Promise<void> {
   }
   ok("a schedule step exists", calls.some((c) => c.step === "schedule"));
   ok("a side step exists", calls.some((c) => c.step === "side"));
+  {
+    const calc = src("app/calculator.tsx");
+    const at = calc.indexOf('step: "postMealReminder"');
+    ok("calculator: post-meal reminder scheduling failure is meal/schedule", at !== -1 && /trackSaveFailed\("meal", "schedule"\)/.test(calc.slice(at, at + 120)));
+  }
   const where = (kind: string) => calls.filter((c) => c.kind === kind).map((c) => c.file);
   const has = (kind: string, file: string) => where(kind).some((f) => f === file);
   ok("injection: lib/injectionSave.ts", has("injection", "lib/injectionSave.ts"));

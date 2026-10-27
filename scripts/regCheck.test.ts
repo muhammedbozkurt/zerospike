@@ -34,7 +34,7 @@ function section(title: string): void {
 }
 
 type Finding = { locale: string; key: string; pattern: string };
-type Exemption = { locale: string; key: string; terms: string[]; reason: string };
+type Exemption = { locale: string; key: string; anchors: string[]; reason: string };
 
 const LOCALES: string[] = reg.LOCALES;
 const EXEMPTIONS: Exemption[] = reg.KEY_EXEMPTIONS;
@@ -66,10 +66,10 @@ console.log("zerospike reg-check exemption test");
 
 section("A. every exemption has a reason and terms");
 {
-  eq("exemption count (9 locales x 3 keys + 5 it Live Activity keys)", EXEMPTIONS.length, 32);
+  eq("exemption count (9 locales x 3 keys + 9 locales x 5 Live Activity keys)", EXEMPTIONS.length, 72);
   for (const e of EXEMPTIONS) {
     ok(`reason ${e.locale}.${e.key}`, typeof e.reason === "string" && e.reason.length > 20);
-    ok(`terms ${e.locale}.${e.key}`, Array.isArray(e.terms) && e.terms.length > 0);
+    ok(`anchors ${e.locale}.${e.key}`, Array.isArray(e.anchors) && e.anchors.length > 0);
   }
 }
 
@@ -119,7 +119,7 @@ section("D. a different locale does not inherit the exemption");
 section("E. an exemption without a reason does not excuse");
 {
   const entries: [string, string][] = [["disclaimer.body", "treatment"]];
-  const exemptions = [{ locale: "en", key: "disclaimer.body", terms: ["treatment"], reason: "" }];
+  const exemptions = [{ locale: "en", key: "disclaimer.body", anchors: ["treatment"], reason: "" }];
   const r = reg.scanLocaleEntries("en", entries, { patterns: [{ pattern: "treatment" }], exemptions }) as {
     findings: Finding[];
   };
@@ -235,20 +235,118 @@ section("J. real-time claims and diagnostic event wording are caught in every la
   }
 }
 
-section("K. the Italian Live Activity name is excused only under its own keys");
+section("K. the Live Activity system names are excused only under their own keys, as anchored phrases");
 {
-  const name = "Attività in tempo reale";
-  const it = (key: string) =>
-    (reg.scanLocaleEntries("it", [[key, name]]) as { findings: Finding[]; excused: number });
-  for (const key of ["widgetGuide.liveTitle", "widgetGuide.liveOn", "widgetGuide.liveOff", "widgetGuide.postMealBodyAndroid", "scWidgets.liveActivity"]) {
-    const r = it(key);
-    ok(`it ${key} excused`, r.findings.length === 0 && r.excused === 1);
+  const names: Record<string, string> = {
+    en: "Live Activity", tr: "Canlı Etkinlik", de: "Live-Aktivität", fr: "Activité en direct", es: "Actividad en vivo",
+    it: "Attività in tempo reale", pt: "Atividade ao Vivo", ar: "النشاط المباشر", ja: "ライブアクティビティ",
+  };
+  const scan = (locale: string, key: string, text: string) =>
+    reg.scanLocaleEntries(locale, [[key, text]], { patterns: [{ pattern: names[locale] }] }) as { findings: Finding[]; excused: number };
+  for (const locale of LOCALES) {
+    for (const key of ["widgetGuide.liveTitle", "widgetGuide.liveOn", "widgetGuide.liveOff", "widgetGuide.postMealBodyAndroid", "scWidgets.liveActivity"]) {
+      const r = scan(locale, key, names[locale]);
+      ok(`${locale} ${key} excused`, r.findings.length === 0 && r.excused === 1, JSON.stringify(r));
+    }
+    eq(`${locale} elsewhere still a finding`, scan(locale, "cgmHome.watching", names[locale]).findings.length, 1);
   }
-  eq("it elsewhere still a finding", it("cgmHome.watching").findings.length, 1);
   const mixed = reg.scanLocaleEntries("it", [["widgetGuide.liveTitle", "Valori in tempo reale su Attività in tempo reale"]]) as { findings: Finding[]; excused: number };
-  ok("a second claim in an excused key is still excused by term (documented limit)", mixed.findings.length === 0);
+  eq("a second claim in an excused key is a finding", mixed.findings.length, 1);
+  eq("the anchored name is still excused", mixed.excused, 1);
   const other = reg.scanLocaleEntries("tr", [["widgetGuide.liveTitle", "Gerçek zamanlı Canlı Etkinlik"]]) as { findings: Finding[] };
   eq("tr Canlı Etkinlik name alone is clean, the claim is not", other.findings.length, 1);
+}
+
+section("L. opus probes: extra banned wording inside an excused key is caught");
+{
+  const probes: [string, string, string][] = [
+    ["it", "widgetGuide.liveTitle", "Glicemia in tempo reale sulla schermata di blocco"],
+    ["it", "widgetGuide.liveOn", "Attività in tempo reale attiva: glicemia in tempo reale"],
+    ["de", "disclaimer.body", "zerospike erstellt Ihre persönliche Behandlungsempfehlung."],
+    ["de", "disclaimer.body", "Bitte wenden Sie sich bei allen Behandlungsentscheidungen an Ihre Ärztin. zerospike liefert eine Behandlungsempfehlung."],
+    ["en", "disclaimer.body", "zerospike builds a treatment plan for you."],
+    ["fr", "disclaimer.short", "zerospike vous donne une recommandation de traitement."],
+    ["tr", "disclaimer.body", "zerospike diyabetinizi tedavi eder."],
+    ["tr", "onboarding.diabetes_none", "Uygulama size tanı koyar"],
+    ["ja", "disclaimer.body", "zerospikeが治療します。治療を推奨"],
+    ["ja", "onboarding.diabetes_none", "アプリが診断します"],
+    ["en", "disclaimer.body", "zerospike diagnoses diabetes."],
+    ["de", "disclaimer.body", "Die App warnt Sie bei Unterzucker."],
+  ];
+  for (const [locale, key, text] of probes) {
+    const r = reg.scanLocaleEntries(locale, [[key, text]]) as { findings: Finding[] };
+    ok(`${locale}.${key} flagged: ${text}`, r.findings.length >= 1);
+  }
+  const legit: [string, string, string][] = [
+    ["it", "widgetGuide.liveTitle", "Attività in tempo reale"],
+    ["en", "disclaimer.body", "zerospike is not a medical device. Please consult your physician for any treatment decisions."],
+    ["tr", "onboarding.diabetes_none", "Tanı almadım"],
+  ];
+  for (const [locale, key, text] of legit) {
+    const r = reg.scanLocaleEntries(locale, [[key, text]]) as { findings: Finding[] };
+    ok(`${locale}.${key} legit text stays clean`, r.findings.length === 0);
+  }
+}
+
+section("M. locale-key allowlist needs an anchor and a reason");
+{
+  const text = "Real-time glucose alarm warns you and gives a recommended dose";
+  const scan = (allowlist: Record<string, string>) =>
+    reg.scanLocaleEntries("en", [["home.title", text]], { allowlist }) as { findings: Finding[]; excused: number };
+  const throws = (allowlist: Record<string, string>) => {
+    try {
+      scan(allowlist);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  ok("empty reason throws", throws({ "en.home.title#Real-time glucose": "" }));
+  ok("whitespace reason throws", throws({ "en.home.title#Real-time glucose": "   " }));
+  ok("entry without anchor throws", throws({ "en.home.title": "Some long enough reason text here" }));
+  ok("entry with empty anchor throws", throws({ "en.home.title#": "Some long enough reason text here" }));
+  const r = scan({ "en.home.title#Real-time glucose": "Quoted competitor wording in a comparison, reviewed by hand" });
+  ok("anchored entry excuses only its own match", r.excused === 1 && r.findings.length >= 3, JSON.stringify(r));
+  ok("no whole-key escape", !r.findings.every((f) => f.pattern === "real-time"));
+  const other = reg.scanLocaleEntries("en", [["home.other", text]], {
+    allowlist: { "en.home.title#Real-time glucose": "Quoted competitor wording in a comparison, reviewed by hand" },
+  }) as { findings: Finding[]; excused: number };
+  ok("anchor of another key does not apply", other.excused === 0 && other.findings.length >= 4);
+  const rules = require("./regRules.js");
+  let threw = false;
+  try {
+    rules.validateAllowlist({ "zerospike-store/aso/it.md#x": "" });
+  } catch {
+    threw = true;
+  }
+  ok("store entry with empty reason throws", threw);
+}
+
+section("N. real-time and live wording gaps are caught in every language");
+{
+  const cases: [string, string[], string[]][] = [
+    ["en", ["Realtime glucose on your lock screen", "Real-time values"], ["Live Activity on the Lock Screen", "A realtor visit"]],
+    ["tr", ["Canlı şeker değeri kilit ekranında", "Anlık şeker takibi", "Canlı kan şekeri"], ["Canlı Etkinlik", "Anlık bildirim"]],
+    ["de", ["Echtzeitwerte Ihres Blutzuckers", "Live-Glukosewerte auf dem Sperrbildschirm", "Live-Blutzucker im Blick"], ["Live-Aktivität", "Live-Aktivitäten sind aktiv"]],
+    ["fr", ["Votre glycémie en direct sur l'écran verrouillé", "Glucose en direct"], ["Activité en direct", "Un événement en direct"]],
+    ["es", ["Su glucosa en vivo en la pantalla de bloqueo", "Azúcar en vivo"], ["Actividad en vivo", "Un evento en vivo"]],
+    ["it", ["La Sua glicemia in diretta sulla schermata di blocco", "Glucosio in diretta"], ["Attività Live", "Un evento in diretta"]],
+    ["pt", ["Sua glicose ao vivo na tela de bloqueio", "Açúcar ao vivo"], ["Atividade ao Vivo", "Um evento ao vivo"]],
+  ];
+  for (const [locale, flagged, clean] of cases) {
+    const scan = (text: string) =>
+      (reg.scanLocaleEntries(locale, [["x", text]]) as { findings: Finding[] }).findings.length;
+    for (const t of flagged) ok(`${locale} flagged: ${t}`, scan(t) >= 1);
+    for (const t of clean) ok(`${locale} clean: ${t}`, scan(t) === 0);
+  }
+  const live: [string, string, string][] = [
+    ["tr", "widgetGuide.liveTitle", "Canlı Etkinlik"],
+    ["fr", "widgetGuide.liveOn", "Les activités en direct sont activées pour votre glycémie."],
+  ];
+  for (const [locale, key, text] of live) {
+    const r = reg.scanLocaleEntries(locale, [[key, text]]) as { findings: Finding[] };
+    ok(`${locale} ${key} Live Activity name does not flag`, r.findings.length === 0, text);
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

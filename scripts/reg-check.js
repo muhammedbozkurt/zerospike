@@ -41,9 +41,10 @@ const {
   SUBSTRING_LOCALES,
   KEY_EXEMPTIONS,
   isKeyExempt,
+  anchorSpans,
+  insideSpans,
+  validateAllowlist,
   loadAllowlist,
-  buildLatinMatcher,
-  buildSubstringMatcher,
   buildAllMatcher,
   hasGlucoseContext,
 } = require("./regRules");
@@ -53,27 +54,29 @@ function scanLocaleEntries(locale, entries, opts = {}) {
   const allowlist = opts.allowlist || {};
   const exemptions = opts.exemptions || KEY_EXEMPTIONS;
   const substringMode = SUBSTRING_LOCALES.has(locale);
+  const allowAnchors = validateAllowlist(allowlist);
   const matchers = patterns.map(({ pattern, requiresContext, except }) => ({
     pattern,
     requiresContext: !!requiresContext,
-    match: substringMode ? buildSubstringMatcher(pattern) : buildLatinMatcher(pattern, { locale, except }),
+    all: buildAllMatcher(pattern, substringMode, { locale, except }),
   }));
   const findings = [];
   let excused = 0;
   for (const [key, value] of entries) {
-    for (const { pattern, requiresContext, match } of matchers) {
-      const m = match(value);
-      if (!m) continue;
+    const allowSpans = allowAnchors.has(`${locale}.${key}`)
+      ? anchorSpans(locale, value, allowAnchors.get(`${locale}.${key}`))
+      : [];
+    for (const { pattern, requiresContext, all } of matchers) {
+      const hits = all(value);
+      if (hits.length === 0) continue;
       if (requiresContext && !hasGlucoseContext(value, locale)) continue;
-      const allowKey = `${locale}.${key}`;
-      if (
-        Object.prototype.hasOwnProperty.call(allowlist, allowKey) ||
-        isKeyExempt(exemptions, locale, key, m[0])
-      ) {
-        excused++;
-        continue;
+      for (const { index, length } of hits) {
+        if (insideSpans(allowSpans, index, length) || isKeyExempt(exemptions, locale, key, value, index, length)) {
+          excused++;
+          continue;
+        }
+        findings.push({ locale, key, pattern, excerpt: excerpt(value, index, length) });
       }
-      findings.push({ locale, key, pattern, excerpt: excerpt(value, m.index, m[0].length) });
     }
   }
   return { findings, excused };

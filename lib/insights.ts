@@ -151,6 +151,16 @@ export function hasGmiBasis(readings: { logged_at: string; t?: number }[]): bool
   return n >= GMI_MIN_READINGS && max - min >= GMI_MIN_SPAN_DAYS * 86_400_000;
 }
 
+/**
+ * Which hint explains a withheld GMI. Any sensor reading in the window means the
+ * sensor rule (14 days, 70 % coverage) is the one that decides, even when the
+ * basis fell back to the fingersticks: "needs 14 readings" would be false for
+ * someone who already has 120.
+ */
+export function gmiWithheldReason(i: Pick<Insights, "basis" | "cgmReadings">): "coverage" | "readings" {
+  return i.basis === "cgm" || i.cgmReadings > 0 ? "coverage" : "readings";
+}
+
 function mean(ns: number[]): number | null {
   return ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : null;
 }

@@ -45,7 +45,7 @@ const tr = {
       "zerospike'taki karbonhidrat sayımı ve insülin tahmini yöntemleri, aşağıdaki kuruluşların kamuya açık standart klinik rehberliğine dayanır. zerospike bir tıbbi cihaz değil, eğitim amaçlı bir günlüktür. Dozları her zaman doktorunuzla teyit edin.",
     methodTitle: "Tahminler nasıl hesaplanır",
     method:
-      "• Öğün dozu = karbonhidrat ÷ insülin-karbonhidrat oranınız\n• Düzeltme dozu = (anlık şeker - hedef) ÷ insülin duyarlılık faktörünüz (ISF)\n• Tokluk (postprandiyal) şekeri yemekten 2 saat sonra ölçülür\n\nBu oranlar kişiseldir ve doktorunuz tarafından belirlenmelidir.",
+      "• Öğün dozu = karbonhidrat ÷ insülin-karbonhidrat oranınız\n• Düzeltme dozu = (mevcut şeker - hedef) ÷ insülin duyarlılık faktörünüz (ISF)\n• Tokluk (postprandiyal) şekeri yemekten 2 saat sonra ölçülür\n\nBu oranlar kişiseldir ve doktorunuz tarafından belirlenmelidir.",
     methodNote:
       "Tahminler 0,5 ünitelik çözünürlüğe yuvarlanır ve bilinçli olarak temkinlidir; kullanmadan önce her zaman gözden geçirip düzenleyin. Düzeltme dozu, tokluk hedef aralığınızın ortasını esas alır.",
     foodData:

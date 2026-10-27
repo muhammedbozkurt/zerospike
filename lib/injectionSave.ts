@@ -29,7 +29,8 @@ export async function runGuardedSave<T>(opts: {
 }): Promise<SaveOutcome> {
   const { lock, setBusy, confirm, write, onSaved, onAfterFailure } = opts;
   const onError = (err: unknown, phase: SavePhase): void => {
-    if (phase === "write") trackSaveFailed("injection", "write");
+    // "confirm" fails before any row exists, so it is a failed save, not a side effect.
+    if (phase === "write" || phase === "confirm") trackSaveFailed("injection", "write");
     else trackSaveFailed("injection", "side");
     opts.onError(err, phase);
   };

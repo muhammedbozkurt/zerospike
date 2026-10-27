@@ -192,11 +192,13 @@ assert.match(liveData, /cgmReadingText\(data\.cgm/, "Live Activity pill CGM dege
 {
   const cgm = buildLiveCgm(readings([100, 110, 120, 130], 4), NOW, "mgdl")!;
   const clock = formatTime(new Date(cgm.at).toISOString());
-  assert.equal(cgmReadingText(cgm), `130 · ${clock}`);
-  assert.equal(cgmReadingText({ ...cgm, trend: "up2" }), `130 · ${clock}`);
-  assert.ok(!/[↑↗→↘↓]/.test(cgmReadingText(cgm)), "pill metninde ok olmamali");
+  assert.equal(cgmReadingText(cgm, "mg/dL"), `130 mg/dL · ${clock}`, "birim degerden hemen sonra, saat sonda");
+  assert.equal(cgmReadingText({ ...cgm, trend: "up2" }, "mg/dL"), `130 mg/dL · ${clock}`);
+  assert.ok(!/[↑↗→↘↓]/.test(cgmReadingText(cgm, "mg/dL")), "pill metninde ok olmamali");
+  assert.doesNotMatch(cgmReadingText(cgm, "mg/dL"), /· \d{1,2}[:.]\d{2} mg\/dL/, "birim saate yapismamali");
   assert.match(clock, /\d{1,2}[:.]\d{2}/);
-  assert.doesNotMatch(liveData, /cgmReadingText\(data\.cgm, /, "pill metni saate degil okuma saatine bakar");
+  assert.doesNotMatch(liveData, /cgmReadingText\(data\.cgm, (now|Date|new Date)/, "pill metni saate degil okuma saatine bakar");
+  assert.match(liveData, /unitLabel: data\.cgm \? "" : /, "CGM pill'inde native'e giden birim bos (birim metnin icinde)");
 }
 
 console.log("liveDataCgm.test.ts OK");
