@@ -1,6 +1,7 @@
 /**
- * FIX-N (OPUS-10): value-independent dose-path proximity rule, band twins,
- * import rules 4 and 6 against a twin counterpart, retention folding twins,
+ * FIX-N (OPUS-10) narrowed by FIX-O: value-independent dose-path proximity rule,
+ * view twins only at 30 s and +-1 mg/dL (no band rule in the view), import rules
+ * 4 and 6 against a twin counterpart, retention that deletes no non-sensor row,
  * manual-mode stats. Real SQL on node:sqlite.
  *
  * Principle: the import never drops or converts a reading for being a mirror;
@@ -164,7 +165,14 @@ async function main() {
     const leak = dose(db, start - 1).length;
     ok(`A4c ${order}: dose path leak 0`, leak === 0, `leak=${leak}`);
     const fe = feedExcl(db).filter((r) => r.kind === "glucose").length;
-    ok(`A4c ${order}: 24 of 24 are twins, journal list shows none`, fe === 0, `rows=${fe}`);
+    // The import thins the sensor stream, so a mirror whose sensor row was not
+    // kept shows as its own row (accepted); the rest are hidden by the 30 s +-1 rule.
+    const mirRows = db.prepare("SELECT logged_at, glucose_level_mgdl FROM sugar_logs WHERE source_app='com.mirror'").all() as { logged_at: string; glucose_level_mgdl: number }[];
+    const sens = db.prepare("SELECT logged_at, glucose_level_mgdl FROM sugar_logs WHERE is_cgm=1").all() as { logged_at: string; glucose_level_mgdl: number }[];
+    const expectShown = mirRows.filter(
+      (m) => !sens.some((x) => Math.abs(Date.parse(x.logged_at) - Date.parse(m.logged_at)) <= 30_000 && Math.abs(x.glucose_level_mgdl - m.glucose_level_mgdl) <= 1)
+    ).length;
+    ok(`A4c ${order}: journal shows exactly the mirrors with no sensor row at 30 s +-1`, fe === expectShown, `rows=${fe} expected=${expectShown}`);
   }
 
   console.log("A4. 1-min sensor + 1-min mirror");
@@ -207,9 +215,40 @@ async function main() {
     const match = db.prepare(MATCHING_MANUAL_SUGAR_SQL).all("P", 90, iso(t - 3600_000), iso(t + 3600_000)) as { id: string }[];
     ok("duplicate-prompt lookup uses the same rule", match.map((r) => r.id).sort().join() === "importedFar,taggedNear" || match.length === 1);
     const list = new Set(feedExcl(db, undefined).map((r) => (r as unknown as { id: string }).id));
-    ok("band: 146 between 140 and 150 is a twin, hidden", !list.has("importedNearInBand"));
+    ok("view: 146 in the 140..150 band but 150 s from a sensor is NOT a twin, listed", list.has("importedNearInBand"));
     ok("off-band imported reading is listed", list.has("importedNearOffBand"));
     ok("typed and labelled rows listed", list.has("typedNear") && list.has("taggedNear"));
+  }
+
+  console.log("FIX-O: a real fingerstick inside the neighbouring CGM band stays visible; 30 s +-1 mirrors are hidden");
+  {
+    const { db } = makeDb();
+    const t = NOW - 3600_000;
+    const put = (id: string, mg: number, at: number, app: string) =>
+      db.prepare(ins).run(id, "P", mg, "unset", "health", iso(at), app, `x${id}`, 0);
+    db.prepare(ins).run("s1", "P", 140, "unset", "nightscout", iso(t), null, "e1", 1);
+    db.prepare(ins).run("s2", "P", 150, "unset", "nightscout", iso(t + 300_000), null, "e2", 1);
+    put("f60", 145, t + 60_000, "com.contour");
+    put("f150", 146, t + 150_000, "com.contour");
+    put("m30", 141, t + 30_000, "com.mirror");
+    put("m10", 140, t + 10_000, "com.mirror");
+    const ids = (mode: "exclude" | "twins") =>
+      new Set(
+        (db.prepare(journalFeedSql(false, true, { cgm: mode })).all(...(journalFeedArgs("P", 300) as never[])) as { id: string }[]).map((r) => r.id)
+      );
+    for (const mode of ["exclude", "twins"] as const) {
+      const l = ids(mode);
+      ok(`(i) ${mode}: fingerstick 60 s from a sensor, in the band, is listed`, l.has("f60"));
+      ok(`(i) ${mode}: fingerstick 150 s from a sensor, in the band, is listed`, l.has("f150"));
+      ok(`(ii) ${mode}: mirror at 30 s +-1 and at 10 s is hidden`, !l.has("m30") && !l.has("m10"));
+    }
+    const d = new Set(dose(db, t - 3600_000).map((r) => r.id));
+    ok("(i) dose path: neither fingerstick is offered while the sensor runs", !d.has("f60") && !d.has("f150"));
+    const ins2 = await readInsightsSugar(reader(db) as never, "P", { start: t - 1000, end: t + 600_000 });
+    const ins2Ids = new Set(ins2.map((r) => (r as unknown as { id: string }).id));
+    ok("(i) insights hold both fingersticks and no mirror", ins2Ids.has("f60") && ins2Ids.has("f150") && !ins2Ids.has("m30") && !ins2Ids.has("m10"));
+    const pts = db.prepare(glucosePointsSql(true, "manual")).all("P", iso(t - 1000), iso(t + 600_000)) as { glucose_level_mgdl: number }[];
+    ok("(i) chart points (manual) hold both fingersticks and no mirror", pts.length === 2, `n=${pts.length}`);
   }
 
   console.log("Rules 4 and 6 do not drop a reading for a twin counterpart; sensor rows come from the batch too");
@@ -221,7 +260,7 @@ async function main() {
     ok("one batch: sensor, mirror, meter all stored", c1(db, "SELECT COUNT(*) c FROM sugar_logs") === 3);
   }
 
-  console.log("A5. retention folds sensor rows and the twins of that slice with them");
+  console.log("A5. retention folds sensor rows and deletes no non-sensor row");
   {
     const { db, host } = makeDb();
     const old = NOW - 400 * 86_400_000;
@@ -241,15 +280,17 @@ async function main() {
     db.prepare(ins).run("far", "P", 250, "unset", "health", iso(old + 5 * 3600_000 + 120_000), "com.contour", "farx", 0);
     const range = { start: old - 1000, end: old + 2 * 86_400_000 };
     const mirBefore = c1(db, "SELECT COUNT(*) c FROM sugar_logs WHERE source_app='com.mirror' AND id NOT IN ('tag','meal')");
+    const nonSensorBefore = c1(db, "SELECT COUNT(*) c FROM sugar_logs WHERE is_cgm = 0");
     const before = feedExcl(db, range).filter((r) => r.kind === "glucose").length;
     const r = await runCgmRetention(host as never, "P", NOW);
     const mirAfter = c1(db, "SELECT COUNT(*) c FROM sugar_logs WHERE source_app='com.mirror' AND id NOT IN ('tag','meal')");
     const after = feedExcl(db, range).filter((r2) => r2.kind === "glucose").length;
     ok("A5 sensor rows folded", r.folded === 288, `folded=${r.folded}`);
-    ok("A5 288 twins gone with their sensor rows", mirBefore === 288 && mirAfter === 0, `before=${mirBefore} after=${mirAfter}`);
-    ok("A5 journal list does not regain 288 rows", after <= before + 3, `before=${before} after=${after}`);
-    const insights = await readInsightsSugar(reader(db) as never, "P", range);
-    ok("A5 insights see no twin", insights.length <= 4, `rows=${insights.length}`);
+    const nonSensorAfter = c1(db, "SELECT COUNT(*) c FROM sugar_logs WHERE is_cgm = 0");
+    ok("(iii) A5 all 288 twins stay in the database", mirBefore === 288 && mirAfter === 288, `before=${mirBefore} after=${mirAfter}`);
+    ok("(iii) A5 no non-sensor row deleted", nonSensorAfter === nonSensorBefore, `before=${nonSensorBefore} after=${nonSensorAfter}`);
+    ok("A5 sensor rows are gone from sugar_logs", c1(db, "SELECT COUNT(*) c FROM sugar_logs WHERE is_cgm = 1") === 0);
+    ok("A5 journal list still shows every kept row", after >= before, `before=${before} after=${after}`);
     const keep = (id: string) => c1(db, "SELECT COUNT(*) c FROM sugar_logs WHERE id=?", id) === 1;
     ok("typed, labelled, meal-linked and off-band rows are never deleted", keep("man") && keep("tag") && keep("meal") && keep("far"));
     const again = await runCgmRetention(host as never, "P", NOW);

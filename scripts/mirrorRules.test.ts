@@ -12,7 +12,7 @@
  *  F2     one coincidence does not make a glucometer app a sensor; knownCgm
  *         needs a count
  *  E1     a glucometer reading 60 s from a sensor value is in the DB; while a
- *         sensor runs it is out of the dose path and the journal list (FIX-N)
+ *         sensor runs it is out of the dose path but STAYS in the journal list
  *  L1     the accepted limit: a fingerstick inside 30 s and +-1 mg/dL stays in
  *         the database, only leaves the dose path and the journal list
  *  Q1     insights / report point reads leave twins out; the plans use idx_sugar_cgm
@@ -274,16 +274,16 @@ async function main(): Promise<void> {
     await importGlucoseRows(host, "P", [ns(10, 0, 120, "ns1")], nid, NOW);
     eq("E1: stored", await importGlucoseRows(host, "P", [meter(11, 0, 120, "m1")], nid, NOW), 1);
     eq("E1: a hand reading", count(db, "external_id='m1' AND is_cgm=0"), 1);
-    // FIX-N (OPUS-10): a Health reading within 150 s of a sensor value (+-1) is
-    // read as the sensor value mirrored; it stays in the database but leaves the
-    // dose path (the user can type it) and the journal list.
+    // A Health reading within 150 s of a sensor value leaves the dose path (the
+    // user can type it), but only 30 s and +-1 mg/dL makes it a twin in the view:
+    // 60 s away it is a real reading and the journal shows it.
     eq("E1: out of the dose path while the sensor runs", dose(db), 0);
     eq(
       "E1: out of the calculator's own matching query",
       (db.prepare(MATCHING_MANUAL_SUGAR_SQL).all("P", 120, T(0), T(30)) as unknown[]).length,
       0
     );
-    eq("E1: out of the journal list (counted in the sensor summary)", journalGlucose(db, "exclude"), 0);
+    eq("E1: still in the journal list (60 s is outside the 30 s twin window)", journalGlucose(db, "exclude"), 1);
     eq("E1: the full journal still has both rows", journalGlucose(db, "include"), 2);
     const both = makeDb();
     await importGlucoseRows(both.host, "P", [ns(10, 0, 120, "ns1"), meter(11, 0, 120, "m1")], nid, NOW);
