@@ -134,19 +134,31 @@ export function CgmHomeCard({
   const unitLabel = glucoseUnitLabel(unit);
   const summary =
     model.cgm.length > 0 && model.minMgdl != null && model.maxMgdl != null && model.last
-      ? t("cgmCurve.summary", {
-          count: model.cgm.length,
-          min: formatGlucose(model.minMgdl, unit),
-          max: formatGlucose(model.maxMgdl, unit),
-          last: formatGlucose(model.last.mgdl, unit),
-          unit: unitLabel,
-          time: formatTime(new Date(model.last.t).toISOString()),
+      ? t("cgmCurve.windowSummary", {
+          n: hours,
+          summary: t("cgmCurve.summary", {
+            count: model.cgm.length,
+            min: formatGlucose(model.minMgdl, unit),
+            max: formatGlucose(model.maxMgdl, unit),
+            last: formatGlucose(model.last.mgdl, unit),
+            unit: unitLabel,
+            time: formatTime(new Date(model.last.t).toISOString()),
+          }),
         })
       : t("cgmCurve.noWindowData");
 
   // Holds the card's height while the first read lands, so the list below does
   // not jump.
-  if (state === "loading") return <Card style={{ marginBottom: SPACE.md, minHeight: 320 }} />;
+  if (state === "loading") {
+    return (
+      <Card
+        accessible
+        accessibilityLabel={t("common.loading")}
+        accessibilityState={{ busy: true }}
+        style={{ marginBottom: SPACE.md, minHeight: 320 }}
+      />
+    );
+  }
 
   return (
     <Card glow={color} style={{ marginBottom: SPACE.md }}>
@@ -207,6 +219,8 @@ export function CgmHomeCard({
             options={CURVE_HOURS.map((h) => ({
               value: String(h),
               label: t("cgmCurve.hours", { n: h }),
+              // Starts with the visible text so Voice Control's "tap 6 h" still matches.
+              a11yLabel: `${t("cgmCurve.hours", { n: h })}, ${t("cgmCurve.hoursA11y", { n: h })}`,
             }))}
             value={String(hours)}
             onChange={(v) => setHours(Number(v) as CurveHours)}

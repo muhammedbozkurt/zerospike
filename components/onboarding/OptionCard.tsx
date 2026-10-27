@@ -103,6 +103,7 @@ export function OptionCard({
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       accessibilityLabel={label}
+      accessibilityHint={description}
       style={[
         {
           flexDirection: "row",

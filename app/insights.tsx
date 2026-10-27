@@ -20,7 +20,7 @@ import { useApp } from "../lib/store/AppContext";
 import { listMealLogs } from "../lib/db/logs";
 import { listInsightsSugar } from "../lib/db/sugarRange";
 import { GMI_MIN_COVERAGE, GMI_MIN_WINDOW_DAYS, timeOf } from "../lib/cgm/metrics";
-import { basisLine } from "../lib/cgm/basisText";
+import { basisLine, coverageLine } from "../lib/cgm/basisText";
 import { getInjections } from "../lib/db/injections";
 import { getFood } from "../lib/db/foods";
 import {
@@ -1370,6 +1370,7 @@ export default function InsightsScreen() {
                         <StatCard
                           glass
                           label={t("cgmInsights.coverage")}
+                          a11yLabel={coverageLine(t, data.days, data.cgmCoverage)}
                           display={pctNum(data.cgmCoverage)}
                           suffix={PCT_SIGN.sign}
                           suffixFirst={PCT_SIGN.signFirst}

@@ -40,6 +40,8 @@ interface StatCardProps {
   /** Fixed value/footnote sizing for narrow tiles: Android's adjustsFontSizeToFit
    *  collapses the number to a superscript when a long suffix shares the row. */
   fixedSize?: boolean;
+  /** One sentence for the screen reader in place of the label, number and footnote read apart. */
+  a11yLabel?: string;
   style?: StyleProp<ViewStyle>;
   className?: string;
 }
@@ -65,6 +67,7 @@ export function StatCard({
   glass = false,
   glow = false,
   fixedSize = false,
+  a11yLabel,
   style,
   className = "",
 }: StatCardProps) {
@@ -90,6 +93,8 @@ export function StatCard({
   ) : null;
   return (
     <View
+      accessible={a11yLabel ? true : undefined}
+      accessibilityLabel={a11yLabel}
       className={glass ? `rounded-2xl p-4 ${className}` : `rounded-2xl bg-glass border border-hair p-4 ${className}`}
       style={[
         glass

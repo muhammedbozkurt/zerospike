@@ -303,6 +303,8 @@ export const Field = React.forwardRef<TextInput, FieldProps>(function Field(
           would also set a lineHeight, which iOS clips the glyphs against. */}
       <TextInput
         ref={ref}
+        accessibilityLabel={label}
+        accessibilityHint={hint}
         placeholderTextColor={THEME.placeholder}
         className={`rounded-xl bg-glass border border-hair px-4 py-3 text-ink ${className}`}
         {...rest}
@@ -314,7 +316,8 @@ export const Field = React.forwardRef<TextInput, FieldProps>(function Field(
 });
 
 interface SegmentedProps<T extends string> {
-  options: { value: T; label: string }[];
+  /** `a11yLabel`: what the screen reader says when the short visible label is not enough ("6 h"). */
+  options: { value: T; label: string; a11yLabel?: string }[];
   value: T;
   onChange: (value: T) => void;
   className?: string;
@@ -342,7 +345,7 @@ export function Segmented<T extends string>({
             hitSlop={8}
             accessibilityRole="button"
             accessibilityState={{ selected: active }}
-            accessibilityLabel={opt.label}
+            accessibilityLabel={opt.a11yLabel ?? opt.label}
             className={`rounded-full px-3.5 py-2 border ${
               active
                 ? "bg-brand border-brand"

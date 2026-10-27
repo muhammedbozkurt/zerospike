@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { SheetShell } from "./SheetShell";
 import { Button } from "./ui";
+import { HIDDEN_FROM_A11Y } from "../lib/a11y";
 import { THEME } from "../lib/theme/tokens";
 import { useApp } from "../lib/store/AppContext";
 import { isScreenshotMode } from "../lib/screenshotMode";
@@ -34,6 +35,7 @@ export function WhatsNewSheet({ visible, onClose }: { visible: boolean; onClose:
         {WHATS_NEW_ITEMS.map((key) => (
           <View key={key} style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
             <View
+              {...HIDDEN_FROM_A11Y}
               style={{
                 width: 6,
                 height: 6,
