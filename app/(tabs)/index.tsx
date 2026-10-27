@@ -2879,6 +2879,10 @@ export default function DashboardScreen() {
   // The bar's measured height wins over the one-line formula: at the largest
   // text sizes the label wraps and the bar grows past it (iPad AX5, J6).
   const ctaFootprint = ctaFootprintPx(ctaHeight, CTA_FOOTPRINT + ctaExtra);
+  // The CGM store frame is a scroll-0 capture with more content below, so the
+  // small button would sit on a card's text; that capture leaves it out
+  // (dev + env locked, never in a release build).
+  const showCta = !isFirstRun && !(isScreenshotMode() && shotCgm);
   const wideListInset = isWide && !isFirstRun ? { paddingBottom: ctaFootprint + insets.bottom } : undefined;
 
   const journalFooter =
@@ -3003,7 +3007,7 @@ export default function DashboardScreen() {
       {/* Bottom CTA (mockup B03: single "add record"). During first run the
           guide carries the one primary button, so this one stands down rather
           than putting two identical CTAs on an otherwise empty screen. */}
-      {!isFirstRun ? (
+      {showCta ? (
         <View
           className="absolute left-0 right-0 bottom-0 pt-2"
           style={{ paddingBottom: CTA_BOTTOM }}
