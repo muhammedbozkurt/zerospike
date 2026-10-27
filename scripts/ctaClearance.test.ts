@@ -21,6 +21,17 @@ eq("garbage ignored", ctaFootprintPx(Number.NaN, 90), 90);
 
 const idx = src("app/(tabs)/index.tsx");
 eq("index measures the CTA bar", /onLayout=\{\(e\) => setCtaHeight\(/.test(idx), true);
+// CGM mode: the list reserves the same measured footprint (the small outlined
+// button is never taller than the formula), and the CGM frame capture (scroll
+// 0, content continues below) does not hide a card's text under the button.
+eq(
+  "phone list padding uses ctaFootprint for every mode",
+  /Math\.max\(CTA_CLEARANCE \+ ctaExtra, ctaFootprint \+ insets\.bottom \+ 40\)/.test(idx),
+  true
+);
+eq("CGM button sits inside the measured wrapper", /onLayout=\{\(e\) => setCtaHeight\([\s\S]*cgmActive \?/.test(idx), true);
+eq("shot=cgm capture renders no floating button", /const showCta = !isFirstRun && !\(isScreenshotMode\(\) && shotCgm\);/.test(idx), true);
+eq("floating button gated by showCta", /\{showCta \? \(/.test(idx), true);
 const left = idx.indexOf("movableBlocks.slice(0, columnSplit?.leftCount ?? 0)");
 const right = idx.indexOf("movableBlocks.slice(columnSplit?.leftCount ?? 0)");
 eq("left column renders before right column", left > 0 && right > left, true);
