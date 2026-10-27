@@ -11,6 +11,7 @@ declare const __dirname: string;
 const fs = require("fs");
 const path = require("path");
 const reg = require("./reg-check.js");
+const rules = require("./regRules.js");
 
 const root = path.join(__dirname, "..");
 let failed = 0;
@@ -42,9 +43,8 @@ for (const l of LANGS) {
   // The reg rules carry both word orders ("estimated A1C", "A1C estimate");
   // any A1C-estimate hit anywhere in the locale fails this test.
   const entries = reg.loadLocaleEntries(l);
-  const hits = reg
-    .scanLocaleEntries(l, entries)
-    .findings.filter((f: { pattern: string }) => /A1C|HbA1c|eA1C/i.test(f.pattern));
+  const a1cPatterns = new Set((rules.A1C_ESTIMATE_PATTERNS[l] as { pattern: string }[]).map((e) => e.pattern));
+  const hits = reg.scanLocaleEntries(l, entries).findings.filter((f: { pattern: string }) => a1cPatterns.has(f.pattern));
   ok(`${l}: no estimated A1C wording left in the locale`, hits.length === 0, JSON.stringify(hits.map((h: any) => h.key)));
 }
 

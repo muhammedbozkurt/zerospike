@@ -9,6 +9,7 @@
 declare const console: { log: (...a: unknown[]) => void };
 declare const process: any;
 declare function require(id: string): any;
+declare const __dirname: string;
 
 const reg = require("./reg-check.js");
 const rules = require("./regRules.js");
@@ -541,6 +542,147 @@ section("I. G252: up to three words between the estimate word and A1C, both orde
   for (const [locale, { flagged, clean }] of Object.entries(gapped)) {
     for (const t of flagged) ok(`${locale} gap flagged: ${t}`, count(locale, t) >= 1);
     for (const t of clean) ok(`${locale} gap clean: ${t}`, count(locale, t) === 0);
+  }
+}
+
+section("J. G252-FIX-T: forms that slipped past the A1C rule (de es pt tr ar ja, brackets, long gaps, names)");
+{
+  const slipped: Record<string, { flagged: string[]; clean: string[] }> = {
+    en: {
+      flagged: ["A1C (estimated)", "HbA1c (estimated)", "(estimated) A1C", "A1C(estimated)", "A1C value (estimated)"],
+      clean: ["Your lab A1C (mmol/mol)", "A1C (lab result), carbs are estimates", "Estimated carbs, then your lab A1C"],
+    },
+    tr: {
+      flagged: ["A1C'nizi tahmin eder", "HbA1c’nizi tahmin eder", "A1C-değerini tahmin eder", "A1C (tahmini)", "HbA1c'yi tahmin eder"],
+      clean: ["A1C'nizi laboratuvardan girin", "Tahmini karbonhidrat, laboratuvar A1C'niz ayrı", "A1C'nizi girin. Karbonhidrat tahmini ayrı."],
+    },
+    de: {
+      flagged: [
+        "Schätzung Ihres HbA1c",
+        "Schätzwert Ihres HbA1c",
+        "Schätzwert Ihrer A1C",
+        "Der HbA1c wird aus Ihren Werten geschätzt",
+        "HbA1c (geschätzt)",
+        "(geschätzt) HbA1c",
+      ],
+      clean: [
+        "geschätzte Kohlenhydrate, Ihr HbA1c-Laborwert",
+        "Geschätzte Kohlenhydrate. Ihr HbA1c-Laborwert",
+        "Ihr HbA1c-Laborwert: Kohlenhydrate sind geschätzt",
+        "Tragen Sie Ihren HbA1c aus dem Labor ein; die Kohlenhydratwerte sind geschätzt",
+        "Der HbA1c steht im Laborbericht, den Sie mit Ihrem Arzt besprechen. Kohlenhydrate sind geschätzt",
+      ],
+    },
+    fr: {
+      flagged: ["HbA1c (estimée)", "(estimée) HbA1c"],
+      clean: ["Estimation des glucides, puis votre HbA1c de laboratoire", "glucides estimés. Votre HbA1c"],
+    },
+    es: {
+      flagged: ["Su A1C se estima a partir del promedio", "A1C (estimada)", "Su HbA1c se estima"],
+      clean: ["Su A1C de laboratorio", "Carbohidratos estimados, su A1C de laboratorio", "Registre su A1C. Los carbohidratos se estiman."],
+    },
+    it: {
+      flagged: ["HbA1c (stimata)"],
+      clean: ["Carboidrati stimati, poi la Sua HbA1c di laboratorio"],
+    },
+    pt: {
+      flagged: ["seu A1C é estimado", "Seu A1C se estima a partir da média", "A1C (estimada)", "sua A1c é estimada"],
+      clean: ["Seu A1C de laboratório", "Carboidratos estimados, depois seu A1C de laboratório", "Informe seu A1C. Os carboidratos são estimados."],
+    },
+    ar: {
+      flagged: [
+        "A1C التقديرية",
+        "قيمة A1C المقدّرة",
+        "قيمة A1C المقدرة",
+        "يُقدَّر A1C",
+        "يُقدَّر A1C من المتوسط",
+        "تقدير لـA1C",
+        "تقدير لـ A1C",
+        "تقديرية A1C",
+        "a1c التقديرية",
+        "HBA1C التقديرية",
+        "ＨｂＡ１ｃ التقديرية",
+        "تقدير ＨｂＡ１ｃ",
+        "A1C (التقديرية)",
+      ],
+      clean: [
+        "تقدير الإنسولين",
+        "التقديرية",
+        "المقدرة",
+        "يقدر",
+        "تقديرات A1C",
+        "نتيجة A1C من المختبر",
+        "أدخل آخر A1C لديك",
+        "A1C من المختبر. القيم الغذائية تقديرية",
+        "A1C، والكربوهيدرات تقديرية",
+        "a1c و hba1c",
+      ],
+    },
+    ja: {
+      flagged: [
+        "A1Cは平均血糖値から推定されます",
+        "HbA1c（推定）",
+        "A1C(推定)",
+        "a1c推定",
+        "HBA1Cの推定値",
+        "ＨｂＡ１ｃの推定値",
+        "Ａ１Ｃ（推定）",
+        "推定A1C",
+        "推定ａ１ｃ",
+      ],
+      clean: [
+        "A1C。炭水化物は推定です",
+        "A1Cを入力、炭水化物は推定",
+        "A1Cは検査結果です。炭水化物の推定は目安です",
+        "炭水化物の推定",
+        "検査のA1C結果",
+        "ａ１ｃ",
+      ],
+    },
+  };
+  for (const [locale, { flagged, clean }] of Object.entries(slipped)) {
+    for (const t of flagged) ok(`${locale} slipped flagged: ${t}`, count(locale, t) >= 1);
+    for (const t of clean) ok(`${locale} slipped clean: ${t}`, count(locale, t) === 0);
+  }
+
+  // The store selftests build matchers without a locale argument, so the ja
+  // and ar modes must come from the pattern itself.
+  const bare = (locale: string, text: string): number =>
+    (rules.PATTERNS[locale] as { pattern: string }[]).filter(
+      (e) => rules.buildAllMatcher(e.pattern, rules.SUBSTRING_LOCALES.has(locale))(text).length > 0
+    ).length;
+  for (const [locale, t] of [
+    ["ja", "A1Cは平均血糖値から推定されます"],
+    ["ja", "HbA1c（推定）"],
+    ["ja", "ＨｂＡ１ｃの推定値"],
+    ["ar", "A1C التقديرية"],
+    ["ar", "يُقدَّر A1C"],
+    ["tr", "A1C'nizi tahmin eder"],
+    ["de", "Der HbA1c wird aus Ihren Werten geschätzt"],
+  ] as [string, string][]) {
+    ok(`no-locale matcher catches ${locale}: ${t}`, bare(locale, t) >= 1);
+  }
+  eq("no-locale ja gap stops at punctuation", bare("ja", "A1C。推定"), 0);
+  eq("no-locale ja gap is 12 characters, not 13", bare("ja", "A1C一二三四五六七八九十一二三推定"), 0);
+
+  // Every shipped string in all nine languages stays clear of every A1C pattern,
+  // including the Arabic insulin and carbohydrate estimate lines.
+  const fs = require("fs");
+  const path = require("path");
+  for (const locale of rules.LOCALES as string[]) {
+    const own = new Set((rules.A1C_ESTIMATE_PATTERNS[locale] as { pattern: string }[]).map((e) => e.pattern));
+    const hits = (reg.scanLocaleEntries(locale, reg.loadLocaleEntries(locale)) as { findings: Finding[] }).findings.filter((f) =>
+      own.has(f.pattern)
+    );
+    eq(`${locale}.ts has no A1C estimate wording`, hits.length, 0);
+  }
+  const arLines: string[] = fs.readFileSync(path.join(__dirname, "..", "lib/i18n/locales/ar.ts"), "utf8").split(/\r?\n/);
+  const ownAr = new Set((rules.A1C_ESTIMATE_PATTERNS.ar as { pattern: string }[]).map((e) => e.pattern));
+  for (const n of [38, 47, 48, 52, 271, 299, 370, 418, 445]) {
+    const hits = (reg.scanLocaleEntries("ar", [["x", arLines[n - 1] ?? ""]]) as { findings: Finding[] }).findings.filter((f) =>
+      ownAr.has(f.pattern)
+    );
+    eq(`ar.ts:${n} is clear of the A1C rule`, hits.length, 0);
   }
 }
 

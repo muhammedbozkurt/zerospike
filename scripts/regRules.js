@@ -812,22 +812,53 @@ const PATTERNS = {
 // "A1C" and "HbA1c": "estimated A1C" and "A1C estimate". A bare "A1C" (the
 // user's own lab field) and "GMI" never match. Phrases are literal (only a
 // trailing "*" is a stem), so the lists spell out the common inflections.
-// "<gap3>" inside a pattern means zero to three whole words (ja: up to six
-// characters) between the two parts, so "estimativa <gap3>A1C" also catches
-// "uma estimativa do seu A1C". Patterns without the token behave as before.
+// A pattern holding one of the tokens below is compiled to a regex (see
+// patternSource); the script is read off the pattern itself (CJK = ja,
+// Arabic = ar), never off a locale option, because the store selftests build
+// matchers without one.
+//   <gap3>  zero to three whole words between the two parts (ja: 6 characters)
+//   <gap6>  zero to six whole words (ja: 12 characters)
+//   <ws>    whitespace, or nothing when a "(" or full-width "（" follows
+//   <par>   an optional opening bracket, "A1C (estimated)", "HbA1c（推定）"
+//   <cp>    an optional closing bracket, "(estimated) A1C"
+//   <sfx>   an optional Turkish suffix, "A1C'nizi", "HbA1c-değeri"
+//   <cl>    an optional Arabic clitic and tatweel before the name, "لـA1C"
+// A gap stops at any punctuation mark, so a sentence break ends the match.
+// In ar and ja the name is case and full-width insensitive ("a1c", "ＨｂＡ１ｃ")
+// and Arabic letters tolerate vowel marks and tatweel.
 const GAP_TOKEN = "<gap3>";
-const GAP_WORDS = "(?:[\\p{L}\\p{M}\\p{N}'’-]+\\s+){0,3}";
-const GAP_JA = "[^\\s、。，,.（）()]{0,6}";
+const TOKEN_SPLIT = /(<(?:gap3|gap6|ws|par|cp|sfx|cl)>)/;
+const CJK_RE = /[぀-ヿ㐀-鿿]/;
+const JA_STOP = "\\s、。，．,.;；:：!！?？（）()「」『』";
+const ARABIC_MARKS = "[\\u0610-\\u061A\\u064B-\\u065F\\u0670\\u0640]*";
+const GAP_WORD = "(?:[\\p{L}\\p{M}\\p{N}'’-]+\\s+)";
+const TOKEN_SOURCE = {
+  "<gap3>": (mode) => (mode === "ja" ? `[^${JA_STOP}]{0,6}` : `${GAP_WORD}{0,3}`),
+  "<gap6>": (mode) => (mode === "ja" ? `[^${JA_STOP}]{0,12}` : `${GAP_WORD}{0,6}`),
+  "<ws>": () => "(?:\\s+|(?=[(（]))",
+  "<par>": () => "(?:[(（]\\s*)?",
+  "<cp>": () => "[)）]?",
+  "<sfx>": () => "(?:['’-]\\p{L}+)?",
+  "<cl>": (mode) => (mode === "ar" ? "(?:[\\u0644\\u0628\\u0643\\u0648\\u0641]\\u0640?[\\u064B-\\u0652]*)?" : ""),
+};
 const A1C_NAMES = ["A1C", "HbA1c"];
-const A1C_NAMES_SUBSTR = ["A1C", "A1c", "HbA1c", "HbA1C"];
-const A1C_NAMES_AR = [...A1C_NAMES_SUBSTR, "السكر التراكمي", "للسكر التراكمي", "الهيموغلوبين السكري"];
-function a1cEstimatePatterns(before, after, names = A1C_NAMES, sep = " ") {
+const A1C_NAMES_AR = [...A1C_NAMES, "السكر التراكمي", "للسكر التراكمي", "الهيموغلوبين السكري"];
+function a1cEstimatePatterns(before, after, opts = {}) {
+  const { names = A1C_NAMES, sep = "<ws>", sfx = "", cl = "", afterGap = GAP_TOKEN } = opts;
   const out = [];
   for (const n of names) {
     for (const b of before) {
-      out.push({ pattern: /['’]$/.test(b) ? b + n : b + sep + GAP_TOKEN + n });
+      out.push({ pattern: /['’]$/.test(b) ? b + cl + n : b + "<cp>" + sep + GAP_TOKEN + cl + n });
     }
-    for (const a of after) out.push({ pattern: a.startsWith("-") ? n + a : n + sep + GAP_TOKEN + a });
+    for (const a of after) {
+      if (a.startsWith("-")) {
+        out.push({ pattern: n + a });
+        continue;
+      }
+      const own = a.match(/^<gap\d>/);
+      const gap = own ? own[0] : afterGap;
+      out.push({ pattern: n + sfx + sep + gap + "<par>" + (own ? a.slice(gap.length) : a) });
+    }
   }
   return out;
 }
@@ -841,15 +872,15 @@ const A1C_ESTIMATE_PATTERNS = {
   ],
   tr: a1cEstimatePatterns(
     ["tahmini", "tahmin edilen", "tahmini laboratuvar", "tahmini hemoglobin"],
-    ["tahmin*", "değerini tahmin*", "değerinizi tahmin*", "sonucunu tahmin*"]
+    ["tahmin*", "değerini tahmin*", "değerinizi tahmin*", "sonucunu tahmin*"],
+    { sfx: "<sfx>" }
   ),
   de: a1cEstimatePatterns(
     [
       "geschätzt", "geschätzter", "geschätzte", "geschätztes", "geschätzten", "geschätztem",
-      "Schätzung des", "Schätzung der", "Schätzung für den", "Schätzung für die",
-      "Schätzwert des", "Schätzwert der", "Schätzwert für den", "Schätzwert für die",
+      "Schätzung", "Schätzungen", "Schätzwert", "Schätzwerte",
     ],
-    ["geschätzt*", "Schätzung*", "Schätzwert*", "-Schätzung*", "-Schätzwert*"]
+    ["<gap6>geschätzt*", "Schätzung*", "Schätzwert*", "-Schätzung*", "-Schätzwert*"]
   ),
   fr: a1cEstimatePatterns(
     [
@@ -860,7 +891,7 @@ const A1C_ESTIMATE_PATTERNS = {
   ),
   es: a1cEstimatePatterns(
     ["estimada", "estimado", "estimación de la", "estimación de su", "estimación del", "estimación de", "estimar la", "estimar su"],
-    ["estimad*", "estimaci*"]
+    ["estim*"]
   ),
   it: a1cEstimatePatterns(
     [
@@ -874,18 +905,17 @@ const A1C_ESTIMATE_PATTERNS = {
       "estimada", "estimado", "estimativa", "estimativa de", "estimativa da", "estimativa do",
       "estimativa da sua", "estimativa para", "estimar a",
     ],
-    ["estimad*", "estimativa*"]
+    ["estim*"]
   ),
   ar: a1cEstimatePatterns(
-    ["تقدير", "تقديري", "تقديرية", "التقديري"],
-    ["تقدير", "تقديري", "تقديرية", "المقدر", "المقدّر", "المقدرة", "التقديري"],
-    A1C_NAMES_AR
+    ["تقدير", "تقديري", "تقديرية", "التقديري", "التقديرية", "المقدر", "المقدرة", "يقدر"],
+    ["تقدير", "تقديري", "تقديرية", "التقديري", "التقديرية", "المقدر", "المقدرة", "يقدر"],
+    { names: A1C_NAMES_AR, cl: "<cl>" }
   ),
   ja: a1cEstimatePatterns(
     ["推定", "推定値の", "推定された"],
     ["推定", "の推定", "を推定", "予測"],
-    A1C_NAMES_SUBSTR,
-    ""
+    { sep: "", afterGap: "<gap6>" }
   ),
 };
 for (const locale of Object.keys(A1C_ESTIMATE_PATTERNS)) {
@@ -1149,6 +1179,35 @@ function foldTr(locale, text) {
   return locale === "tr" ? text.toLocaleLowerCase("tr") : text;
 }
 
+// Compiles a token pattern (see the A1C block) to regex source. mode: "latin"
+// escapes the literal parts as they are; "ar" and "ja" additionally fold the
+// Latin letters and digits of the name over case and full width, and let
+// Arabic letters carry vowel marks.
+function foldLiteral(part) {
+  let out = "";
+  for (const c of Array.from(part)) {
+    if (/[A-Za-z0-9]/.test(c)) {
+      const set = new Set([c, c.toLowerCase(), c.toUpperCase()]);
+      for (const x of Array.from(set)) set.add(String.fromCharCode(x.charCodeAt(0) + 0xfee0));
+      out += `[${Array.from(set).join("")}]`;
+    } else if (/[\u0610-\u061A\u064B-\u065F\u0670\u0640]/.test(c)) {
+      continue;
+    } else if (/[\u0621-\u064A]/.test(c)) {
+      out += escapeRegExp(c) + ARABIC_MARKS;
+    } else {
+      out += escapeRegExp(c);
+    }
+  }
+  return out;
+}
+
+function patternSource(pattern, mode) {
+  return pattern
+    .split(TOKEN_SPLIT)
+    .map((part, i) => (i % 2 === 1 ? TOKEN_SOURCE[part](mode) : mode === "latin" ? escapeRegExp(part) : foldLiteral(part)))
+    .join("");
+}
+
 function latinRegExp(pattern, flags, opts = {}) {
   const wildcard = pattern.endsWith("*");
   const base = foldTr(opts.locale, wildcard ? pattern.slice(0, -1) : pattern);
@@ -1158,18 +1217,17 @@ function latinRegExp(pattern, flags, opts = {}) {
     opts.except && opts.except.length
       ? `(?!${opts.except.map((x) => escapeRegExp(foldTr(opts.locale, x))).join("|")})`
       : "";
-  const body = base.split(GAP_TOKEN).map(escapeRegExp).join(GAP_WORDS);
-  return new RegExp(left + body + except + right, flags);
+  return new RegExp(left + patternSource(base, "latin") + except + right, flags);
 }
 
-// Gap patterns in a substring locale (ar, ja) need a regex; plain ones keep
+// Token patterns in a substring locale (ar, ja) need a regex; plain ones keep
 // the indexOf path. ar: no left boundary (clitics such as "و" attach), but a
-// right one, so "تقديرات" (estimates) is not "تقدير" (estimate).
-function substringGapRegExp(pattern, locale) {
-  if (!pattern.includes(GAP_TOKEN)) return null;
-  const ja = locale === "ja";
-  const body = pattern.split(GAP_TOKEN).map(escapeRegExp).join(ja ? GAP_JA : GAP_WORDS);
-  return new RegExp(body + (ja ? "" : "(?![\\p{L}\\p{N}])"), "gu");
+// right one, so "تقديرات" (estimates) is not "تقدير" (estimate). The script
+// comes from the pattern, not from a locale.
+function substringGapRegExp(pattern) {
+  if (!TOKEN_SPLIT.test(pattern)) return null;
+  const ja = CJK_RE.test(pattern);
+  return new RegExp(patternSource(pattern, ja ? "ja" : "ar") + (ja ? "" : "(?![\\p{L}\\p{N}])"), "gu");
 }
 
 // opts: { locale, except }. For tr the text is folded first; folding keeps the
@@ -1180,7 +1238,7 @@ function buildLatinMatcher(pattern, opts = {}) {
 }
 
 function buildSubstringMatcher(pattern, locale) {
-  const gap = substringGapRegExp(pattern, locale);
+  const gap = substringGapRegExp(pattern);
   if (gap) {
     return (text) => {
       gap.lastIndex = 0;
@@ -1198,7 +1256,7 @@ function buildSubstringMatcher(pattern, locale) {
 // by position, so a second occurrence must not hide behind an excused first one.
 function buildAllMatcher(pattern, substringMode, opts = {}) {
   if (substringMode) {
-    const gap = substringGapRegExp(pattern, opts.locale);
+    const gap = substringGapRegExp(pattern);
     if (gap) {
       return (text) => Array.from(text.matchAll(gap), (m) => ({ index: m.index, length: m[0].length }));
     }
@@ -1278,6 +1336,7 @@ module.exports = {
   googleDisclosureSpans,
   LOCALES,
   PATTERNS,
+  A1C_ESTIMATE_PATTERNS,
   SUBSTRING_LOCALES,
   KEY_EXEMPTIONS,
   ALLOWLIST_FILE,
