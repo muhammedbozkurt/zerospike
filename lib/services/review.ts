@@ -9,7 +9,11 @@ import { isScreenshotMode } from "../screenshotMode";
  * finished export) routes through maybeRequestReview(trigger) instead of its
  * own copy of the eligibility rules, so the caps below apply everywhere. Never
  * called from app launch or from an error/interruption path - only from the
- * positive moment itself.
+ * positive moment itself. "trial_converted" is asked right after the thank-you
+ * sheet has been closed with Continue or the close button; a tap on one of the
+ * sheet's cards leaves for another screen and asks nothing (and so writes no
+ * stamp). It follows its own rule (see canAttemptConversionPrompt) instead of
+ * the caps below.
  *
  * Caps (all must hold):
  * - first seen (this device, this install) at least MIN_DAYS_SINCE_FIRST_SEEN

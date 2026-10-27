@@ -2,8 +2,8 @@
  * Pure rules for the two thank-you moments: the one-time sheet when a free
  * trial turns into a paid Pro, and the quiet toast on a yearly-at-most renewal.
  * No React Native, no storage: lib/thanks/evaluate.ts feeds it and
- * components/ThanksHost.tsx shows the result, so scripts/thanksDetect.test.ts
- * runs it under plain node.
+ * components/ThanksSheet.tsx (ThanksHost) shows the result, so
+ * scripts/thanksDetect.test.ts runs it under plain node.
  *
  * The one rule behind everything: a moment is shown only for a CHANGE seen
  * between two observations of the same entitlement. A first observation (new
@@ -23,6 +23,8 @@ export const DAY_MS = 86_400_000;
 export const RENEWAL_TOAST_MIN_DAYS = 330;
 /** Expiry must move forward by at least this much to count as a renewal. */
 export const RENEWAL_MIN_ADVANCE_MS = DAY_MS;
+/** A decided-but-not-yet-shown moment older than this is dropped silently. */
+export const PENDING_MAX_AGE_MS = 14 * DAY_MS;
 
 export type ThanksPeriod = "trial" | "normal" | "intro" | "unknown";
 export type ThanksOutcome = "converted" | "renewed" | "none";
@@ -34,6 +36,10 @@ export interface ThanksEntitlement {
   /** Epoch ms of the current period's end; null for lifetime or non-subscription. */
   expiresAt: number | null;
   productId: string | null;
+  /** Epoch ms the store flagged a failed charge; null when there is none. */
+  billingIssueDetectedAt: number | null;
+  /** A Family Sharing entitlement: someone else paid, so there is nobody to thank. */
+  familyShared: boolean;
 }
 
 export interface ThanksSnapshot extends ThanksEntitlement {
@@ -48,13 +54,33 @@ export interface ThanksShown {
 
 export interface ThanksState extends ThanksShown {
   snapshot: ThanksSnapshot | null;
+  /**
+   * A moment that was decided but has not been on screen yet. The seen stamps
+   * above are written only once the sheet or toast is really shown, so a moment
+   * that could not be presented (another sheet up, app closed) survives a
+   * restart and is shown at the first clear moment.
+   */
+  pendingConvertedAt: number | null;
+  pendingRenewalAt: number | null;
 }
 
 export const EMPTY_THANKS_STATE: ThanksState = {
   snapshot: null,
   convertedSeenAt: null,
   renewalToastAt: null,
+  pendingConvertedAt: null,
+  pendingRenewalAt: null,
 };
+
+/** True while a pending stamp is still worth showing. A future stamp (clock moved) is not. */
+export function pendingFresh(at: number | null, now: number): boolean {
+  return at !== null && now >= at && now - at <= PENDING_MAX_AGE_MS;
+}
+
+/** The yearly-at-most gap since the last renewal toast. A future stamp (clock moved) blocks. */
+export function renewalGapElapsed(renewalToastAt: number | null, now: number): boolean {
+  return renewalToastAt === null || now - renewalToastAt >= RENEWAL_TOAST_MIN_DAYS * DAY_MS;
+}
 
 export interface DetectInput {
   /** The previous snapshot; null on a first observation. */
@@ -69,7 +95,15 @@ function sameProduct(a: string | null, b: string | null): boolean {
 }
 
 function inactiveSnapshot(now: number): ThanksSnapshot {
-  return { active: false, periodType: "unknown", expiresAt: null, productId: null, observedAt: now };
+  return {
+    active: false,
+    periodType: "unknown",
+    expiresAt: null,
+    productId: null,
+    billingIssueDetectedAt: null,
+    familyShared: false,
+    observedAt: now,
+  };
 }
 
 /**
@@ -85,8 +119,18 @@ export function detectThanks(input: DetectInput): { outcome: ThanksOutcome; next
     periodType: current.periodType,
     expiresAt: current.expiresAt,
     productId: current.productId,
+    billingIssueDetectedAt: current.billingIssueDetectedAt,
+    familyShared: current.familyShared,
     observedAt: now,
   };
+
+  // Someone else's subscription: never thanked, but the snapshot follows it.
+  if (current.familyShared) return { outcome: "none", next };
+  // A failed charge: the old snapshot stays, so the payment that goes through
+  // later is still seen as the change it is (trial to paid, or a renewal).
+  if (current.billingIssueDetectedAt !== null && prev && prev.active) {
+    return { outcome: "none", next: prev };
+  }
 
   // First observation: seed only.
   if (!prev || !prev.active) return { outcome: "none", next };
@@ -108,10 +152,7 @@ export function detectThanks(input: DetectInput): { outcome: ThanksOutcome; next
   if (prev.periodType === "normal" && current.periodType === "normal") {
     if (prev.expiresAt === null || current.expiresAt === null) return { outcome: "none", next };
     if (current.expiresAt - prev.expiresAt < RENEWAL_MIN_ADVANCE_MS) return { outcome: "none", next };
-    if (shown.renewalToastAt !== null) {
-      // A toast stamped in the future (clock moved) blocks as well.
-      if (now - shown.renewalToastAt < RENEWAL_TOAST_MIN_DAYS * DAY_MS) return { outcome: "none", next };
-    }
+    if (!renewalGapElapsed(shown.renewalToastAt, now)) return { outcome: "none", next };
     return { outcome: "renewed", next };
   }
 
@@ -148,6 +189,8 @@ export function parseThanksState(raw: string | null | undefined): ThanksState {
           periodType: periodOf(so.periodType),
           expiresAt: numOrNull(so.expiresAt),
           productId: strOrNull(so.productId),
+          billingIssueDetectedAt: numOrNull(so.billingIssueDetectedAt),
+          familyShared: so.familyShared === true,
           observedAt,
         };
       }
@@ -156,6 +199,8 @@ export function parseThanksState(raw: string | null | undefined): ThanksState {
       snapshot,
       convertedSeenAt: numOrNull(o.convertedSeenAt),
       renewalToastAt: numOrNull(o.renewalToastAt),
+      pendingConvertedAt: numOrNull(o.pendingConvertedAt),
+      pendingRenewalAt: numOrNull(o.pendingRenewalAt),
     };
   } catch {
     return EMPTY_THANKS_STATE;

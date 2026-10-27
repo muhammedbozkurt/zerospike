@@ -20,7 +20,8 @@ import {
   type ThanksShown,
   type ThanksSnapshot,
 } from "../lib/thanks/detect";
-import { evaluateThanks, type ThanksDeps } from "../lib/thanks/evaluate";
+import { confirmThanksShown, evaluateThanks, type ThanksDeps } from "../lib/thanks/evaluate";
+import { claimSheet, onSheetRelease, sheetClaimed } from "../lib/sheetClaim";
 import { thanksMayPresent, type ThanksGate } from "../lib/thanks/gate";
 
 const fs = require("fs");
@@ -54,7 +55,15 @@ const ANNUAL = "zerospike_pro_annual";
 const MONTHLY = "zerospike_pro_monthly";
 
 function ent(over: Partial<ThanksEntitlement> = {}): ThanksEntitlement {
-  return { active: true, periodType: "normal", expiresAt: T0 + 365 * DAY_MS, productId: ANNUAL, ...over };
+  return {
+    active: true,
+    periodType: "normal",
+    expiresAt: T0 + 365 * DAY_MS,
+    productId: ANNUAL,
+    billingIssueDetectedAt: null,
+    familyShared: false,
+    ...over,
+  };
 }
 function snap(over: Partial<ThanksSnapshot> = {}, observedAt = T0 - DAY_MS): ThanksSnapshot {
   return { ...ent(), observedAt, ...over };
@@ -176,19 +185,48 @@ async function main() {
     eq("equal time is fine", run(snap({ expiresAt: T0 - 1000 }, T0), ent({ expiresAt: T0 + 365 * DAY_MS })).outcome, "renewed");
   }
 
+  section("H2. billing issue and Family Sharing");
+  {
+    const trialPrev = snap({ periodType: "trial", expiresAt: T0 - 1000 });
+    const paidWithIssue = ent({ periodType: "normal", expiresAt: T0 + 365 * DAY_MS, billingIssueDetectedAt: T0 - 3600_000 });
+    const r = run(trialPrev, paidWithIssue);
+    eq("trial to paid with a billing issue: silent", r.outcome, "none");
+    eq("the old snapshot is kept untouched", r.next, trialPrev);
+    eq("when the payment goes through the conversion is still caught", run(r.next, ent({ periodType: "normal", expiresAt: T0 + 365 * DAY_MS }), T0 + DAY_MS).outcome, "converted");
+
+    const normalPrev = snap({ expiresAt: T0 - 1000 });
+    const renewedWithIssue = ent({ expiresAt: T0 + 365 * DAY_MS, billingIssueDetectedAt: T0 - 1000 });
+    const r2 = run(normalPrev, renewedWithIssue);
+    eq("renewal with a billing issue: silent, snapshot kept", [r2.outcome, r2.next], ["none", normalPrev]);
+    eq("renewal is caught once the issue clears", run(r2.next, ent({ expiresAt: T0 + 365 * DAY_MS }), T0 + DAY_MS).outcome, "renewed");
+    eq("a first observation with a billing issue still only seeds", run(null, paidWithIssue).outcome, "none");
+
+    const fam = ent({ familyShared: true, expiresAt: T0 + 365 * DAY_MS });
+    const f1 = run(snap({ expiresAt: T0 - 1000 }), fam);
+    eq("a Family Sharing renewal is silent", f1.outcome, "none");
+    eq("and the snapshot follows it", [f1.next.familyShared, f1.next.expiresAt], [true, T0 + 365 * DAY_MS]);
+    eq("a Family Sharing trial conversion is silent", run(snap({ periodType: "trial", expiresAt: T0 - 1000 }), ent({ familyShared: true, expiresAt: T0 + 365 * DAY_MS })).outcome, "none");
+  }
+
   section("I. state parsing");
   {
     eq("empty", parseThanksState(null), EMPTY_THANKS_STATE);
     eq("garbage", parseThanksState("{nope"), EMPTY_THANKS_STATE);
     eq("array", parseThanksState("[]"), EMPTY_THANKS_STATE);
     eq("wrong types are dropped", parseThanksState(JSON.stringify({ snapshot: { active: "yes" }, convertedSeenAt: "x", renewalToastAt: NaN })), EMPTY_THANKS_STATE);
-    const full = { snapshot: snap({ periodType: "trial" }, T0), convertedSeenAt: T0, renewalToastAt: T0 - DAY_MS };
+    const full = {
+      snapshot: snap({ periodType: "trial", billingIssueDetectedAt: T0 - 5, familyShared: true }, T0),
+      convertedSeenAt: T0,
+      renewalToastAt: T0 - DAY_MS,
+      pendingConvertedAt: T0 - 7,
+      pendingRenewalAt: T0 - 9,
+    };
     eq("round trip", parseThanksState(serializeThanksState(full)), full);
     eq("an unknown period reads as unknown", parseThanksState(JSON.stringify({ snapshot: { ...snap(), periodType: "weird" }, convertedSeenAt: null, renewalToastAt: null })).snapshot?.periodType, "unknown");
     eq("the key is the one account-level key", THANKS_STATE_KEY, "zerospike.thanks.v1");
   }
 
-  section("J. evaluation: persisted before shown, installs never shown");
+  section("J. evaluation: pending until really shown, installs never shown");
   {
     const makeDeps = (initial: string | null, entitlement: ThanksEntitlement | null, now = T0) => {
       const log: string[] = [];
@@ -205,6 +243,12 @@ async function main() {
       return { deps, log, box };
     };
     const stored = (box: { raw: string | null }) => parseThanksState(box.raw);
+    /** Seeds a snapshot for `e` at `now`, returns the raw state. */
+    const seeded = async (e: ThanksEntitlement, now = T0): Promise<string | null> => {
+      const d = makeDeps(null, e, now);
+      await evaluateThanks(d.deps);
+      return d.box.raw;
+    };
 
     // Fresh install, reinstall and restore all look the same: no state at all.
     for (const [name, e] of [
@@ -216,13 +260,15 @@ async function main() {
       const d = makeDeps(null, e);
       eq(`${name}: nothing shown`, await evaluateThanks(d.deps), "none");
       ok(`${name}: seeded`, stored(d.box).snapshot !== null);
-      eq(`${name}: no stamps`, [stored(d.box).convertedSeenAt, stored(d.box).renewalToastAt], [null, null]);
+      eq(
+        `${name}: no stamps, nothing pending`,
+        [stored(d.box).convertedSeenAt, stored(d.box).renewalToastAt, stored(d.box).pendingConvertedAt, stored(d.box).pendingRenewalAt],
+        [null, null, null, null]
+      );
     }
-    // ...and the next observation after a restore-while-paid is still silent.
     {
-      const d1 = makeDeps(null, ent());
-      await evaluateThanks(d1.deps);
-      const d2 = makeDeps(d1.box.raw, ent(), T0 + 2 * DAY_MS);
+      const raw = await seeded(ent());
+      const d2 = makeDeps(raw, ent(), T0 + 2 * DAY_MS);
       eq("an unchanged entitlement stays silent", await evaluateThanks(d2.deps), "none");
     }
 
@@ -233,30 +279,33 @@ async function main() {
       eq("unreachable store: nothing written", d.log.length, 0);
     }
 
-    // Conversion: stamp and snapshot are on disk before the result returns.
+    // Conversion: decided and pending on disk, but NOT stamped as seen.
     {
-      const seed = makeDeps(null, ent({ periodType: "trial", expiresAt: T0 + DAY_MS }), T0);
-      await evaluateThanks(seed.deps);
-      const d = makeDeps(seed.box.raw, ent({ periodType: "normal", expiresAt: T0 + 365 * DAY_MS }), T0 + 2 * DAY_MS);
-      const order: string[] = [];
-      const inner = d.deps.writeRaw;
-      d.deps.writeRaw = async (raw) => {
-        await inner(raw);
-        order.push("written");
-      };
-      const out = await evaluateThanks(d.deps).then((o) => {
-        order.push("returned");
-        return o;
-      });
-      eq("trial then paid: converted", out, "converted");
-      eq("the stamp is written before the result is handed back", order, ["written", "returned"]);
-      eq("convertedSeenAt is the decision time", stored(d.box).convertedSeenAt, T0 + 2 * DAY_MS);
+      const raw = await seeded(ent({ periodType: "trial", expiresAt: T0 + DAY_MS }));
+      const paid = ent({ periodType: "normal", expiresAt: T0 + 365 * DAY_MS });
+      const d = makeDeps(raw, paid, T0 + 2 * DAY_MS);
+      eq("trial then paid: converted is waiting", await evaluateThanks(d.deps), "converted");
+      eq("pendingConvertedAt is the decision time", stored(d.box).pendingConvertedAt, T0 + 2 * DAY_MS);
+      eq("convertedSeenAt is NOT written before it is shown", stored(d.box).convertedSeenAt, null);
       eq("renewalToastAt untouched", stored(d.box).renewalToastAt, null);
-      // A crash right after: the next launch must not repeat it.
-      const relaunch = makeDeps(d.box.raw, ent({ periodType: "normal", expiresAt: T0 + 365 * DAY_MS }), T0 + 2 * DAY_MS + 5000);
-      eq("after a crash the conversion does not repeat", await evaluateThanks(relaunch.deps), "none");
-      // Even if the snapshot were somehow trial again, the lifetime stamp holds.
-      const forged = parseThanksState(d.box.raw);
+
+      // The app died (or another sheet was up): it survives and is offered again.
+      const relaunch = makeDeps(d.box.raw, paid, T0 + 3 * DAY_MS);
+      eq("a restart before it was shown offers it again", await evaluateThanks(relaunch.deps), "converted");
+      eq("and keeps the original decision time", stored(relaunch.box).pendingConvertedAt, T0 + 2 * DAY_MS);
+      const offline = makeDeps(relaunch.box.raw, null, T0 + 4 * DAY_MS);
+      eq("it is offered even when the store cannot be read", await evaluateThanks(offline.deps), "converted");
+
+      // Shown: stamp and clear.
+      const confirm = makeDeps(relaunch.box.raw, paid, T0 + 3 * DAY_MS + 1000);
+      eq("confirming reports success", await confirmThanksShown(confirm.deps, "converted"), true);
+      eq("convertedSeenAt written at show time", stored(confirm.box).convertedSeenAt, T0 + 3 * DAY_MS + 1000);
+      eq("pending cleared", stored(confirm.box).pendingConvertedAt, null);
+      const after = makeDeps(confirm.box.raw, paid, T0 + 4 * DAY_MS);
+      eq("after it was shown it does not come back", await evaluateThanks(after.deps), "none");
+
+      // Even a snapshot that looks like a trial again cannot convert twice.
+      const forged = parseThanksState(confirm.box.raw);
       const again = makeDeps(
         serializeThanksState({ ...forged, snapshot: snap({ periodType: "trial", expiresAt: T0 }, T0 + 3 * DAY_MS) }),
         ent({ periodType: "normal", expiresAt: T0 + 400 * DAY_MS }),
@@ -265,28 +314,87 @@ async function main() {
       eq("the lifetime stamp blocks a second conversion", await evaluateThanks(again.deps), "none");
     }
 
-    // Renewal.
+    // Pending goes stale after 14 days; a future-dated one is dropped too.
     {
-      const seed = makeDeps(null, ent({ expiresAt: T0 + DAY_MS }), T0);
-      await evaluateThanks(seed.deps);
-      const d = makeDeps(seed.box.raw, ent({ expiresAt: T0 + DAY_MS + 365 * DAY_MS }), T0 + 2 * DAY_MS);
-      eq("renewal: shown", await evaluateThanks(d.deps), "renewed");
-      eq("renewalToastAt stamped", stored(d.box).renewalToastAt, T0 + 2 * DAY_MS);
-      eq("convertedSeenAt untouched", stored(d.box).convertedSeenAt, null);
-      const next = makeDeps(d.box.raw, ent({ expiresAt: T0 + DAY_MS + 730 * DAY_MS }), T0 + 200 * DAY_MS);
-      eq("another renewal inside the year is silent", await evaluateThanks(next.deps), "none");
+      const raw = await seeded(ent({ periodType: "trial", expiresAt: T0 + DAY_MS }));
+      const paid = ent({ expiresAt: T0 + 365 * DAY_MS });
+      const first = makeDeps(raw, paid, T0 + 2 * DAY_MS);
+      await evaluateThanks(first.deps);
+      const day14 = makeDeps(first.box.raw, paid, T0 + 2 * DAY_MS + 14 * DAY_MS);
+      eq("pending at exactly 14 days is still shown", await evaluateThanks(day14.deps), "converted");
+      const day14b = makeDeps(first.box.raw, paid, T0 + 2 * DAY_MS + 14 * DAY_MS + 1);
+      eq("pending older than 14 days is dropped silently", await evaluateThanks(day14b.deps), "none");
+      eq("and the mark is gone from disk", stored(day14b.box).pendingConvertedAt, null);
+      const early = makeDeps(first.box.raw, paid, T0);
+      eq("a pending stamp from the future (clock moved) is dropped", await evaluateThanks(early.deps), "none");
+    }
+
+    // Renewal: same principle.
+    {
+      const raw = await seeded(ent({ expiresAt: T0 + DAY_MS }));
+      const renewed = ent({ expiresAt: T0 + DAY_MS + 365 * DAY_MS });
+      const d = makeDeps(raw, renewed, T0 + 2 * DAY_MS);
+      eq("renewal: waiting", await evaluateThanks(d.deps), "renewed");
+      eq("renewal: pendingRenewalAt written", stored(d.box).pendingRenewalAt, T0 + 2 * DAY_MS);
+      eq("renewal: the toast stamp is NOT written yet", stored(d.box).renewalToastAt, null);
+      const relaunch = makeDeps(d.box.raw, renewed, T0 + 3 * DAY_MS);
+      eq("renewal: survives a restart", await evaluateThanks(relaunch.deps), "renewed");
+      const confirm = makeDeps(relaunch.box.raw, renewed, T0 + 3 * DAY_MS + 5);
+      await confirmThanksShown(confirm.deps, "renewed");
+      eq("renewal: stamp written at show time", stored(confirm.box).renewalToastAt, T0 + 3 * DAY_MS + 5);
+      eq("renewal: pending cleared", stored(confirm.box).pendingRenewalAt, null);
+      eq("renewal: convertedSeenAt untouched", stored(confirm.box).convertedSeenAt, null);
+      const next = makeDeps(confirm.box.raw, ent({ expiresAt: T0 + DAY_MS + 730 * DAY_MS }), T0 + 200 * DAY_MS);
+      eq("another renewal inside the limit is silent", await evaluateThanks(next.deps), "none");
       eq("and still moves the snapshot on", stored(next.box).snapshot?.expiresAt, T0 + DAY_MS + 730 * DAY_MS);
+      // A pending renewal that the 330 day limit now forbids is dropped.
+      const tooSoon = makeDeps(
+        serializeThanksState({ ...parseThanksState(d.box.raw), renewalToastAt: T0 + DAY_MS }),
+        renewed,
+        T0 + 3 * DAY_MS
+      );
+      eq("a pending renewal inside the limit is dropped", await evaluateThanks(tooSoon.deps), "none");
+    }
+
+    // Conversion wins when both are waiting.
+    {
+      const raw = serializeThanksState({
+        ...EMPTY_THANKS_STATE,
+        snapshot: snap({}, T0),
+        pendingConvertedAt: T0,
+        pendingRenewalAt: T0,
+      });
+      eq("converted is offered before renewed", await evaluateThanks(makeDeps(raw, ent(), T0 + 1000).deps), "converted");
+    }
+
+    // Billing issue and Family Sharing through the full path.
+    {
+      const raw = await seeded(ent({ periodType: "trial", expiresAt: T0 + DAY_MS }));
+      const issue = makeDeps(raw, ent({ expiresAt: T0 + 365 * DAY_MS, billingIssueDetectedAt: T0 }), T0 + 2 * DAY_MS);
+      eq("billing issue: nothing waiting", await evaluateThanks(issue.deps), "none");
+      eq("billing issue: the trial snapshot is still the one on disk", stored(issue.box).snapshot?.periodType, "trial");
+      const paidLater = makeDeps(issue.box.raw, ent({ expiresAt: T0 + 365 * DAY_MS }), T0 + 3 * DAY_MS);
+      eq("payment recovered: the conversion is caught", await evaluateThanks(paidLater.deps), "converted");
+
+      const raw2 = await seeded(ent({ periodType: "trial", expiresAt: T0 + DAY_MS }));
+      const fam = makeDeps(raw2, ent({ familyShared: true, expiresAt: T0 + 365 * DAY_MS }), T0 + 2 * DAY_MS);
+      eq("Family Sharing: nothing waiting", await evaluateThanks(fam.deps), "none");
+      ok("Family Sharing: the snapshot follows", stored(fam.box).snapshot?.familyShared === true);
+      // A pending moment is withdrawn when the entitlement turns out to be shared.
+      const pendingRaw = serializeThanksState({ ...EMPTY_THANKS_STATE, snapshot: snap({}, T0), pendingConvertedAt: T0 });
+      eq("Family Sharing withdraws a pending moment", await evaluateThanks(makeDeps(pendingRaw, ent({ familyShared: true }), T0 + 1000).deps), "none");
+      eq("losing Pro withdraws a pending moment", await evaluateThanks(makeDeps(pendingRaw, ent({ active: false }), T0 + 1000).deps), "none");
     }
 
     // A failed write is not a show.
     {
-      const seed = makeDeps(null, ent({ periodType: "trial", expiresAt: T0 + DAY_MS }), T0);
-      await evaluateThanks(seed.deps);
-      const d = makeDeps(seed.box.raw, ent({ expiresAt: T0 + 365 * DAY_MS }), T0 + 2 * DAY_MS);
+      const raw = await seeded(ent({ periodType: "trial", expiresAt: T0 + DAY_MS }));
+      const d = makeDeps(raw, ent({ expiresAt: T0 + 365 * DAY_MS }), T0 + 2 * DAY_MS);
       d.deps.writeRaw = async () => {
         throw new Error("disk full");
       };
       eq("a failed write is not shown", await evaluateThanks(d.deps), "none");
+      eq("a failed confirm reports false", await confirmThanksShown(d.deps, "converted"), false);
     }
     // A failed read is not a show and never overwrites the state.
     {
@@ -299,17 +407,48 @@ async function main() {
     }
     // Two overlapping evaluations (launch plus a quick foreground).
     {
-      const seed = makeDeps(null, ent({ periodType: "trial", expiresAt: T0 + DAY_MS }), T0);
-      await evaluateThanks(seed.deps);
-      const d = makeDeps(seed.box.raw, ent({ expiresAt: T0 + 365 * DAY_MS }), T0 + 2 * DAY_MS);
+      const raw = await seeded(ent({ periodType: "trial", expiresAt: T0 + DAY_MS }));
+      const d = makeDeps(raw, ent({ expiresAt: T0 + 365 * DAY_MS }), T0 + 2 * DAY_MS);
       const slowRead = d.deps.readRaw;
       d.deps.readRaw = async () => {
         await new Promise((r) => setTimeout(r, 5));
         return slowRead();
       };
       const results = await Promise.all([evaluateThanks(d.deps), evaluateThanks(d.deps)]);
-      eq("overlapping evaluations show at most once", results.filter((r) => r === "converted").length, 1);
+      eq("overlapping evaluations keep one pending mark", stored(d.box).pendingConvertedAt, T0 + 2 * DAY_MS);
+      eq("and both report the same waiting moment", results, ["converted", "converted"]);
     }
+  }
+
+  section("J2. What's new and the thank-you sheet never lose each other");
+  {
+    const a = claimSheet();
+    ok("the first sheet gets the slot", a !== null);
+    eq("the second sheet is told to wait", claimSheet(), null);
+    ok("the slot reads as taken", sheetClaimed());
+    let woke = 0;
+    const off = onSheetRelease(() => woke++);
+    (a as () => void)();
+    eq("releasing wakes the waiting sheet", woke, 1);
+    (a as () => void)();
+    eq("a second release is harmless", woke, 1);
+    const b = claimSheet();
+    ok("then the other sheet gets its turn", b !== null);
+    (b as () => void)();
+    off();
+    ok("slot free at the end", !sheetClaimed());
+
+    // The real hosts: simultaneous triggers, one after the other.
+    const thanks = src("components/ThanksSheet.tsx");
+    const whats = src("components/WhatsNewSheet.tsx");
+    ok("thanks claims the slot before opening", /claimSheet\(\)[\s\S]{0,200}setVisible\(true\)/.test(thanks));
+    ok("thanks waits on a held slot or open overlay", /overlayOpen: overlayOpen\(\) \|\| sheetClaimed\(\)/.test(thanks));
+    ok("thanks looks again when the slot or an overlay is released", /onSheetRelease\(bump\)/.test(thanks) && /onSurveyRelease\(bump\)/.test(thanks));
+    ok("thanks releases the slot once the sheet is gone", /if \(visible\) return;\s*claimRef\.current\?\.\(\);/.test(thanks));
+    ok("what's new claims the slot before it consumes its flag", /claimSheet\(\)[\s\S]{0,700}takeWhatsNew/.test(whats));
+    ok("what's new gives the slot back when it does not open", /if \(!opened\) slot\(\)/.test(whats));
+    ok("what's new looks again when the slot is released", /onSheetRelease\(bump\)/.test(whats) && /slotTick\]/.test(whats));
+    ok("both sheets register as overlays", /useOverlayPresence\(visible\)/.test(thanks) && /useOverlayPresence\(visible\)/.test(whats));
   }
 
   section("K. presentation gate");
@@ -343,7 +482,9 @@ async function main() {
     ok("the root layout mounts ThanksHost", /<ThanksHost root=\{root\} \/>/.test(layout));
     const sheet = src("components/ThanksSheet.tsx");
     ok("the sheet asks for the review through the shared gateway", /maybeRequestReview\("trial_converted"\)/.test(sheet));
-    ok("the review is requested from the sheet's onShown", /onShown=\{onShown\}/.test(sheet));
+    ok("the sheet is stamped as seen from its onShown, not before", /onShown=\{confirmConverted\}/.test(sheet));
+    ok("the review is asked only from the close path, not from a card", /const close = useCallback\(\(\) => \{[\s\S]*?maybeRequestReview\("trial_converted"\)[\s\S]*?\}, \[confirmConverted, later\]\);/.test(sheet) && (sheet.match(/maybeRequestReview\(/g) ?? []).length === 1);
+    ok("a card tap leaves without a review", /const onCard = useCallback\([\s\S]*?\[confirmConverted, later, router\]/.exec(sheet)![0].indexOf("maybeRequestReview") === -1);
     ok("the seen events are logged", /logEvent\("trial_converted_seen"\)/.test(sheet) && /logEvent\("renewal_seen"\)/.test(sheet));
     ok("no font shrinking", !/adjustsFontSizeToFit/.test(sheet));
     ok("no hard-coded colour in the sheet", !/#[0-9a-fA-F]{3,8}\b/.test(sheet) && !/rgba?\(/.test(sheet));

@@ -15,14 +15,16 @@ import { logEvent } from "../lib/analytics";
 import { useApp } from "../lib/store/AppContext";
 import { isScreenshotMode } from "../lib/screenshotMode";
 import { onSurveyRelease, overlayOpen, surveyHeld } from "../lib/feedbackSurvey";
-import { evaluateThanksNow } from "../lib/services/thanks";
+import { confirmThanksNow, evaluateThanksNow } from "../lib/services/thanks";
 import { getHealthConnectStatus, getHealthSyncEnabled, hasHealthProvider } from "../lib/services/health";
 import { maybeRequestReview } from "../lib/services/review";
 import { thanksMayPresent } from "../lib/thanks/gate";
+import { claimSheet, onSheetRelease, sheetClaimed } from "../lib/sheetClaim";
+import { useOverlayPresence } from "../lib/useOverlayPresence";
 import type { ThanksOutcome } from "../lib/thanks/detect";
 
-/** Lets the sheet finish settling before the native review dialog goes up. */
-const REVIEW_DELAY_MS = 900;
+/** Lets the sheet finish sliding out before the native review dialog goes up. */
+const REVIEW_DELAY_MS = 700;
 /** The sheet slides out before a route is pushed, so the two never overlap. */
 const NAVIGATE_DELAY_MS = 450;
 
@@ -76,6 +78,8 @@ export function ThanksSheet({
   onCard: (id: CardId) => void;
 }) {
   const { t } = useTranslation();
+  // Counted as an overlay in its own right, so the What's new sheet never opens over it.
+  useOverlayPresence(visible);
   const health = t(Platform.OS === "ios" ? "settings.healthSection" : "settings.healthSectionAndroid");
   return (
     <SheetShell
@@ -135,10 +139,15 @@ async function healthCardWanted(profileId: string | null): Promise<boolean> {
 /**
  * Mounted once under the root navigator. On launch and on each foreground it
  * takes ONE look at the entitlement (lib/services/thanks), but only while a
- * moment could really be shown (tab screen, no Modal up, nothing else
- * deciding), so an evaluation is never spent behind the paywall. The outcome is
- * already persisted when it arrives, so a result that has to wait for a clear
- * screen is held in memory and, if the app dies first, simply not shown.
+ * moment could really be shown (tab screen, no Modal or other self-opening
+ * sheet up), so an evaluation is never spent behind the paywall.
+ *
+ * A moment is stamped as seen only when it is really on screen (the sheet's
+ * onShown, the toast call). Until then it is PENDING on disk, so one that had to
+ * wait, or that the app died before showing, comes back at the first clear
+ * moment (and is dropped after 14 days). The store review is asked after the
+ * sheet is closed with Continue or the close button; a tap on a card leaves for
+ * another screen and asks nothing.
  */
 export function ThanksHost({ root }: { root: string | undefined }) {
   const { t } = useTranslation();
@@ -154,6 +163,8 @@ export function ThanksHost({ root }: { root: string | undefined }) {
   const evaluatedIn = useRef(-1);
   const alive = useRef(true);
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const claimRef = useRef<(() => void) | null>(null);
+  const confirmed = useRef(true);
   const profileId = activeProfile?.id ?? null;
   const latest = useRef({ ready, onboarded, root, visible, profileId });
   latest.current = { ready, onboarded, root, visible, profileId };
@@ -173,6 +184,8 @@ export function ThanksHost({ root }: { root: string | undefined }) {
       alive.current = false;
       pendingTimers.forEach(clearTimeout);
       pendingTimers.clear();
+      claimRef.current?.();
+      claimRef.current = null;
     };
   }, []);
 
@@ -182,12 +195,22 @@ export function ThanksHost({ root }: { root: string | undefined }) {
       foreground.current += 1;
       setTick((n) => n + 1);
     });
-    const off = onSurveyRelease(() => setTick((n) => n + 1));
+    const bump = () => setTick((n) => n + 1);
+    const offOverlay = onSurveyRelease(bump);
+    const offSlot = onSheetRelease(bump);
     return () => {
       sub.remove();
-      off();
+      offOverlay();
+      offSlot();
     };
   }, []);
+
+  // The slot is held from the decision to open until the sheet is gone.
+  useEffect(() => {
+    if (visible) return;
+    claimRef.current?.();
+    claimRef.current = null;
+  }, [visible]);
 
   const clear = useCallback(() => {
     const s = latest.current;
@@ -196,7 +219,7 @@ export function ThanksHost({ root }: { root: string | undefined }) {
       onboarded: s.onboarded,
       screenshotMode: isScreenshotMode(),
       root: s.root,
-      overlayOpen: overlayOpen(),
+      overlayOpen: overlayOpen() || sheetClaimed(),
       winbackHold: surveyHeld(),
       sheetVisible: s.visible,
     });
@@ -214,24 +237,38 @@ export function ThanksHost({ root }: { root: string | undefined }) {
 
   useEffect(() => {
     if (pending === "none" || !clear()) return;
-    setPending("none");
     if (pending === "converted") {
-      logEvent("trial_converted_seen");
+      const claim = claimSheet();
+      if (!claim) return;
+      claimRef.current = claim;
+      confirmed.current = false;
+      setPending("none");
       setVisible(true);
-    } else {
-      logEvent("renewal_seen");
-      toast(t("thanks.renewalToast"), "success");
+      return;
     }
+    setPending("none");
+    toast(t("thanks.renewalToast"), "success");
+    logEvent("renewal_seen");
+    void confirmThanksNow("renewed");
   }, [pending, ready, onboarded, root, visible, tick, clear, toast, t]);
 
-  const close = useCallback(() => setVisible(false), []);
+  const confirmConverted = useCallback(() => {
+    if (confirmed.current) return;
+    confirmed.current = true;
+    logEvent("trial_converted_seen");
+    void confirmThanksNow("converted");
+  }, []);
 
-  const onShown = useCallback(() => {
+  const close = useCallback(() => {
+    if (!latest.current.visible) return;
+    confirmConverted();
+    setVisible(false);
     later(() => void maybeRequestReview("trial_converted"), REVIEW_DELAY_MS);
-  }, [later]);
+  }, [confirmConverted, later]);
 
   const onCard = useCallback(
     (id: CardId) => {
+      confirmConverted();
       setVisible(false);
       later(() => {
         if (id === "report") router.push("/settings/data");
@@ -239,8 +276,8 @@ export function ThanksHost({ root }: { root: string | undefined }) {
         else router.navigate({ pathname: "/(tabs)", params: { health: "connect" } });
       }, NAVIGATE_DELAY_MS);
     },
-    [later, router]
+    [confirmConverted, later, router]
   );
 
-  return <ThanksSheet visible={visible} showHealth={showHealth} onClose={close} onShown={onShown} onCard={onCard} />;
+  return <ThanksSheet visible={visible} showHealth={showHealth} onClose={close} onShown={confirmConverted} onCard={onCard} />;
 }

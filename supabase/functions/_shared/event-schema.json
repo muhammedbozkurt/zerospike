@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "events": {
     "app_open": { "cold": "bool" },
     "onboarding_step": { "step": "string", "index": "int" },

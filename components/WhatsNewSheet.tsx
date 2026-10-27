@@ -8,7 +8,7 @@ import { HIDDEN_FROM_A11Y } from "../lib/a11y";
 import { THEME } from "../lib/theme/tokens";
 import { useApp } from "../lib/store/AppContext";
 import { isScreenshotMode } from "../lib/screenshotMode";
-import { SURVEY_ASKED_KEY, SURVEY_PENDING_KEY, overlayOpen, surveyHeld } from "../lib/feedbackSurvey";
+import { SURVEY_ASKED_KEY, SURVEY_PENDING_KEY, onSurveyRelease, overlayOpen, surveyHeld } from "../lib/feedbackSurvey";
 import {
   WHATS_NEW_DELAY_MS,
   WHATS_NEW_ITEMS,
@@ -18,9 +18,13 @@ import {
   whatsNewMayPresent,
 } from "../lib/whatsNew";
 import { currentAppVersion, whatsNewKv } from "../lib/whatsNewStore";
+import { useOverlayPresence } from "../lib/useOverlayPresence";
+import { claimSheet, onSheetRelease } from "../lib/sheetClaim";
 
 export function WhatsNewSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { t } = useTranslation();
+  // Counted as an overlay in its own right, so the thank-you sheet never opens over it.
+  useOverlayPresence(visible);
   return (
     <SheetShell
       scrollHintId="whats-new"
@@ -65,6 +69,20 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
   const latest = useRef({ ready, onboarded, root });
   latest.current = { ready, onboarded, root };
   const askedAtStart = useRef<boolean | null>(null);
+  // Bumped when the thank-you sheet lets go of the slot, so a sheet that had to
+  // wait for it looks again instead of being lost.
+  const [slotTick, setSlotTick] = useState(0);
+  const releaseSlot = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const bump = () => setSlotTick((n) => n + 1);
+    const offSlot = onSheetRelease(bump);
+    const offOverlay = onSurveyRelease(bump);
+    return () => {
+      offSlot();
+      offOverlay();
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -96,23 +114,41 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
       };
       if (!whatsNewMayPresent(gate) || askedAtStart.current === null) return;
       void (async () => {
-        if (await surveyInTheWay(whatsNewKv, askedAtStart.current === true, {
-          pending: SURVEY_PENDING_KEY,
-          asked: SURVEY_ASKED_KEY,
-        })) {
-          return;
+        const slot = claimSheet();
+        if (!slot) return;
+        let opened = false;
+        try {
+          const inTheWay = await surveyInTheWay(whatsNewKv, askedAtStart.current === true, {
+            pending: SURVEY_PENDING_KEY,
+            asked: SURVEY_ASKED_KEY,
+          });
+          if (inTheWay) return;
+          const again = latest.current;
+          if (!isWhatsNewRoute(again.root) || surveyHeld()) return;
+          const due = await takeWhatsNew(whatsNewKv, {
+            onboarded: again.onboarded,
+            appVersion: currentAppVersion(),
+          });
+          if (due) {
+            opened = true;
+            releaseSlot.current = slot;
+            setVisible(true);
+          }
+        } finally {
+          if (!opened) slot();
         }
-        const again = latest.current;
-        if (!isWhatsNewRoute(again.root) || surveyHeld()) return;
-        const due = await takeWhatsNew(whatsNewKv, {
-          onboarded: again.onboarded,
-          appVersion: currentAppVersion(),
-        });
-        if (due) setVisible(true);
       })();
     }, WHATS_NEW_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [ready, onboarded, root, visible]);
+  }, [ready, onboarded, root, visible, slotTick]);
+
+  useEffect(() => {
+    if (visible) return;
+    releaseSlot.current?.();
+    releaseSlot.current = null;
+  }, [visible]);
+
+  useEffect(() => () => releaseSlot.current?.(), []);
 
   useEffect(() => {
     if (visible && !isWhatsNewRoute(root)) setVisible(false);

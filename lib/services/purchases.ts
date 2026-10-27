@@ -416,17 +416,30 @@ export async function getEntitlementSnapshot(): Promise<{
   periodType: PeriodType;
   expiresAt: number | null;
   productId: string | null;
+  billingIssueDetectedAt: number | null;
+  familyShared: boolean;
 } | null> {
   if (DEBUG_MOCK_PURCHASES) return null;
   try {
     const info = await fetchCustomerInfo();
     const ent = info?.entitlements?.active?.[ENTITLEMENT_ID];
-    if (!ent) return { active: false, periodType: "unknown", expiresAt: null, productId: null };
+    if (!ent) {
+      return {
+        active: false,
+        periodType: "unknown",
+        expiresAt: null,
+        productId: null,
+        billingIssueDetectedAt: null,
+        familyShared: false,
+      };
+    }
     return {
       active: true,
       periodType: periodTypeOf(ent),
       expiresAt: isoMs(ent.expirationDate),
       productId: typeof ent.productIdentifier === "string" ? ent.productIdentifier : null,
+      billingIssueDetectedAt: isoMs(ent.billingIssueDetectedAt),
+      familyShared: String(ent.ownershipType ?? "").toUpperCase() === "FAMILY_SHARED",
     };
   } catch {
     return null;
