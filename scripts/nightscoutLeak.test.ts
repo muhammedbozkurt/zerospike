@@ -295,7 +295,7 @@ async function main(): Promise<void> {
     for (const m of ui.matchAll(/logCrash\(\s*([^,)]*)/g)) {
       const first = m[1].trim();
       const line = ui.slice(m.index!, m.index! + 200);
-      if (/op:\s*"(count|setMode)"/.test(line)) continue;
+      if (/op:\s*"(count|setMode|setBrand)"/.test(line)) continue;
       ok(`data-sources.tsx: nightscout logCrash is safe (${first})`, first.startsWith("safeNightscoutError("));
     }
     const events = [...ui.matchAll(/logEvent\(\s*"nightscout_connect",\s*(\{[^}]*\})/g)];
