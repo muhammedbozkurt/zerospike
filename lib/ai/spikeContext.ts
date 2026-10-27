@@ -567,6 +567,19 @@ export interface SpikeContextOptions {
   profile?: SpikeProfile | null;
   source?: SpikeContextSource;
   now?: number;
+  /** Whether the cgm block may be built. Omitted, it follows the stored summary
+   *  consent: only a consent given on the text that names CGM (version 2)
+   *  counts. Fail-closed: an unreadable store means no cgm block. */
+  cgmConsent?: boolean;
+}
+
+async function cgmConsentGiven(): Promise<boolean> {
+  try {
+    const { hasSpikeCgmConsent } = require("../services/spikeConsent");
+    return (await hasSpikeCgmConsent()) === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Same key AppContext writes; duplicated like lib/services/health.ts does. */
@@ -622,7 +635,7 @@ export async function summarizeForSpike(
       source.getInjections(profile.id, LOG_FETCH_LIMIT, range),
     ]);
     let cgm: CgmAggregate | null = null;
-    if (source.getCgmAggregate) {
+    if (source.getCgmAggregate && (options.cgmConsent ?? (await cgmConsentGiven()))) {
       try {
         cgm = await source.getCgmAggregate(profile.id, range, targetBandFor(profile));
       } catch {

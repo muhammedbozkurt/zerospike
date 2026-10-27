@@ -1303,6 +1303,42 @@ async function cgmTests(): Promise<void> {
     },
     ...over,
   });
+  // The cgm block follows the stored consent VERSION, never the mere presence of data.
+  store.clear();
+  await consent.grantSpikeConsent();
+  store.set("zerospike.spikeContextConsent", "true"); // a pre-2.5 summary consent: no version key
+  eq("a v1 summary consent reads as version 1", await consent.getSpikeContextConsentVersion(), 1);
+  eq("and is not a CGM consent", await consent.hasSpikeCgmConsent(), false);
+  const v1Calls = calls.length;
+  const underV1 = await ctx.summarizeForSpike(14, { profile: P, source: src(), now: NOW });
+  same("under a v1 consent the packet has no cgm block", underV1, packet);
+  eq("and the aggregate is not even read", calls.length, v1Calls);
+  eq("v1 users are offered the new text once", await consent.shouldOfferSpikeCgmConsent(), true);
+  await consent.markSpikeCgmOfferSeen();
+  eq("and not again after it was shown", await consent.shouldOfferSpikeCgmConsent(), false);
+  store.clear();
+  eq("without any consent: no cgm block", (await ctx.summarizeForSpike(14, { profile: P, source: src(), now: NOW }))?.cgm, undefined);
+  await consent.grantSpikeConsent();
+  await consent.setSpikeContextConsent(true);
+  eq("accepting the current text stores version 2", store.get("zerospike.spikeContextConsentVersion"), "2");
+  eq("which is a CGM consent", await consent.hasSpikeCgmConsent(), true);
+  eq("and needs no further offer", await consent.shouldOfferSpikeCgmConsent(), false);
+  storageThrows = true;
+  eq("an unreadable store means no cgm block (fail-closed)", await consent.hasSpikeCgmConsent(), false);
+  storageThrows = false;
+  const spikeScreen = read("app/spike.tsx");
+  ok("the screen offers the new text to a v1 user only when sensor data exists", /shouldOfferSpikeCgmConsent\(\)[\s\S]{0,260}cgmConsent: true[\s\S]{0,120}probe\?\.cgm[\s\S]{0,80}setCgmOffer\(true\)/.test(spikeScreen));
+  ok("declining it keeps the old summary and records the offer as seen", /if \(cgmOffer\) \{[\s\S]{0,200}markSpikeCgmOfferSeen\(\)/.test(spikeScreen));
+  ok("the consent view shows spike.ctxCgmUpdate only for the offer", spikeScreen.includes("cgmUpdate ? (") && spikeScreen.includes('t("spike.ctxCgmUpdate")'));
+  for (const lng of ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"]) {
+    const loc = read(`lib/i18n/locales/${lng}.ts`);
+    ok(`${lng}: ctxCgmUpdate exists and ctxShared1 names a source`, loc.includes("ctxCgmUpdate:") && /ctxShared1:[^\n]*Nightscout/.test(loc));
+  }
+  await consent.setSpikeContextConsent(false);
+  eq("turning the summary off removes the version", store.has("zerospike.spikeContextConsentVersion"), false);
+  eq("and with it the cgm block", (await ctx.summarizeForSpike(14, { profile: P, source: src(), now: NOW }))?.cgm, undefined);
+  await consent.setSpikeContextConsent(true);
+  calls.length = 0;
   const viaSource = await ctx.summarizeForSpike(14, { profile: P, source: src(), now: NOW });
   same("summarizeForSpike carries the CGM block", viaSource, withCgm);
   eq("one aggregate read", calls.length, 1);

@@ -51,13 +51,14 @@ import {
   BASE_STEPS,
   DEFAULT_MEASURE,
   DIABETES_OPTIONS,
-  MEASURE_OPTIONS,
   TREATMENT_OPTIONS,
   basalReminderOnAtFinish,
   buildOnboardingSteps,
   diabetesTypeOf,
   measureAfterPermission,
   measureModeToWrite,
+  measureNeedsPro,
+  measureOptionsFor,
   nightscoutHandoff,
   onboardingDoneEvent,
   onboardingFlags,
@@ -72,6 +73,8 @@ import {
 import { setCgmMode } from "../lib/cgm/state";
 import { healthStoreLabelKey } from "../lib/cgm/sourceLabel";
 import { hasHealthProvider, requestHealthPermissions } from "../lib/services/health";
+import { nightscoutAllowed } from "../lib/cgm/pro";
+import { nightscoutAvailable } from "../lib/cgm/sourceAvailability";
 import {
   clampHypoThreshold,
   clampTarget,
@@ -497,7 +500,7 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { columnPad, isWide } = useLayout();
   const router = useRouter();
-  const { activeProfile, bumpData, completeOnboarding } = useApp();
+  const { activeProfile, bumpData, completeOnboarding, isProUser } = useApp();
   const { scOnboarding } = useLocalSearchParams<{ scOnboarding?: string }>();
   // Read once, into the initial state below, so the capture opens on the right
   // step with no welcome frame in between (and a later re-render can never
@@ -717,6 +720,10 @@ export default function OnboardingScreen() {
     if (askingHealth || picked === measure) return;
     hapticSelect();
     setMeasureDenied(false);
+    if (measureNeedsPro(picked) && !nightscoutAllowed(isProUser)) {
+      router.push({ pathname: "/paywall", params: { reason: "nightscout" } });
+      return;
+    }
     if (picked !== "cgm") {
       setMeasure(picked);
       return;
@@ -1643,7 +1650,10 @@ export default function OnboardingScreen() {
 
       case "measure": {
         const store = t(healthStoreLabelKey(Platform.OS));
-        const options = MEASURE_OPTIONS.filter((o) => o !== "cgm" || hasHealthProvider());
+        const options = measureOptionsFor({
+          hasHealth: hasHealthProvider(),
+          nightscout: nightscoutAvailable(),
+        });
         return (
           <View>
             {options.map((opt, i) => (

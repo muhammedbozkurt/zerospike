@@ -37,6 +37,22 @@ export const MEASURE_OPTIONS = ["finger", "cgm", "nightscout"] as const;
 export type MeasureOption = (typeof MEASURE_OPTIONS)[number];
 export const DEFAULT_MEASURE: MeasureOption = "finger";
 
+/** The answers this build and device can honour: cgm needs a health store,
+ *  nightscout needs the connector (lib/cgm/sourceAvailability.ts). */
+export function measureOptionsFor(avail: {
+  hasHealth: boolean;
+  nightscout: boolean;
+}): MeasureOption[] {
+  return MEASURE_OPTIONS.filter((o) =>
+    o === "cgm" ? avail.hasHealth : o === "nightscout" ? avail.nightscout : true
+  );
+}
+
+/** Nightscout is a Pro source (lib/cgm/pro.ts nightscoutAllowed). */
+export function measureNeedsPro(m: MeasureOption): boolean {
+  return m === "nightscout";
+}
+
 /** The mode to store for an answer; null for the finger prick, which is the
  *  profile's default and writes nothing. */
 export function measureModeToWrite(m: MeasureOption): CgmMode | null {

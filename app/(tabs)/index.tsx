@@ -264,6 +264,7 @@ import { applyScreenshotCgm } from "../../lib/db/screenshotSeed";
 import { CgmHomeCard } from "../../components/CgmHomeCard";
 import { CgmSwitchOffer } from "../../components/CgmSwitchOffer";
 import { CgmDayRow } from "../../components/CgmDayRow";
+import { countNonCgmHealthRows } from "../../lib/db/cgmSql";
 import {
   CGM_PREVIEW_DAYS,
   cgmDayEntry,
@@ -1033,13 +1034,18 @@ export default function DashboardScreen() {
     if (syncing || !isProUser) return null;
     setSyncing(true);
     try {
+      const manualBefore = await countNonCgmHealthRows(activeProfile.id).catch(() => null);
       const res = await importHealthGlucose(activeProfile.id, announce ? "manual" : "foreground");
       if (res.status === "ok") void refreshFirstSync(activeProfile.id).then(setSyncDone);
       if (res.inserted > 0) {
         // One event per sync (not per row) to keep health-import volume sane. Its
         // own kind keeps imports out of the counts of what the user logged, and
-        // out of first_log.
-        logEvent("log_added", { kind: "health_import" });
+        // out of first_log. A sensor stream syncs constantly and is not a logged
+        // reading, so only a sync that added a non-sensor row counts.
+        const manualAfter = await countNonCgmHealthRows(activeProfile.id).catch(() => null);
+        if (manualBefore == null || manualAfter == null || manualAfter > manualBefore) {
+          logEvent("log_added", { kind: "health_import" });
+        }
         bumpData();
       }
       if (announce) {
