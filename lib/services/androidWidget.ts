@@ -224,13 +224,6 @@ export function buildZerospikeWidget(
               : readingColor(data?.avgGlucoseMgdl ?? data?.lastGlucoseMgdl ?? null, data?.band, pal),
           },
         }),
-        cgm?.glyph
-          ? React.createElement(TextWidget, {
-              text: ` ${cgm.glyph}`,
-              maxLines: 1,
-              style: { fontSize: s.unit + 7, fontWeight: "bold", color: pal.ink as ColorProp, marginBottom: 3 },
-            })
-          : null,
         React.createElement(TextWidget, {
           text: ` ${unitLabel(data)}`,
           maxLines: 1,
@@ -402,18 +395,6 @@ export function buildReadingWidget(
             : readingColor(mgdl, data?.band, pal),
         },
       }),
-      cgm?.glyph
-        ? React.createElement(TextWidget, {
-            text: ` ${cgm.glyph}`,
-            maxLines: 1,
-            style: {
-              fontSize: compact ? 16 : 20,
-              fontWeight: "bold",
-              color: pal.ink as ColorProp,
-              marginBottom: 3,
-            },
-          })
-        : null,
       React.createElement(TextWidget, {
         text: hasReading ? ` ${unitLabel(data)}` : ` ${data?.labels?.noData ?? ""}`,
         truncate: "END",

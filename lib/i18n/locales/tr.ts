@@ -825,15 +825,6 @@ const tr = {
     dayRowSub: "Ort. {{avg}} · aralıkta {{share}}",
     dayRowHint: "Bu günün eğrisini açar",
     proLock: "Geçmiş günlerin eğrisi Pro ile açılır. Son 24 saat her zaman ücretsizdir.",
-    trend: {
-      up2: "Hızla yükseliyor",
-      up: "Yükseliyor",
-      up45: "Yavaş yükseliyor",
-      flat: "Sabit",
-      down45: "Yavaş düşüyor",
-      down: "Düşüyor",
-      down2: "Hızla düşüyor",
-    },
   },
   cgmHome: {
     waiting: "CGM bekleniyor",
@@ -1787,7 +1778,7 @@ const tr = {
   },
   whatsNew: {
     title: "Yenilikler",
-    itemCgm: "CGM modu: CGM uygulamanızın Apple Sağlık'a veya Health Connect'e yazdığı sensör ölçümleri günlüğünüze eklenir; ana ekranda 3, 6 veya 12 saatlik eğriyi, son ölçümü ve eğilimi görürsünüz. Ayarlar > Veri kaynakları'ndan açın; elle ölçüm varsayılan olarak kalır.",
+    itemCgm: "CGM modu: CGM uygulamanızın Apple Sağlık'a veya Health Connect'e yazdığı sensör ölçümleri günlüğünüze eklenir; ana ekranda 3, 6 veya 12 saatlik eğriyi ve son ölçümü görürsünüz. Ayarlar > Veri kaynakları'ndan açın; elle ölçüm varsayılan olarak kalır.",
     itemNightscout: "Nightscout bağlantısı: kendi Nightscout sunucunuzu bağlayıp verilerini okuyabilirsiniz (yalnızca okuma, Pro).",
     itemInsights: "İçgörüler ve PDF raporu artık CGM kapsamını, hedef aralıkta geçen süreyi (yüzde olarak), AGP ve GMI'yı gösterir.",
     itemSafeSave: "Daha güvenli kayıt: kaydedilemeyen bir kayıt artık açık bir mesajla bildirilir ve girdiğiniz değer korunur. Geri al da daha güvenli.",

@@ -827,15 +827,6 @@ const it: TranslationSchema = {
     dayRowSub: "Media {{avg}} · {{share}} nell'intervallo",
     dayRowHint: "Apre la curva di questo giorno",
     proLock: "Le curve dei giorni precedenti fanno parte di Pro. Le ultime 24 ore sono sempre gratuite.",
-    trend: {
-      up2: "In rapido aumento",
-      up: "In aumento",
-      up45: "In lieve aumento",
-      flat: "Stabile",
-      down45: "In lieve calo",
-      down: "In calo",
-      down2: "In rapido calo",
-    },
   },
   cgmHome: {
     waiting: "In attesa del CGM",
@@ -1792,7 +1783,7 @@ const it: TranslationSchema = {
   },
   whatsNew: {
     title: "Novità",
-    itemCgm: "Modalità CGM: le misurazioni del sensore che la Sua app CGM scrive in Apple Salute o Health Connect vengono aggiunte al Suo diario; nella schermata iniziale vedrà la curva di 3, 6 o 12 ore, l'ultima misurazione e l'andamento. La attivi in Impostazioni > Fonti dei dati; l'inserimento manuale resta quello predefinito.",
+    itemCgm: "Modalità CGM: le misurazioni del sensore che la Sua app CGM scrive in Apple Salute o Health Connect vengono aggiunte al Suo diario; nella schermata iniziale vedrà la curva di 3, 6 o 12 ore e l'ultima misurazione. La attivi in Impostazioni > Fonti dei dati; l'inserimento manuale resta quello predefinito.",
     itemNightscout: "Connessione Nightscout: colleghi il Suo server Nightscout per leggerne i dati (sola lettura, Pro).",
     itemInsights: "Le analisi e il report PDF mostrano ora la copertura CGM, il tempo nell'intervallo come percentuale, l'AGP e il GMI.",
     itemSafeSave: "Salvataggio più sicuro: una voce che non è stato possibile salvare viene ora segnalata con un messaggio chiaro e il valore inserito viene conservato. Anche Annulla è più sicuro.",

@@ -1,6 +1,6 @@
 /**
  * lib/services/liveDataCgm.ts harness: CGM payload shape, manual stays untouched,
- * 20 minute staleness, trend, unit, and the Android/Swift/JS contract pins.
+ * 20 minute staleness, no trend arrow, unit, and the Android/Swift/JS contract pins.
  * Run: npx -y tsx scripts/liveDataCgm.test.ts
  */
 import assert from "node:assert/strict";
@@ -13,7 +13,6 @@ import {
   cgmAgeText,
   cgmLiveFields,
   cgmReadingText,
-  cgmTrendGlyph,
   cgmWidgetModel,
   isCgmStale,
   type LiveCgm,
@@ -54,7 +53,7 @@ function readings(values: number[], newestAgeMin: number) {
   assert.equal(c.mgdl, 130);
   assert.equal(c.at, NOW - 4 * MIN);
   assert.equal(c.ageMin, 4);
-  assert.equal(c.trend, "up");
+  assert.equal(c.trend, null);
   assert.equal(c.display, "130");
   assert.deepEqual(Object.keys(c).sort(), ["ageMin", "at", "display", "mgdl", "trend"]);
 }
@@ -63,31 +62,25 @@ function readings(values: number[], newestAgeMin: number) {
 assert.equal(cgmLiveFields("nightscout", readings([100, 100, 100], 1), NOW, "mgdl").mode, "nightscout");
 assert.ok(cgmLiveFields("nightscout", readings([100, 100, 100], 1), NOW, "mgdl").cgm);
 
-// Trend adimlari
-const trendOf = (vals: number[]) => buildLiveCgm(readings(vals, 1), NOW, "mgdl")?.trend;
-assert.equal(trendOf([100, 100, 100, 100]), "flat");
-assert.equal(trendOf([100, 105, 110, 115]), "up45");
-assert.equal(trendOf([100, 110, 120, 130]), "up");
-assert.equal(trendOf([100, 115, 130, 145]), "up2");
-assert.equal(trendOf([130, 125, 120, 115]), "down45");
-assert.equal(trendOf([130, 120, 110, 100]), "down");
-assert.equal(trendOf([145, 130, 115, 100]), "down2");
-// Cok az okuma: trend yok ama deger var
+// Ok yok: hicbir seri icin trend uretilmez, payload alani null kalir
+for (const vals of [[100, 100, 100, 100], [100, 110, 120, 130], [145, 130, 115, 100]]) {
+  assert.equal(buildLiveCgm(readings(vals, 1), NOW, "mgdl")?.trend, null);
+}
+// Cok az okuma: deger var
 {
   const c = buildLiveCgm(readings([140, 142], 2), NOW, "mgdl");
   assert.equal(c?.trend, null);
   assert.equal(c?.mgdl, 142);
 }
 
-// 20 dakika esigi: tam 20 taze, 21 eski; eski degerde trend yok
+// 20 dakika esigi: tam 20 taze, 21 eski
 assert.equal(CGM_STALE_MIN, 20);
 assert.equal(isCgmStale(20), false);
 assert.equal(isCgmStale(21), true);
-assert.equal(buildLiveCgm(readings([100, 110, 120, 130], 20), NOW, "mgdl")?.trend, "up");
+assert.equal(buildLiveCgm(readings([100, 110, 120, 130], 20), NOW, "mgdl")?.ageMin, 20);
 {
   const c = buildLiveCgm(readings([100, 110, 120, 130], 21), NOW, "mgdl");
   assert.equal(c?.ageMin, 21);
-  assert.equal(c?.trend, null);
   assert.equal(c?.mgdl, 130);
 }
 
@@ -115,16 +108,6 @@ assert.equal(cgmAgeText(65, labels), "1 hr 5 min ago");
 assert.equal(cgmAgeText(4, labels, true), "4 min");
 assert.equal(cgmAgeText(4, undefined), "4 min");
 
-// Ok simgeleri
-assert.equal(cgmTrendGlyph("up2"), "↑↑");
-assert.equal(cgmTrendGlyph("up"), "↑");
-assert.equal(cgmTrendGlyph("up45"), "↗");
-assert.equal(cgmTrendGlyph("flat"), "→");
-assert.equal(cgmTrendGlyph("down45"), "↘");
-assert.equal(cgmTrendGlyph("down"), "↓");
-assert.equal(cgmTrendGlyph("down2"), "↓↓");
-assert.equal(cgmTrendGlyph(null), "");
-
 // Android model: elle modda null, CGM modunda cgm alanlarindan
 {
   assert.equal(cgmWidgetModel(null, NOW), null);
@@ -134,13 +117,12 @@ assert.equal(cgmTrendGlyph(null), "");
   const m = cgmWidgetModel({ mode: "cgm", cgm, labels: { cgm: "CGM", ...labels } }, NOW)!;
   assert.equal(m.label, "CGM");
   assert.equal(m.value, "130");
-  assert.equal(m.glyph, "↑");
+  assert.equal("glyph" in m, false);
   assert.equal(m.stale, false);
   assert.equal(m.ageText, "4 min ago");
   // Android bitmap render aninda yaslanir: payload ageMin 4, 30 dk sonra 34
   const later = cgmWidgetModel({ mode: "cgm", cgm, labels: { cgm: "CGM", ...labels } }, NOW + 30 * MIN)!;
   assert.equal(later.stale, true);
-  assert.equal(later.glyph, "");
   assert.equal(later.ageText, "34 min ago");
   // Etiket yoksa jenerik "CGM"
   assert.equal(cgmWidgetModel({ mode: "cgm", cgm }, NOW)!.label, "CGM");
@@ -155,7 +137,7 @@ assert.equal(cgmTrendGlyph(null), "");
   const demo = sceneCgmSnapshot(base, NOW, NOW);
   assert.equal(demo.mode, "cgm");
   assert.equal(demo.cgm?.mgdl, 112);
-  assert.equal(demo.cgm?.trend, "flat");
+  assert.equal(demo.cgm?.trend, null);
   assert.equal(cgmWidgetModel(demo as never, NOW)?.ageText, "4 min");
 }
 
@@ -193,7 +175,6 @@ assert.match(liveData, /cgmReadingText\(data\.cgm/, "Live Activity pill CGM dege
   const cgm = buildLiveCgm(readings([100, 110, 120, 130], 4), NOW, "mgdl")!;
   const clock = formatTime(new Date(cgm.at).toISOString());
   assert.equal(cgmReadingText(cgm, "mg/dL"), `130 mg/dL · ${clock}`, "birim degerden hemen sonra, saat sonda");
-  assert.equal(cgmReadingText({ ...cgm, trend: "up2" }, "mg/dL"), `130 mg/dL · ${clock}`);
   assert.ok(!/[↑↗→↘↓]/.test(cgmReadingText(cgm, "mg/dL")), "pill metninde ok olmamali");
   assert.doesNotMatch(cgmReadingText(cgm, "mg/dL"), /· \d{1,2}[:.]\d{2} mg\/dL/, "birim saate yapismamali");
   assert.match(clock, /\d{1,2}[:.]\d{2}/);

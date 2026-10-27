@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import type { UserProfile } from "../lib/db/types";
@@ -11,7 +10,6 @@ import {
   cgmAgeLabel,
   type CurveHours,
 } from "../lib/cgm/curve";
-import { cgmTrend, type CgmTrend } from "../lib/cgm/trend";
 import type { CgmMode } from "../lib/cgm/state";
 import { cgmHomeState, todayRangeShare } from "../lib/homeEmpty";
 import { useCgmHours, useCgmWindow } from "../lib/useCgmWindow";
@@ -28,42 +26,6 @@ import { CgmCurve } from "./charts/CgmCurve";
 import { GlucoseChip, GlucoseRing } from "./rich";
 import { SourceBadge } from "./SourceBadge";
 import { Card, Segmented, Txt } from "./ui";
-
-const TREND_ROTATION: Record<CgmTrend, number> = {
-  up2: -90,
-  up: -90,
-  up45: -45,
-  flat: 0,
-  down45: 45,
-  down: 90,
-  down2: 90,
-};
-
-/** The direction of the last readings as an arrow. Descriptive: one neutral
- *  colour for every direction, no level, no threshold. */
-function TrendArrow({ trend, label }: { trend: CgmTrend; label: string }) {
-  const count = trend === "up2" || trend === "down2" ? 2 : 1;
-  return (
-    <View
-      accessible
-      accessibilityLabel={label}
-      style={{ flexDirection: "row", alignItems: "center" }}
-    >
-      {Array.from({ length: count }, (_, i) => (
-        <Ionicons
-          key={i}
-          name="arrow-forward"
-          size={16}
-          color={THEME.textMuted}
-          style={{
-            transform: [{ rotate: `${TREND_ROTATION[trend]}deg` }],
-            marginStart: i === 0 ? 0 : -6,
-          }}
-        />
-      ))}
-    </View>
-  );
-}
 
 /** "4 min ago", re-evaluated every minute inside this small leaf so the curve
  *  and the ring above it are not redrawn by the clock. */
@@ -121,10 +83,6 @@ export function CgmHomeCard({
     latestAtMs: win.latest?.atMs ?? null,
     windowPoints: model.cgm.length + model.manual.length,
   });
-  const trend = useMemo(
-    () => (win.latest ? cgmTrend(win.trendReadings, win.nowMs) : null),
-    [win.latest, win.trendReadings, win.nowMs]
-  );
 
   const todayAvg = win.today.avgMgdl;
   const status = todayAvg != null ? classifyGlucose(todayAvg, "manual", profile) : null;
@@ -261,7 +219,6 @@ export function CgmHomeCard({
               {" · "}
               <CgmAge atMs={win.latest.atMs} />
             </Txt>
-            {trend ? <TrendArrow trend={trend} label={t(`cgmCurve.trend.${trend}`)} /> : null}
             <SourceBadge
               source={mode === "nightscout" ? "nightscout" : "health"}
               isCgm

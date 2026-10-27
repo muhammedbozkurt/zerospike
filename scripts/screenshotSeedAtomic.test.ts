@@ -22,7 +22,6 @@ import { join } from "node:path";
 
 import { buildCgmManualPoints, buildCgmSchedule, buildGlucoseSchedule } from "../lib/db/screenshotGlucose";
 import { sourceBadgeKind } from "../lib/cgm/sourceLabel";
-import { cgmTrend } from "../lib/cgm/trend";
 import { V29_COLUMNS, V29_INDEXES } from "../lib/db/v29Sql";
 import {
   clearSeedCgm,
@@ -341,7 +340,6 @@ async function main(): Promise<void> {
     eq("H8 values are mostly inside the target band", inBand / values.length >= 0.85, true);
     eq("H9 realistic bounds", Math.min(...values) >= 70 && Math.max(...values) <= 190, true);
     eq("H10 there is a meal rise", Math.max(...values) - Math.min(...values) >= 50 && Math.max(...values) > 160, true);
-    eq("H11 the curve reads a direction at the end", cgmTrend(cgmRows.slice(-6).map((r) => ({ at: r.logged_at, mgdl: r.g })), now) != null, true);
 
     const again = buildCgmSchedule(now);
     eq("H12 deterministic for the same clock", JSON.stringify(again), JSON.stringify(sensor));

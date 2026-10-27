@@ -1,5 +1,4 @@
 import type { GlucoseUnit } from "../db/types";
-import { cgmTrend, TREND_MAX_AGE_MIN, type CgmTrend } from "../cgm/trend";
 import { formatTime } from "../format";
 import { formatGlucose } from "../glucose";
 
@@ -21,7 +20,9 @@ export interface LiveCgm {
   mgdl: number;
   /** epoch ms of that reading. */
   at: number;
-  trend: CgmTrend | null;
+  /** Always null: the Swift surfaces still decode this optional key, so it is
+   *  kept in the payload and never filled. */
+  trend: null;
   /** Whole minutes between the reading and the snapshot. Native surfaces that
    *  can redraw by the clock recompute it from `at`. */
   ageMin: number;
@@ -34,11 +35,10 @@ export interface CgmReading {
   mgdl: number;
 }
 
-/** Older than this the reading is drawn stale (faded, no arrow). */
-export const CGM_STALE_MIN = TREND_MAX_AGE_MIN;
+/** Older than this the reading is drawn stale (faded). */
+export const CGM_STALE_MIN = 20;
 
-/** How many of the newest sensor rows feed the trend: a 20 minute window holds
- *  at most a handful at 1-5 minute spacing. */
+/** How many of the newest sensor rows are loaded for the snapshot. */
 export const CGM_RECENT_LIMIT = 30;
 
 export function isCgmStale(ageMin: number): boolean {
@@ -63,7 +63,7 @@ export function buildLiveCgm(
   return {
     mgdl: newest.mgdl,
     at: newest.at,
-    trend: cgmTrend(readings, nowMs),
+    trend: null,
     ageMin: ageMinutes(newest.at, nowMs),
     display: formatGlucose(newest.mgdl, unit),
   };
@@ -97,20 +97,6 @@ export async function loadCgmReadings(profileId: string): Promise<CgmReading[]> 
   }));
 }
 
-const TREND_GLYPH: Record<CgmTrend, string> = {
-  up2: "↑↑",
-  up: "↑",
-  up45: "↗",
-  flat: "→",
-  down45: "↘",
-  down: "↓",
-  down2: "↓↓",
-};
-
-export function cgmTrendGlyph(trend: CgmTrend | null | undefined): string {
-  return trend ? TREND_GLYPH[trend] : "";
-}
-
 interface AgeLabels {
   hourShort?: string;
   minuteShort?: string;
@@ -138,7 +124,6 @@ export function cgmAgeText(
 export interface CgmWidgetModel {
   label: string;
   value: string;
-  glyph: string;
   ageText: string;
   stale: boolean;
   ageMin: number;
@@ -164,7 +149,6 @@ export function cgmWidgetModel(
   return {
     label: data.labels?.cgm || "CGM",
     value: cgm.display,
-    glyph: stale ? "" : cgmTrendGlyph(cgm.trend),
     ageText: cgmAgeText(ageMin, data.labels),
     stale,
     ageMin,
