@@ -43,7 +43,7 @@ export interface Insights {
   lowPct: number | null; // below the band's low end
   highPct: number | null; // above the band, under the fixed 250 ceiling
   veryHighPct: number | null; // at/above 250 mg/dL
-  gmi: number | null; // estimated A1C (%)
+  gmi: number | null; // GMI (%)
   /** What the glucose figures above are computed from: the sensor readings when
    *  they cover half the window or more, otherwise every reading. */
   basis: "cgm" | "manual";

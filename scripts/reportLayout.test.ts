@@ -338,9 +338,10 @@ async function main(): Promise<void> {
       ok(`${lang}: the periods table is titled and neutral`, lows.html.includes(T("cgmInsights.reportBelowPeriods")));
       ok(`${lang}: the source line is generic and names the coverage`, quiet.html.includes(T("cgmInsights.coverage")) && !BRANDS.test(quiet.html) && />\s*[^<]*CGM \(/.test(quiet.html), "");
       ok(`${lang}: coverage line uses pct()`, quiet.html.includes(T("cgmInsights.coverageLine", { days: 30, pct: i18nMod.default && require("../lib/format").pct(100) })));
-      ok(`${lang}: GMI is named by its abbreviation and described`, quiet.html.includes(T("cgmInsights.gmiNote")) && !quiet.html.includes(T("insights.gmi")));
+      ok(`${lang}: GMI is named by its abbreviation and described`, T("insights.gmi") === "GMI" && quiet.html.includes(T("insights.gmi")) && quiet.html.includes(T("insights.gmiExplain")));
+      ok(`${lang}: the GMI note sits in the summary row, under the label`, quiet.html.includes(`<div class="sub">${T("insights.gmiExplain")}</div>`));
       ok(`${lang}: no estimate or diagnosis wording was added`, !/diagnos|alarm|real-time/i.test(quiet.html.replace(/<style[\s\S]*?<\/style>/, "")));
-      ok(`${lang}: hand-entered only: no CGM block, the old GMI label`, !base.html.includes(T("cgmInsights.coverage")) && base.html.includes(T("insights.gmi")));
+      ok(`${lang}: hand-entered only: no CGM block, same GMI label`, !base.html.includes(T("cgmInsights.coverage")) && base.html.includes(T("insights.gmi")));
       const sum = doc(stream(30, 1), { mode: "summary" });
       ok(`${lang}: the summary keeps the periods table capped at 6 rows`, sum.html.includes(T("cgmInsights.reportBelowPeriods")) && sum.html.includes(i18n.t("report.lowTableTail", { shown: 6, n: 30 }) as string));
       ok(`${lang}: the timeline carries the sensor legend`, lows.html.includes(T("cgmInsights.legendHourly")));

@@ -1340,7 +1340,7 @@ export default function InsightsScreen() {
                       <StatCard
                         glass
                         glow={data.gmi != null}
-                        label={t(fromCgm ? "cgmInsights.gmiLabel" : "insights.gmi")}
+                        label={t("insights.gmi")}
                         display={data.gmi == null ? "-" : pctParts(data.gmi, 1).number}
                         suffix={data.gmi == null ? undefined : PCT_SIGN.sign}
                         suffixFirst={PCT_SIGN.signFirst}
@@ -1415,7 +1415,7 @@ export default function InsightsScreen() {
                       }}
                     >
                       {data.gmi != null
-                        ? t(fromCgm ? "cgmInsights.gmiNote" : "insights.gmiNote")
+                        ? t("insights.gmiExplain")
                         : gmiWithheldReason(data) === "coverage"
                           ? t("cgmInsights.gmiNeedCoverage", {
                               days: GMI_MIN_WINDOW_DAYS,
