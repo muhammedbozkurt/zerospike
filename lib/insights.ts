@@ -96,10 +96,11 @@ export interface TirBand {
 export const DEFAULT_TIR_BAND: TirBand = { low: TIR_LOW, high: TIR_HIGH };
 
 /**
- * GMI is an estimate of A1C from mean glucose, and it is only meaningful over a
- * real stretch of time. Five readings taken in one afternoon are not an A1C
- * estimate, so the figure is withheld until the sample both has enough readings
- * AND spans enough days; the UI then shows a "more data needed" note instead.
+ * GMI is an indicator calculated from mean glucose, and it is only meaningful
+ * over a real stretch of time. Five readings taken in one afternoon are too
+ * thin a sample, so the figure is withheld until the sample both has enough
+ * readings AND spans enough days; the UI then shows a "more data needed" note
+ * instead.
  */
 export const GMI_MIN_READINGS = 14;
 export const GMI_MIN_SPAN_DAYS = 14;

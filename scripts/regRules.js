@@ -807,6 +807,84 @@ const PATTERNS = {
   ],
 };
 
+// G252: the computed value is the GMI, never an "estimated A1C" (that reads as
+// the app predicting a lab result). Both orders are listed per language, for
+// "A1C" and "HbA1c": "estimated A1C" and "A1C estimate". A bare "A1C" (the
+// user's own lab field) and "GMI" never match. Phrases are literal (only a
+// trailing "*" is a stem), so the lists spell out the common inflections.
+const A1C_NAMES = ["A1C", "HbA1c"];
+const A1C_NAMES_SUBSTR = ["A1C", "A1c", "HbA1c", "HbA1C"];
+function a1cEstimatePatterns(before, after, names = A1C_NAMES, sep = " ") {
+  const out = [];
+  for (const n of names) {
+    for (const b of before) {
+      out.push({ pattern: /['’]$/.test(b) ? b + n : b + sep + n });
+    }
+    for (const a of after) out.push({ pattern: a.startsWith("-") ? n + a : n + sep + a });
+  }
+  return out;
+}
+const A1C_ESTIMATE_PATTERNS = {
+  en: [
+    ...a1cEstimatePatterns(
+      ["estimated", "estimate", "estimates", "estimating", "estimate of", "estimate of your", "estimate your", "estimates your"],
+      ["estimat*", "-estimat*"]
+    ),
+    { pattern: "eA1C" },
+  ],
+  tr: a1cEstimatePatterns(
+    ["tahmini", "tahmin edilen", "tahmini laboratuvar", "tahmini hemoglobin"],
+    ["tahmin*", "değerini tahmin*", "değerinizi tahmin*", "sonucunu tahmin*"]
+  ),
+  de: a1cEstimatePatterns(
+    [
+      "geschätzt", "geschätzter", "geschätzte", "geschätztes", "geschätzten", "geschätztem",
+      "Schätzung des", "Schätzung der", "Schätzung für den", "Schätzung für die",
+      "Schätzwert des", "Schätzwert der", "Schätzwert für den", "Schätzwert für die",
+    ],
+    ["geschätzt*", "Schätzung*", "Schätzwert*", "-Schätzung*", "-Schätzwert*"]
+  ),
+  fr: a1cEstimatePatterns(
+    [
+      "estimée", "estimé", "estimation de l'", "estimation de l’", "estimation de la", "estimation de votre",
+      "estimation d'", "estimation d’", "estimation de", "estimation du", "estimer l'", "estimer l’", "estimer la",
+    ],
+    ["estimé*", "estimation*"]
+  ),
+  es: a1cEstimatePatterns(
+    ["estimada", "estimado", "estimación de la", "estimación de su", "estimación del", "estimación de", "estimar la", "estimar su"],
+    ["estimad*", "estimaci*"]
+  ),
+  it: a1cEstimatePatterns(
+    [
+      "stimata", "stimato", "stima", "stima di", "stima della", "stima dell'", "stima dell’", "stima del",
+      "stima della Sua", "stima del Suo", "stimare la", "stimare l'", "stimare l’",
+    ],
+    ["stima*"]
+  ),
+  pt: a1cEstimatePatterns(
+    [
+      "estimada", "estimado", "estimativa", "estimativa de", "estimativa da", "estimativa do",
+      "estimativa da sua", "estimativa para", "estimar a",
+    ],
+    ["estimad*", "estimativa*"]
+  ),
+  ar: a1cEstimatePatterns(
+    ["تقدير", "تقديري", "تقدير قيمة", "تقدير مستوى", "تقدير نسبة", "تقدير لقيمة"],
+    ["تقدير", "المقدر", "المقدّر", "التقديري"],
+    A1C_NAMES_SUBSTR
+  ),
+  ja: a1cEstimatePatterns(
+    ["推定", "推定値の", "推定された"],
+    ["推定", "の推定", "を推定", "予測"],
+    A1C_NAMES_SUBSTR,
+    ""
+  ),
+};
+for (const locale of Object.keys(A1C_ESTIMATE_PATTERNS)) {
+  PATTERNS[locale].push(...A1C_ESTIMATE_PATTERNS[locale]);
+}
+
 // Glucose-context terms: a requiresContext pattern only counts when one of
 // these also appears in the same string. Applied as one flat multilingual
 // list regardless of the locale being scanned.

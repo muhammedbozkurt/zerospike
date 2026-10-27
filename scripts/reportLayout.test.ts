@@ -343,6 +343,9 @@ async function main(): Promise<void> {
       ok(`${lang}: no estimate or diagnosis wording was added`, !/diagnos|alarm|real-time/i.test(quiet.html.replace(/<style[\s\S]*?<\/style>/, "")));
       ok(`${lang}: hand-entered only: no CGM block, same GMI label`, !base.html.includes(T("cgmInsights.coverage")) && base.html.includes(T("insights.gmi")));
       const sum = doc(stream(30, 1), { mode: "summary" });
+      const noteCount = (html: string) => html.split(T("insights.gmiExplain")).length - 1;
+      ok(`${lang}: full report: the GMI note appears exactly once (summary row)`, noteCount(quiet.html) === 1, String(noteCount(quiet.html)));
+      ok(`${lang}: one-page summary: the GMI note appears exactly once (footer)`, noteCount(sum.html) === 1, String(noteCount(sum.html)));
       ok(`${lang}: the summary keeps the periods table capped at 6 rows`, sum.html.includes(T("cgmInsights.reportBelowPeriods")) && sum.html.includes(i18n.t("report.lowTableTail", { shown: 6, n: 30 }) as string));
       ok(`${lang}: the timeline carries the sensor legend`, lows.html.includes(T("cgmInsights.legendHourly")));
     }

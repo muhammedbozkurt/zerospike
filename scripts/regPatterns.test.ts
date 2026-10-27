@@ -145,7 +145,6 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
     ],
     clean: [
       "Besin değerleri tahminidir, tıbbi referans değildir.",
-      "Tahmini HbA1c",
       "Bildirim ayarları",
       "Hatırlatıcı bildirimi",
       "Pro etiketleri paywall kapılarını izler",
@@ -430,6 +429,52 @@ section("G. monitoring and trend analysis wording, the five review examples");
     ["en", "We'll send a notification if your blood sugar drops."],
   ] as [string, string][]) {
     ok(`${locale} caught: ${t}`, count(locale, t) >= 1);
+  }
+}
+
+section("H. G252: an estimated A1C is banned in both word orders, GMI and the lab A1C field are not");
+{
+  const a1c: Record<string, { flagged: string[]; clean: string[] }> = {
+    en: {
+      flagged: ["Estimated A1C (GMI)", "an estimated HbA1c", "Your A1C estimate", "HbA1c estimation", "Estimate your A1C", "eA1C"],
+      clean: ["GMI", "Glucose Management Indicator (GMI)", "Your latest lab A1C", "Enter the A1C from your lab report", "Goal A1C"],
+    },
+    tr: {
+      flagged: ["Tahmini A1C (GMI)", "tahmini HbA1c", "A1C tahmini", "A1C tahmin edilir", "Tahmin edilen A1C"],
+      clean: ["GMI", "Laboratuvar A1C sonucunuz", "A1C değeriniz", "Son A1C sonucunu girin"],
+    },
+    de: {
+      flagged: ["Geschätzter A1C (GMI)", "Geschätzter HbA1c", "A1C-Schätzung", "Schätzung des HbA1c", "A1C geschätzt"],
+      clean: ["GMI", "Ihr Labor-A1C", "Tragen Sie Ihren HbA1c ein", "Letzter A1C-Wert"],
+    },
+    fr: {
+      flagged: ["HbA1c estimée", "A1C estimée", "estimation de l'HbA1c", "estimation de l’HbA1c", "Estimation de la A1C"],
+      clean: ["GMI", "Votre HbA1c de laboratoire", "Saisissez votre A1C", "Dernière HbA1c"],
+    },
+    es: {
+      flagged: ["A1C estimada", "HbA1c estimada", "estimación de A1C", "Estimación de la A1C"],
+      clean: ["GMI", "Su A1C de laboratorio", "Registre su última A1C"],
+    },
+    it: {
+      flagged: ["HbA1c stimata", "Stima della HbA1c", "stima dell'HbA1c", "A1C stimata"],
+      clean: ["GMI", "La Sua HbA1c di laboratorio", "Inserisca l'ultima HbA1c"],
+    },
+    pt: {
+      flagged: ["A1c estimada", "Estimativa da A1c", "estimativa de HbA1c", "HbA1c estimada"],
+      clean: ["GMI", "Sua A1c de laboratório", "Informe sua última A1c"],
+    },
+    ar: {
+      flagged: ["تقدير A1C (GMI)", "A1C المقدر", "تقدير HbA1c", "A1c التقديري"],
+      clean: ["GMI", "نتيجة A1C من المختبر", "أدخل آخر A1C لديك"],
+    },
+    ja: {
+      flagged: ["推定A1C(GMI)", "A1C推定", "推定HbA1c", "A1Cの推定値", "HbA1cを推定"],
+      clean: ["GMI", "検査のA1C結果", "直近のA1Cを入力"],
+    },
+  };
+  for (const [locale, { flagged, clean }] of Object.entries(a1c)) {
+    for (const t of flagged) ok(`${locale} A1C flagged: ${t}`, count(locale, t) >= 1);
+    for (const t of clean) ok(`${locale} A1C clean: ${t}`, count(locale, t) === 0);
   }
 }
 
