@@ -349,5 +349,26 @@ section("N. real-time and live wording gaps are caught in every language");
   }
 }
 
+section("O. opus7 probes: live sensor wording and detection verbs next to hypo/hyper");
+{
+  const cases: [string, string[], string[]][] = [
+    ["en", ["Live CGM values on your wrist", "Detects hypoglycemia early", "Detects high glucose"], ["Detects your sensor app automatically", "Live Activity on the Lock Screen"]],
+    ["tr", ["Şeker değerleri anlık olarak görünür", "Hipoglisemiyi algılar", "Hiperglisemiyi tespit eder"], ["Veriler anlık olarak güncellenir", "Anlık bildirim"]],
+    ["de", ["Erkennt Unterzuckerungen", "Erkennt Überzucker früh"], ["Erkennt Ihre Sensor-App automatisch"]],
+    ["fr", ["Détecte les hypoglycémies", "Détecte l\u2019hypoglycémie", "Détecte l'hyperglycémie"], ["Détecte votre application de capteur"]],
+    ["es", ["Detecta hipoglucemias", "Detecta las hiperglucemias"], ["Detecta su aplicación de sensor"]],
+    ["it", ["Rileva le ipoglicemie", "Rileva l'iperglicemia"], ["Rileva la Sua app del sensore"]],
+    ["pt", ["Detecta hipoglicemias", "Detecta as hiperglicemias"], ["Detecta seu aplicativo de sensor"]],
+    ["ar", ["يكتشف نقص السكر", "يكتشف ارتفاع السكر"], ["يكتشف تطبيق المستشعر تلقائيًا"]],
+    ["ja", ["低血糖を検知します", "高血糖を検出します"], ["センサーアプリを自動で検知します"]],
+  ];
+  for (const [locale, flagged, clean] of cases) {
+    const scan = (text: string) =>
+      (reg.scanLocaleEntries(locale, [["x", text]]) as { findings: Finding[] }).findings.length;
+    for (const t of flagged) ok(`${locale} flagged: ${t}`, scan(t) >= 1);
+    for (const t of clean) ok(`${locale} clean: ${t}`, scan(t) === 0);
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

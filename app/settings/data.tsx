@@ -349,13 +349,16 @@ export default function DataSettings() {
     // Read BEFORE the delete: afterwards there is no way to tell whether the
     // countdown belonged to the profile that just went.
     const runningTimer = await getPostMealTimerState();
+    // The stored Nightscout address and token go with the profile. Cleared and
+    // let idle BEFORE the delete: a sync still running would insert rows for a
+    // profile that is gone.
+    await clearNightscoutForProfile(activeProfile.id);
+    await awaitNightscoutIdle(activeProfile.id);
     const deleted = await deleteProfile(activeProfile.id);
     if (!deleted) {
       toast(t("profiles.cannotDeleteLast"), "error");
       return;
     }
-    // The stored Nightscout address and token go with the profile.
-    await clearNightscoutForProfile(activeProfile.id);
     // Its owner no longer exists, so nothing can ever act on it again: the
     // alarm, the notification, the stored end and the lock-screen card all go.
     if (runningTimer?.profileId === activeProfile.id) {

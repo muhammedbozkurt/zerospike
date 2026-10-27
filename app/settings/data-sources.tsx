@@ -17,6 +17,7 @@ import {
   type CgmMode,
 } from "../../lib/cgm/state";
 import { cgmDetected, countCgmReadingsLast24h } from "../../lib/db/cgmSql";
+import { nightscoutAvailable as nightscoutEnabled } from "../../lib/cgm/sourceAvailability";
 import { formatDate, formatTime, num } from "../../lib/format";
 import { statusKey, testDetailKey } from "../../lib/nightscout/messages";
 import { countNightscoutReadings } from "../../lib/nightscout/localData";
@@ -358,7 +359,7 @@ export default function DataSourcesScreen() {
   const [mode, setMode] = useState<CgmMode>("manual");
   const [detected, setDetected] = useState<boolean | null>(null);
   const [nsFormOpen, setNsFormOpen] = useState(false);
-  const nsAvailable = nightscoutAvailable();
+  const nsAvailable = nightscoutEnabled() && nightscoutAvailable();
 
   const refresh = useCallback(async () => {
     if (!profileId) return;
@@ -390,7 +391,7 @@ export default function DataSourcesScreen() {
           },
         ]
       : []),
-    // Without the secure store (an older binary) the row is not offered at all.
+    // Without the build flag or the secure store (an older binary) the row is not offered at all.
     ...(nsAvailable
       ? [
           {
