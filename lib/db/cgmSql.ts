@@ -51,7 +51,8 @@ export const SENSOR_TWIN_TOLERANCE_MGDL = 1;
  * non-sensor (is_cgm = 0). The import never drops or converts a reading for
  * being a mirror; the mirror is told apart HERE, when rows are read. A twin is a
  * non-sensor, non-typed row with a sensor row of another stream (source or app
- * differs) within 30 s and +-1 mg/dL. Typed ('manual') rows are never twins.
+ * differs) within 30 s and +-1 mg/dL. Typed ('manual') rows are never twins, nor
+ * rows the user tagged or linked to a meal: a mirror app does neither.
  * The inner lookup is one range on idx_sugar_cgm per outer row. A real
  * fingerstick that happens to land within 30 s and +-1 mg/dL of a sensor value
  * stays in the database and in Health; it only stays out of the dose path and
@@ -59,7 +60,9 @@ export const SENSOR_TWIN_TOLERANCE_MGDL = 1;
  */
 export function notSensorTwinSql(alias: string): string {
   const a = alias;
-  return `(${a}.source = 'manual' OR NOT EXISTS (
+  return `(${a}.source = 'manual' OR ${a}.period_tag <> 'unset'
+        OR EXISTS (SELECT 1 FROM meal_logs ml WHERE ml.sugar_log_id = ${a}.id)
+        OR NOT EXISTS (
         SELECT 1 FROM sugar_logs tw
          WHERE tw.profile_id = ${a}.profile_id AND tw.is_cgm = 1
            AND tw.logged_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ${a}.logged_at, '-${SENSOR_TWIN_WINDOW_SECONDS} seconds')
