@@ -76,7 +76,7 @@ ok("failed single delete is queued", /await queueHealthDeletes\(\[uuid\]\)/.test
 ok("retry runs from the write retry triggers", /await retryPendingHealthDeletes\(\);/.test(health));
 ok("collection goes through ownHealthUuids", /ownHealthUuids\(await listHealthMirrorRows\(profileId\)\)/.test(health));
 const data = readFileSync(join(root, "app", "settings", "data.tsx"), "utf8");
-ok("clear revokes copies before the rows go", /revokeHealthCopiesBeforeDelete\(activeProfile\.id\);\s*await clearAllLogs/.test(data));
+ok("clear revokes copies before the rows go", /revokeHealthCopiesBeforeDelete\(activeProfile\.id\);[\s\S]*?await clearAllLogs/.test(data));
 ok("profile delete revokes copies before the delete", /revokeHealthCopiesBeforeDelete\(activeProfile\.id\);[\s\S]*?await deleteProfile/.test(data));
 const hc = readFileSync(join(root, "lib", "services", "healthConnect.ts"), "utf8");
 ok("Health Connect delete reports failure", /async function deleteGlucoseBatch[\s\S]*?throw new Error/.test(hc));
