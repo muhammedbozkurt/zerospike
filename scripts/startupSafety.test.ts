@@ -130,7 +130,7 @@ assert.deepEqual(violations, [], `acilis guvenligi ihlalleri:\n${violations.join
   assert.ok(!/from\s+"expo-secure-store"|require\(\s*"expo-secure-store"\s*\)/.test(secure), "secureStore: JS paketi import edilmez");
   assert.ok(!/AsyncStorage|localStorage/.test(secure), "secureStore: guvensiz yedek depo yok");
   const ui = stripComments(readFileSync(join(ROOT, "app/settings/data-sources.tsx"), "utf8"));
-  assert.ok(/const nsAvailable = nightscoutAvailable\(\)/.test(ui), "data-sources: secure store varligi sorgulanir");
+  assert.ok(/const nsAvailable = nightscoutEnabled\(\) && nightscoutAvailable\(\)/.test(ui), "data-sources: bayrak ve secure store varligi sorgulanir");
   assert.ok(/\.\.\.\(nsAvailable\s*\?\s*\[/.test(ui), "data-sources: Nightscout secenegi nsAvailable arkasinda");
   assert.ok(/nsAvailable && \(mode === "nightscout" \|\| nsFormOpen\)/.test(ui), "data-sources: panel nsAvailable arkasinda");
   const sync = stripComments(readFileSync(join(ROOT, "lib/services/sourceSync.ts"), "utf8"));

@@ -17,6 +17,12 @@ export const DELETE_NIGHTSCOUT_SQL = `DELETE FROM sugar_logs
   WHERE profile_id = ? AND source = 'nightscout'
   RETURNING id;`;
 
+/** Placeholders: profile_id. Run first, in the same transaction: the
+ *  transaction connection has foreign keys off, so the link would dangle. */
+export const UNLINK_NIGHTSCOUT_MEALS_SQL = `UPDATE meal_logs SET sugar_log_id = NULL
+  WHERE sugar_log_id IN (
+    SELECT id FROM sugar_logs WHERE profile_id = ? AND source = 'nightscout');`;
+
 export interface CountHost {
   getFirstAsync<T>(sql: string, params: (string | number | null)[]): Promise<T | null>;
 }
@@ -30,6 +36,7 @@ export async function deleteNightscoutReadingsWith(host: HealthImportHost, profi
   let removed = 0;
   await host.withExclusiveTransactionAsync(async (txn) => {
     await txn.execAsync(BUSY_TIMEOUT_SQL);
+    await txn.runAsync(UNLINK_NIGHTSCOUT_MEALS_SQL, [profileId]);
     const gone = await txn.getAllAsync<{ id: string }>(DELETE_NIGHTSCOUT_SQL, [profileId]);
     removed = gone.length;
     // The hourly sensor summaries of year-old readings cannot be split by

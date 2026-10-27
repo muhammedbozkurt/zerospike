@@ -325,6 +325,7 @@ export async function connectNightscout(
   if (tested.result !== "ok" || tested.base == null) {
     return { ok: false, result: tested.result, detail: tested.detail };
   }
+  const generationBefore = (await readNightscoutState(profileId, deps)).generation;
   try {
     await deps.secure.set(
       nightscoutSecretKey(profileId),
@@ -334,9 +335,16 @@ export async function connectNightscout(
     deps.onError?.("secureSet", err);
     return { ok: false, result: "invalid", detail: "unavailable" };
   }
+  let superseded = false;
   try {
     await withLock(profileId, async () => {
       const previous = await readNightscoutState(profileId, deps);
+      if (previous.generation !== generationBefore) {
+        // A disconnect or a data reset ran while the secret was being written:
+        // "connected" with no secret (or the reverse) must not be left behind.
+        superseded = true;
+        return;
+      }
       await writeState(profileId, deps, {
         ...EMPTY_STATE,
         connected: true,
@@ -350,6 +358,14 @@ export async function connectNightscout(
     });
   } catch (err) {
     deps.onError?.("stateWrite", err);
+    try {
+      await deps.secure.remove(nightscoutSecretKey(profileId));
+    } catch {
+      // nothing more to undo
+    }
+    return { ok: false, result: "invalid", detail: "unavailable" };
+  }
+  if (superseded) {
     try {
       await deps.secure.remove(nightscoutSecretKey(profileId));
     } catch {
