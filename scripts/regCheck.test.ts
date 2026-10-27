@@ -370,5 +370,22 @@ section("O. opus7 probes: live sensor wording and detection verbs next to hypo/h
   }
 }
 
+section("P. opus8 probes: hyper/hypo stems narrowed to glucose wording")
+{
+  const cases: [string, string[], string[]][] = [
+    ["en", ["Detects hyperglycemia early", "It detects hypoglycemic events"], ["It detects hyperlinks in notes", "Delivers live sugar-free recipes", "Alarm for hyperlinks"]],
+    ["fr", ["Détecte l'hyperglycémie", "Détecte les hypoglycémies"], ["Détecte l'hyperlien", "Détecte les hyperliens"]],
+    ["es", ["Detecta hiperglucemias", "Detecta la hipoglucemia"], ["Detecta hipervínculos", "Detecta hipertensión"]],
+    ["it", ["Rileva l'iperglicemia", "Rileva le ipoglicemie"], ["Rileva iperlink"]],
+    ["pt", ["Detecta hiperglicemias", "Detecta a hipoglicemia"], ["Detecta hiperlinks"]],
+  ];
+  for (const [locale, flagged, clean] of cases) {
+    const scan = (text: string) =>
+      (reg.scanLocaleEntries(locale, [["x", text]]) as { findings: Finding[] }).findings.length;
+    for (const t of flagged) ok(`${locale} flagged: ${t}`, scan(t) >= 1);
+    for (const t of clean) ok(`${locale} clean: ${t}`, scan(t) === 0);
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

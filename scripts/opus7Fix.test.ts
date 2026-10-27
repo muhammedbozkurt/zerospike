@@ -104,30 +104,47 @@ async function main(): Promise<void> {
     at: T(10, sec), mgdl: mg, source: "health", sourceApp: "com.mirror", externalId: ext, isCgm: false,
   });
   const dose = (db: DatabaseSync) => (db.prepare(recentManualSugarSql(false)).all("P", T(-15)) as unknown[]).length;
-  const cgmRows = (db: DatabaseSync) => count(db, "SELECT COUNT(*) AS c FROM sugar_logs WHERE is_cgm = 1");
+  const cgmRows = (db: DatabaseSync) => count(db, `SELECT COUNT(*) AS c FROM sugar_logs WHERE is_cgm = 1 AND logged_at >= '${T(0)}'`);
+  const recent = (db: DatabaseSync) => count(db, `SELECT COUNT(*) AS c FROM sugar_logs WHERE logged_at >= '${T(0)}'`);
+  // FIX-K: a copy is folded at 30 s only for an app that has shown itself to
+  // mirror (>= 6 readings, >= 80 % matching a sensor row); a lone reading is
+  // folded only at 5 s. This is that history, two days back.
+  const seedMirror = (db: DatabaseSync): void => {
+    const ins = db.prepare(
+      "INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, source, logged_at, source_app, external_id, is_cgm) VALUES (?, 'P', ?, ?, ?, ?, ?, ?)"
+    );
+    for (let i = 0; i < 8; i++) {
+      const at = NOW - 2 * 86_400_000 + i * 600_000;
+      ins.run(`hs${i}`, 100 + i * 4, "nightscout", new Date(at).toISOString(), null, `hist-ns-${i}`, 1);
+      ins.run(`hm${i}`, 100 + i * 4, "health", new Date(at + 10_000).toISOString(), "com.mirror", `hist-m-${i}`, 0);
+    }
+  };
 
   console.log("1. reverse order: the mirror arrives before the sensor value");
   {
     const a = makeDb();
+    seedMirror(a.db);
     await importGlucoseRows(a.host, "P", [mirror(0, 120), sensor(17, 120)], nid, NOW);
-    eq("R6 same batch (mirror 17 s earlier): one row", count(a.db), 1);
+    eq("R6 same batch (mirror 17 s earlier): one row", recent(a.db), 1);
     eq("R6 the row is a sensor row", cgmRows(a.db), 1);
     eq("R6 dose path empty", dose(a.db), 0);
 
     const b = makeDb();
+    seedMirror(b.db);
     await importGlucoseRows(b.host, "P", [mirror(0, 120)], nid, NOW);
     eq("R7 mirror stored first, plain row", cgmRows(b.db), 0);
     await importGlucoseRows(b.host, "P", [sensor(17, 120)], nid, NOW);
-    eq("R7 sensor arrives later: still one row", count(b.db), 1);
+    eq("R7 sensor arrives later: still one row", recent(b.db), 1);
     eq("R7 that row is now a sensor row", cgmRows(b.db), 1);
     eq("R7 dose path empty", dose(b.db), 0);
     eq("R7 re-import of both adds nothing", (await importGlucoseRows(b.host, "P", [mirror(0, 120), sensor(17, 120)], nid, NOW)), 0);
-    eq("R7 still one row", count(b.db), 1);
+    eq("R7 still one row", recent(b.db), 1);
 
     const c = makeDb();
+    seedMirror(c.db);
     await importGlucoseRows(c.host, "P", [mirror(5, 120)], nid, NOW);
     await importGlucoseRows(c.host, "P", [sensor(0, 121)], nid, NOW);
-    eq("R8 dv 1, mirror 5 s later: one sensor row", cgmRows(c.db) === 1 && count(c.db) === 1, true);
+    eq("R8 dv 1, mirror 5 s later: one sensor row", cgmRows(c.db) === 1 && recent(c.db) === 1, true);
     eq("R8 dose path empty", dose(c.db), 0);
   }
 
