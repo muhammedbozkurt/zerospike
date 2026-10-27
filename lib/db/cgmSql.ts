@@ -43,18 +43,27 @@ export async function countCgmReadingsLast24h(
 /** A non-sensor imported row is looked at against the sensor rows of ANOTHER
  *  stream this close to it. */
 export const SENSOR_NEAR_WINDOW_SECONDS = 150;
+/** The view-time twin test is much tighter than the dose-path proximity: a
+ *  real fingerstick must show unless a sensor row of another stream sits this
+ *  close with the same value. */
+export const SENSOR_TWIN_WINDOW_SECONDS = 30;
 export const SENSOR_TWIN_TOLERANCE_MGDL = 1;
 /** How far the nearest sensor row on each side of a mirrored value may lie: a
  *  little over the 270 s the import thins a stream to. */
 export const SENSOR_BRACKET_SECONDS = 330;
 
-/** Sensor rows of another stream (source or app differs) within 150 s of the
- *  row aliased `a`, narrowed by `extra`. One range on idx_sugar_cgm. */
-function otherStreamSensorSql(a: string, extra = ""): string {
+/** Sensor rows of another stream (source or app differs) within `windowSeconds`
+ *  (default 150) of the row aliased `a`, narrowed by `extra`. One range on
+ *  idx_sugar_cgm. */
+function otherStreamSensorSql(
+  a: string,
+  extra = "",
+  windowSeconds = SENSOR_NEAR_WINDOW_SECONDS
+): string {
   return `SELECT 1 FROM sugar_logs tw
          WHERE tw.profile_id = ${a}.profile_id AND tw.is_cgm = 1
-           AND tw.logged_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ${a}.logged_at, '-${SENSOR_NEAR_WINDOW_SECONDS} seconds')
-                                AND strftime('%Y-%m-%dT%H:%M:%fZ', ${a}.logged_at, '+${SENSOR_NEAR_WINDOW_SECONDS} seconds')
+           AND tw.logged_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ${a}.logged_at, '-${windowSeconds} seconds')
+                                AND strftime('%Y-%m-%dT%H:%M:%fZ', ${a}.logged_at, '+${windowSeconds} seconds')
            AND (tw.source IS NOT ${a}.source OR tw.source_app IS NOT ${a}.source_app)${extra}`;
 }
 
@@ -83,7 +92,7 @@ function neighbourSensorSql(a: string, dir: -1 | 1): string {
  *      nearest one after it (within 330 s; one of the two is enough at the edge
  *      of a stream). (b) is what recognises a copy of a value that the thinned
  *      stream (about one row in five minutes) no longer holds exactly.
- * Callers add the typed / labelled / meal-linked exemptions (notSensorTwinSql).
+ * Import-side only (healthImportSql mirrors it); the view uses sensorStrictTwinSql.
  */
 export function sensorBandTwinSql(alias: string): string {
   const a = alias;
@@ -97,21 +106,31 @@ export function sensorBandTwinSql(alias: string): string {
 }
 
 /**
+ * Strict twin test for the VIEW (journal, insights, charts, PDF), for a row
+ * aliased `alias` that is already known to be non-sensor: a sensor row of
+ * another stream (source or app differs) within 30 s carries the same value
+ * +-1 mg/dL. The wider band test (sensorBandTwinSql) is deliberately not used
+ * here: a real fingerstick between two CGM values often falls inside their band.
+ */
+export function sensorStrictTwinSql(alias: string): string {
+  const a = alias;
+  return `EXISTS (${otherStreamSensorSql(a, ` AND ABS(tw.glucose_level_mgdl - ${a}.glucose_level_mgdl) <= ${SENSOR_TWIN_TOLERANCE_MGDL}`, SENSOR_TWIN_WINDOW_SECONDS)})`;
+}
+
+/**
  * "Not a sensor twin", for a row aliased `alias` that is already known to be
  * non-sensor (is_cgm = 0). The import never drops or converts a reading for
- * being a mirror; the mirror is told apart HERE, when rows are read. A twin is a
- * non-sensor, non-typed row whose value sits in the band of the sensor rows of
- * another stream (source or app differs) around it (sensorBandTwinSql).
- * Typed ('manual') rows are never twins, nor rows the user tagged or linked to a
- * meal: a mirror app does neither. A real fingerstick that lands inside such a
- * band stays in the database and in Health; it only stays out of the journal
- * list and the dose path (accepted limit).
+ * being a mirror; the mirror is told apart HERE, when rows are read, and only by
+ * the strict rule (sensorStrictTwinSql). Typed ('manual') rows are never twins,
+ * nor rows the user tagged or linked to a meal: a mirror app does neither.
+ * Accepted limit: some mirrors of a thinned 1 minute stream can show as their
+ * own journal row.
  */
 export function notSensorTwinSql(alias: string): string {
   const a = alias;
   return `(${a}.source = 'manual' OR ${a}.period_tag <> 'unset'
         OR EXISTS (SELECT 1 FROM meal_logs ml WHERE ml.sugar_log_id = ${a}.id)
-        OR NOT ${sensorBandTwinSql(a)})`;
+        OR NOT ${sensorStrictTwinSql(a)})`;
 }
 
 /**
