@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "events": {
     "app_open": { "cold": "bool" },
     "onboarding_step": { "step": "string", "index": "int" },
@@ -52,7 +52,9 @@
     "carb_estimate_accepted": { "item_count": "int" },
     "portion_chip_used": { "kind": ["enum", "measure", "grams"] },
     "analytics_opt_out": { "enabled": "bool" },
-    "store_review_prompt": { "trigger": ["enum", "log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"] },
+    "store_review_prompt": { "trigger": ["enum", "log_saved", "streak_7", "weekly_insights_view", "pdf_export_success", "trial_converted"] },
+    "trial_converted_seen": {},
+    "renewal_seen": {},
     "cgm_mode_set": { "mode": ["enum", "manual", "cgm", "nightscout"] },
     "cgm_offer": { "action": ["enum", "accepted", "declined"] },
     "nightscout_connect": { "result": ["enum", "ok", "auth", "network", "invalid"] },

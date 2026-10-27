@@ -1806,6 +1806,18 @@ const fr: TranslationSchema = {
     itemCalc: "Calculateur : définissez vos ratios avec votre équipe diabète et confirmez-les une fois ; d'ici là, aucun chiffre en unités n'est affiché.",
     ok: "OK",
   },
+  thanks: {
+    title: "Merci d'avoir choisi Pro",
+    body: "Merci de poursuivre avec Pro après votre essai. Votre soutien nous aide à faire progresser zerospike.",
+    nextLabel: "Prochaines étapes",
+    reportTitle: "Rapport PDF à partager avec votre médecin",
+    reportBody: "Transformez vos entrées en un fichier clair, prêt pour votre rendez-vous.",
+    healthTitle: "Synchronisation {{health}}",
+    healthBody: "Connectez {{health}} pour que vos mesures arrivent d'elles-mêmes dans votre journal.",
+    spikeTitle: "Spike",
+    spikeBody: "Posez vos questions à Spike sur les repas, les glucides et votre journal.",
+    renewalToast: "Merci pour votre soutien",
+  },
   fatalReport: {
     row: "Dernier rapport d'erreur",
     none: "Aucun enregistrement",

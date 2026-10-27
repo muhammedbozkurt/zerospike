@@ -1801,6 +1801,18 @@ const en: TranslationSchema = {
     itemCalc: "Calculator: set your ratios with your diabetes team and confirm them once; until you do, no unit figure is shown.",
     ok: "OK",
   },
+  thanks: {
+    title: "You're on Pro, thank you",
+    body: "Thank you for continuing with Pro after your trial. Your support helps us keep improving zerospike.",
+    nextLabel: "Next steps",
+    reportTitle: "PDF report to share with your doctor",
+    reportBody: "Turn your entries into a tidy file that is ready for your appointment.",
+    healthTitle: "{{health}} sync",
+    healthBody: "Connect {{health}} so your readings reach your journal on their own.",
+    spikeTitle: "Spike",
+    spikeBody: "Ask Spike about meals, carbs and your journal.",
+    renewalToast: "Thank you for your support",
+  },
   fatalReport: {
     row: "Last error report",
     none: "No record",

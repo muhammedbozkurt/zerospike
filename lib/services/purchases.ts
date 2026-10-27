@@ -10,6 +10,8 @@ import {
   resolveAppleWinBack,
   type AppleWinBackPick,
 } from "../winbackOffer";
+import { mapEntitlement } from "../thanks/map";
+import type { ThanksEntitlement } from "../thanks/detect";
 
 /**
  * RevenueCat purchases layer.
@@ -400,6 +402,23 @@ export async function verifyProWithStore(): Promise<boolean | null> {
     return Boolean(info?.entitlements?.active?.[ENTITLEMENT_ID]);
   } catch (err) {
     noteStoreFailure("getCustomerInfo", err);
+    return null;
+  }
+}
+
+/**
+ * The Pro entitlement's period facts for the thank-you moments
+ * (lib/thanks). Read from the SDK's own customer-info cache (no forced network
+ * round trip, the same read the foreground refresh makes), and null when the
+ * store cannot answer, so an unreachable store is never mistaken for "no Pro".
+ * A dev build has no store, so it answers null.
+ */
+export async function getEntitlementSnapshot(): Promise<ThanksEntitlement | null> {
+  if (DEBUG_MOCK_PURCHASES) return null;
+  try {
+    const info = await fetchCustomerInfo();
+    return mapEntitlement(info?.entitlements?.active?.[ENTITLEMENT_ID]);
+  } catch {
     return null;
   }
 }

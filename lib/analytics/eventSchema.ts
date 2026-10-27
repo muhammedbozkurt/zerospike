@@ -1,12 +1,12 @@
 /**
- * Analytics event schema v7: the one list of event names and fields the
+ * Analytics event schema v8: the one list of event names and fields the
  * Supabase sink may send. The server (supabase/functions/_shared/event-schema.json)
  * drops anything outside it as well, and scripts/analyticsSchema.test.ts fails
  * when the two lists drift. Dependency-free on purpose so that test can run
  * under plain node.
  */
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /**
  * Constant tag of the paywall layout generation (build 93 redesign), carried by
@@ -119,8 +119,10 @@ export const EVENT_SCHEMA = {
   portion_chip_used: { kind: ["measure", "grams"] },
   analytics_opt_out: { enabled: "bool" },
   store_review_prompt: {
-    trigger: ["log_saved", "streak_7", "weekly_insights_view", "pdf_export_success"],
+    trigger: ["log_saved", "streak_7", "weekly_insights_view", "pdf_export_success", "trial_converted"],
   },
+  trial_converted_seen: {},
+  renewal_seen: {},
   cgm_mode_set: { mode: ["manual", "cgm", "nightscout"] },
   cgm_offer: { action: ["accepted", "declined"] },
   nightscout_connect: { result: ["ok", "auth", "network", "invalid"] },

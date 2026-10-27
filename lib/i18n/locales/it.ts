@@ -1804,6 +1804,18 @@ const it: TranslationSchema = {
     itemCalc: "Calcolatore: stabilisca i Suoi rapporti con il Suo team diabetologico e li confermi una volta; fino ad allora non viene mostrata alcuna cifra in unità.",
     ok: "OK",
   },
+  thanks: {
+    title: "Ora è su Pro, grazie",
+    body: "Grazie per aver scelto di continuare con Pro dopo la prova. Il Suo sostegno ci aiuta a migliorare zerospike.",
+    nextLabel: "Prossimi passi",
+    reportTitle: "Report PDF da condividere con il Suo medico",
+    reportBody: "Trasformi le Sue voci in un file ordinato, pronto per la visita.",
+    healthTitle: "Sincronizzazione con {{health}}",
+    healthBody: "Colleghi {{health}} così le Sue misurazioni arrivano da sole nel diario.",
+    spikeTitle: "Spike",
+    spikeBody: "Chieda a Spike di pasti, carboidrati e del Suo diario.",
+    renewalToast: "Grazie per il Suo sostegno",
+  },
   fatalReport: {
     row: "Ultimo rapporto di errore",
     none: "Nessun record",

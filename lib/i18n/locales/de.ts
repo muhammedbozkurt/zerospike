@@ -1806,6 +1806,18 @@ const de: TranslationSchema = {
     itemCalc: "Rechner: Legen Sie Ihre Faktoren mit Ihrem Diabetesteam fest und bestätigen Sie sie einmal; bis dahin wird keine Einheitenzahl angezeigt.",
     ok: "OK",
   },
+  thanks: {
+    title: "Sie nutzen jetzt Pro, vielen Dank",
+    body: "Vielen Dank, dass Sie nach der Testphase bei Pro bleiben. Ihre Unterstützung hilft uns, zerospike weiterzuentwickeln.",
+    nextLabel: "Nächste Schritte",
+    reportTitle: "PDF-Bericht für Ihr Arztgespräch",
+    reportBody: "Machen Sie aus Ihren Einträgen eine übersichtliche Datei für Ihren nächsten Termin.",
+    healthTitle: "{{health}}-Abgleich",
+    healthBody: "Verbinden Sie {{health}}, damit Ihre Messwerte automatisch in Ihr Tagebuch gelangen.",
+    spikeTitle: "Spike",
+    spikeBody: "Fragen Sie Spike zu Mahlzeiten, Kohlenhydraten und Ihrem Tagebuch.",
+    renewalToast: "Danke für Ihre Unterstützung",
+  },
   fatalReport: {
     row: "Letzter Fehlerbericht",
     none: "Kein Eintrag",

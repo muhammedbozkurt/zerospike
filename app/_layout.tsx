@@ -52,6 +52,7 @@ import { winbackAlreadyShown, markWinbackShown, sessionOffer } from "../lib/serv
 import { holdSurvey } from "../lib/feedbackSurvey";
 import { CancelSurveyHost } from "../components/feedback/CancelSurveyHost";
 import { WhatsNewHost } from "../components/WhatsNewSheet";
+import { ThanksHost } from "../components/ThanksSheet";
 import { hasSeenAlarmTour, markAlarmTourSeen } from "../lib/services/alarmTour";
 import { shouldOpenAlarmTour } from "../lib/alarmSelect";
 import {
@@ -862,6 +863,7 @@ function RootNavigator() {
     </Stack>
     <CancelSurveyHost root={root} />
     <WhatsNewHost root={root} />
+    <ThanksHost root={root} />
     {needsOnboarding && !screenshotPending ? (
       <Redirect href="/onboarding" />
     ) : null}

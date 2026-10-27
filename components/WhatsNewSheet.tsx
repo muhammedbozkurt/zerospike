@@ -8,19 +8,22 @@ import { HIDDEN_FROM_A11Y } from "../lib/a11y";
 import { THEME } from "../lib/theme/tokens";
 import { useApp } from "../lib/store/AppContext";
 import { isScreenshotMode } from "../lib/screenshotMode";
-import { SURVEY_ASKED_KEY, SURVEY_PENDING_KEY, surveyHeld } from "../lib/feedbackSurvey";
+import { SURVEY_ASKED_KEY, SURVEY_PENDING_KEY, onSurveyRelease, overlayOpen, surveyHeld } from "../lib/feedbackSurvey";
 import {
   WHATS_NEW_DELAY_MS,
   WHATS_NEW_ITEMS,
   isWhatsNewRoute,
-  surveyInTheWay,
-  takeWhatsNew,
   whatsNewMayPresent,
 } from "../lib/whatsNew";
 import { currentAppVersion, whatsNewKv } from "../lib/whatsNewStore";
+import { useOverlayPresence } from "../lib/useOverlayPresence";
+import { claimSheet, onSheetRelease } from "../lib/sheetClaim";
+import { createWhatsNewHostController, whatsNewEffectKey } from "../lib/whatsNewAttempt";
 
 export function WhatsNewSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { t } = useTranslation();
+  // Counted as an overlay in its own right, so the thank-you sheet never opens over it.
+  useOverlayPresence(visible);
   return (
     <SheetShell
       scrollHintId="whats-new"
@@ -62,9 +65,37 @@ export function WhatsNewSheet({ visible, onClose }: { visible: boolean; onClose:
 export function WhatsNewHost({ root }: { root: string | undefined }) {
   const { ready, onboarded } = useApp();
   const [visible, setVisible] = useState(false);
-  const latest = useRef({ ready, onboarded, root });
-  latest.current = { ready, onboarded, root };
+  const latest = useRef({ ready, onboarded, root, visible });
+  latest.current = { ready, onboarded, root, visible };
   const askedAtStart = useRef<boolean | null>(null);
+  // Bumped when the slot or an overlay is released AND this host was turned away
+  // by it, so a sheet that had to wait looks again instead of being lost. Its own
+  // release never wakes it, and an attempt that found nothing to show ends the
+  // polling for the session (lib/whatsNewAttempt, which holds all of that logic).
+  const [slotTick, setSlotTick] = useState(0);
+  const controller = useRef<ReturnType<typeof createWhatsNewHostController> | null>(null);
+  if (controller.current === null) {
+    controller.current = createWhatsNewHostController({
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      delayMs: WHATS_NEW_DELAY_MS,
+      latest: () => latest.current,
+      screenshotMode: isScreenshotMode,
+      surveyHeld,
+      overlayOpen,
+      askedAtStart: () => askedAtStart.current,
+      claim: claimSheet,
+      kv: whatsNewKv,
+      appVersion: currentAppVersion,
+      setVisible,
+      bumpTick: () => setSlotTick((n) => n + 1),
+      onSheetRelease,
+      onSurveyRelease,
+    });
+  }
+  const ctl = controller.current;
+
+  useEffect(() => ctl.listen(), [ctl]);
 
   useEffect(() => {
     let alive = true;
@@ -81,41 +112,14 @@ export function WhatsNewHost({ root }: { root: string | undefined }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!ready || !onboarded || visible || !isWhatsNewRoute(root)) return;
-    const timer = setTimeout(() => {
-      const s = latest.current;
-      const gate = {
-        ready: s.ready,
-        onboarded: s.onboarded,
-        screenshotMode: isScreenshotMode(),
-        root: s.root,
-        winbackHold: surveyHeld(),
-        surveyBusy: false,
-      };
-      if (!whatsNewMayPresent(gate) || askedAtStart.current === null) return;
-      void (async () => {
-        if (await surveyInTheWay(whatsNewKv, askedAtStart.current === true, {
-          pending: SURVEY_PENDING_KEY,
-          asked: SURVEY_ASKED_KEY,
-        })) {
-          return;
-        }
-        const again = latest.current;
-        if (!isWhatsNewRoute(again.root) || surveyHeld()) return;
-        const due = await takeWhatsNew(whatsNewKv, {
-          onboarded: again.onboarded,
-          appVersion: currentAppVersion(),
-        });
-        if (due) setVisible(true);
-      })();
-    }, WHATS_NEW_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [ready, onboarded, root, visible]);
+  const effectKey = whatsNewEffectKey({ ready, onboarded, root, visible }, slotTick);
+  useEffect(() => ctl.start(), [ctl, effectKey]);
 
-  useEffect(() => {
-    if (visible && !isWhatsNewRoute(root)) setVisible(false);
-  }, [visible, root]);
+  useEffect(() => ctl.onVisible(visible), [ctl, visible]);
+
+  useEffect(() => ctl.dispose, [ctl]);
+
+  useEffect(() => ctl.onRoute(visible, root), [ctl, visible, root]);
 
   const close = useCallback(() => setVisible(false), []);
 

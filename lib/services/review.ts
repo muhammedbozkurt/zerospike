@@ -9,7 +9,11 @@ import { isScreenshotMode } from "../screenshotMode";
  * finished export) routes through maybeRequestReview(trigger) instead of its
  * own copy of the eligibility rules, so the caps below apply everywhere. Never
  * called from app launch or from an error/interruption path - only from the
- * positive moment itself.
+ * positive moment itself. "trial_converted" is asked right after the thank-you
+ * sheet has been closed with Continue or the close button; a tap on one of the
+ * sheet's cards leaves for another screen and asks nothing (and so writes no
+ * stamp). It follows its own rule (see canAttemptConversionPrompt) instead of
+ * the caps below.
  *
  * Caps (all must hold):
  * - first seen (this device, this install) at least MIN_DAYS_SINCE_FIRST_SEEN
@@ -35,12 +39,14 @@ export type ReviewTrigger =
   | "log_saved"
   | "streak_7"
   | "weekly_insights_view"
-  | "pdf_export_success";
+  | "pdf_export_success"
+  | "trial_converted";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_DAYS_SINCE_FIRST_SEEN = 3;
 const MIN_LOG_COUNT = 5;
 const MIN_DAYS_BETWEEN_PROMPTS = 30;
+const MIN_DAYS_BETWEEN_CONVERSION_PROMPTS = 365;
 
 function currentAppVersion(): string {
   return Constants.expoConfig?.version ?? "0.0.0";
@@ -97,6 +103,25 @@ async function canAttemptPrompt(): Promise<boolean> {
   }
 }
 
+/**
+ * "trial_converted" is its own moment (the user just chose to pay), so it does
+ * not wait for the usage baseline or the per-version cap. It asks for something
+ * stricter instead: nothing in the last 365 days, counting every trigger,
+ * because it reads the shared last-prompt stamp. An unreadable or future-dated
+ * stamp (clock moved back) blocks it.
+ */
+async function canAttemptConversionPrompt(): Promise<boolean> {
+  try {
+    const lastAtRaw = await AsyncStorage.getItem(LAST_PROMPT_AT_KEY);
+    if (!lastAtRaw) return true;
+    const lastAt = Number(lastAtRaw);
+    if (!Number.isFinite(lastAt)) return false;
+    return (Date.now() - lastAt) / DAY_MS >= MIN_DAYS_BETWEEN_CONVERSION_PROMPTS;
+  } catch {
+    return false;
+  }
+}
+
 async function recordPromptAttempt(): Promise<void> {
   try {
     await AsyncStorage.setItem(LAST_PROMPT_AT_KEY, String(Date.now()));
@@ -120,8 +145,12 @@ export async function maybeRequestReview(trigger: ReviewTrigger): Promise<boolea
   if (inFlight) return false;
   inFlight = true;
   try {
-    if (!(await meetsBaselineEligibility())) return false;
-    if (!(await canAttemptPrompt())) return false;
+    if (trigger === "trial_converted") {
+      if (!(await canAttemptConversionPrompt())) return false;
+    } else {
+      if (!(await meetsBaselineEligibility())) return false;
+      if (!(await canAttemptPrompt())) return false;
+    }
     if (!(await StoreReview.isAvailableAsync())) return false;
     // Record the attempt before requesting: the native API never reports
     // whether it actually showed, so this is the standard way to guarantee
