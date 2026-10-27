@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { AccessibilityInfo, Platform, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -121,6 +121,11 @@ function NightscoutPanel({
   const [busy, setBusy] = useState<NsBusy>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [state, setState] = useState<NsState | null>(null);
+
+  // The line under the form is a live region on Android only; iOS needs the announcement.
+  useEffect(() => {
+    if (message) AccessibilityInfo.announceForAccessibility(message.text);
+  }, [message]);
 
   const refresh = useCallback(async () => {
     try {

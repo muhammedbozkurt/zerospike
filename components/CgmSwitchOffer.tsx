@@ -72,7 +72,7 @@ export function CgmSwitchOffer({
   if (!due) return null;
   return (
     <Card accent style={{ marginBottom: SPACE.md }}>
-      <Txt kind="body" style={{ fontWeight: "700" }}>
+      <Txt kind="body" accessibilityRole="header" style={{ fontWeight: "700" }}>
         {t("cgmHome.offerTitle")}
       </Txt>
       <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>

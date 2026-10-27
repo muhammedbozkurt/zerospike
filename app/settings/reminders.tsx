@@ -183,12 +183,22 @@ function ReminderRow({
   onToggleEnabled: (value: boolean) => void;
 }) {
   const { t } = useTranslation();
+  // The row is one accessible element, so the switch inside it is not reachable
+  // on its own: the label carries what the row shows and the toggle is an action.
+  const spoken = `${label}, ${day ? `${row.time} · ${day}` : row.time}${
+    paused ? `, ${t("cgmReminders.pausedRow")}` : ""
+  }`;
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={spoken}
+      accessibilityValue={{ text: on ? t("reminders.a11yOn") : t("reminders.a11yOff") }}
+      accessibilityActions={[{ name: "toggle", label: t("reminders.a11yToggle") }]}
+      onAccessibilityAction={(e) => {
+        if (e.nativeEvent.actionName === "toggle") onToggleEnabled(!on);
+      }}
       android_ripple={{ color: withAlpha(THEME.text, RIPPLE_ALPHA), foreground: true }}
       className="flex-row items-center bg-glass border border-hair rounded-2xl px-3 py-2.5 mb-2 active:opacity-80"
       style={{ minHeight: HIT_TARGET + 12 }}

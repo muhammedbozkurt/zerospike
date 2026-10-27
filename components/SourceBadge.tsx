@@ -32,6 +32,7 @@ export function SourceBadge({ source, isCgm, withStore }: SourceBadgeProps) {
   return (
     <View
       accessible
+      accessibilityRole="text"
       accessibilityLabel={label}
       style={{
         alignSelf: "flex-start",
