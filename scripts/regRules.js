@@ -49,6 +49,7 @@ const PATTERNS = {
     { pattern: "take X units" },
     { pattern: "real-time" },
     { pattern: "real time" },
+    { pattern: "realtime" },
     { pattern: "live glucose" },
     { pattern: "hypoglycemic event*" },
     { pattern: "hypoglycemia event*" },
@@ -75,6 +76,10 @@ const PATTERNS = {
     { pattern: "yapmalısınız" },
     { pattern: "uygulamanız gereken" },
     { pattern: "gerçek zamanlı" },
+    { pattern: "canlı şeker*" },
+    { pattern: "anlık şeker*" },
+    { pattern: "canlı kan şeker*" },
+    { pattern: "anlık kan şeker*" },
     { pattern: "hipoglisemi olay*" },
     { pattern: "hipoglisemik olay*" },
     { pattern: "hiperglisemi olay*" },
@@ -90,7 +95,9 @@ const PATTERNS = {
     { pattern: "empfohlene Dosis" },
     { pattern: "Dosisempfehlung" },
     { pattern: "sollten Sie spritzen" },
-    { pattern: "Echtzeit" },
+    { pattern: "Echtzeit*" },
+    { pattern: "Live-Glukose*" },
+    { pattern: "Live-Blutzucker*" },
     { pattern: "Unterzuckerungsereignis*" },
     { pattern: "Hypoglykämie-Ereignis*" },
     { pattern: "hypoglykämisches Ereignis" },
@@ -108,6 +115,7 @@ const PATTERNS = {
     { pattern: "dose conseillée" },
     { pattern: "vous devriez injecter" },
     { pattern: "temps réel" },
+    { pattern: "en direct", requiresContext: true },
     { pattern: "événement hypoglycémique" },
     { pattern: "événements hypoglycémiques" },
   ],
@@ -122,6 +130,7 @@ const PATTERNS = {
     { pattern: "dosis sugerida" },
     { pattern: "debería inyectar" },
     { pattern: "tiempo real" },
+    { pattern: "en vivo", requiresContext: true },
     { pattern: "evento hipoglucémico" },
     { pattern: "eventos hipoglucémicos" },
   ],
@@ -135,6 +144,7 @@ const PATTERNS = {
     { pattern: "dose consigliata" },
     { pattern: "dose raccomandata" },
     { pattern: "tempo reale" },
+    { pattern: "in diretta", requiresContext: true },
     { pattern: "evento ipoglicemico" },
     { pattern: "eventi ipoglicemici" },
   ],
@@ -148,6 +158,7 @@ const PATTERNS = {
     { pattern: "dose recomendada" },
     { pattern: "dose sugerida" },
     { pattern: "tempo real" },
+    { pattern: "ao vivo", requiresContext: true },
     { pattern: "evento hipoglicêmico" },
     { pattern: "eventos hipoglicêmicos" },
   ],
@@ -210,6 +221,11 @@ const CONTEXT_TERMS_LATIN = [
   "ipoglicemia",
   "iperglicemia",
   "glicose",
+  "sucre",
+  "azúcar",
+  "açúcar",
+  "zucchero",
+  "glucosio",
   "hipoglicemia",
   "hiperglicemia",
 ];
@@ -220,61 +236,62 @@ const TR_WEAK_CONTEXT = ["düşük*", "yüksek*"];
 const TR_WEAK_PARTNERS = ["değer*", "seviye*", "düzey*", "ölçüm*", "okuma*", "kan"];
 const CONTEXT_TERMS_SUBSTR = ["سكر", "血糖", "低血糖", "高血糖"];
 
-// Narrow, reasoned exemptions for locale strings. An entry excuses a hit only
-// when ALL hold: same locale, exact key path, and the matched text contains one
-// of `terms`. The same word under any other key is still a finding, and so is
-// any other banned phrase inside the excused key. `reason` is mandatory and is
-// printed with the excused count so the exemption stays auditable. Store copy
-// (aso, fastlane) gets no exemption here; it uses reg-allowlist.json anchors.
+// Narrow, reasoned exemptions for locale strings. An entry excuses ONE match
+// only when ALL hold: same locale, exact key path, and the matched text lies
+// wholly inside an occurrence of one of `anchors` (a full phrase, compared
+// case-insensitively) in that string. A second banned phrase in the same string,
+// or the same word outside the anchor, is still a finding, so wording added
+// next to an excused phrase never hides behind it. `reason` is mandatory and
+// is printed with the excused count so the exemption stays auditable. Store
+// copy (aso, fastlane) uses reg-allowlist.json anchors instead.
 //
 // Today the pattern list above has no bare "tedavi"/"tanı"/"treatment"
-// entries, so these keys do not trigger a finding yet. The table documents the
-// accepted wording and keeps those keys safe if a pattern ever widens.
+// entries, so the disclaimer and diagnosis keys do not trigger a finding yet.
+// The table documents the accepted wording and keeps those keys safe if a
+// pattern ever widens.
 const DISCLAIMER_REASON =
-  "Medical disclaimer sentence (consult your doctor for treatment decisions): present since the first commit and accepted by store review; the banned word is allowed only in this disclaimer context";
+  "Medical disclaimer sentence (consult your doctor for treatment decisions): present since the first commit and accepted by store review; the banned word is allowed only inside this exact sentence";
 const NO_DIAGNOSIS_REASON =
   "Onboarding diabetes-type option for people without a diagnosis (diagnosis-free tracking path); a user-chosen label, not diagnostic language";
-
-const DISCLAIMER_TERMS = {
-  en: ["treatment"],
-  tr: ["tedavi"],
-  de: ["behandlung"],
-  fr: ["traitement"],
-  es: ["tratamiento"],
-  it: ["terap"],
-  pt: ["tratamento"],
-  ar: ["علاج"],
-  ja: ["治療"],
-};
-const NO_DIAGNOSIS_TERMS = {
-  en: ["diagnosis"],
-  tr: ["tanı"],
-  de: ["diagnose"],
-  fr: ["diagnostic"],
-  es: ["diagnóstico"],
-  it: ["diagnosi"],
-  pt: ["diagnóstico"],
-  ar: ["تشخيص"],
-  ja: ["診断"],
-};
-
-const KEY_EXEMPTIONS = LOCALES.flatMap((locale) => [
-  ...["disclaimer.body", "disclaimer.short"].map((key) => ({
-    locale,
-    key,
-    terms: DISCLAIMER_TERMS[locale],
-    reason: DISCLAIMER_REASON,
-  })),
-  {
-    locale,
-    key: "onboarding.diabetes_none",
-    terms: NO_DIAGNOSIS_TERMS[locale],
-    reason: NO_DIAGNOSIS_REASON,
-  },
-]);
-
 const LIVE_ACTIVITY_REASON =
-  "Apple's own Italian name for the iOS Live Activities feature (\"Attività in tempo reale\", as shown in iOS settings); the words name a system feature, not a claim about glucose data";
+  "The platform's own localized name of the iOS Live Activities feature (as shown in iOS settings); the words name a system feature, not a claim about glucose data";
+
+const DISCLAIMER_ANCHORS = {
+  en: ["Please consult your physician for any treatment decisions"],
+  tr: ["Lütfen tedavi kararlarınız için doktorunuza danışınız"],
+  de: [
+    "Bitte wenden Sie sich bei allen Behandlungsentscheidungen an Ihre Ärztin oder Ihren Arzt",
+    "Bitte wenden Sie sich bei Behandlungsentscheidungen an Ihre Ärztin oder Ihren Arzt",
+  ],
+  fr: ["Veuillez consulter votre médecin pour toute décision de traitement"],
+  es: ["Por favor, consulte a su médico para cualquier decisión de tratamiento"],
+  it: ["Per qualsiasi decisione terapeutica consulti il Suo medico"],
+  pt: ["Consulte seu médico para qualquer decisão de tratamento"],
+  ar: ["يرجى استشارة طبيبك في أي قرار يتعلق بالعلاج"],
+  ja: ["治療に関する判断は主治医にご相談ください"],
+};
+const NO_DIAGNOSIS_ANCHORS = {
+  en: ["No diagnosis"],
+  tr: ["Tanı almadım"],
+  de: ["Keine Diagnose"],
+  fr: ["Aucun diagnostic"],
+  es: ["Sin diagnóstico"],
+  it: ["Nessuna diagnosi"],
+  pt: ["Sem diagnóstico"],
+  ar: ["بلا تشخيص"],
+  ja: ["診断は受けていません"],
+};
+const LIVE_ACTIVITY_ANCHORS = {
+  en: ["Live Activity", "Live Activities"],
+  tr: ["Canlı Etkinlik"],
+  de: ["Live-Aktivität"],
+  fr: ["Activité en direct", "activités en direct"],
+  es: ["Actividad en vivo", "Actividades en vivo"],
+  it: ["Attività in tempo reale", "Attività Live"],
+  pt: ["Atividade ao Vivo", "Atividades ao Vivo"],
+  ar: ["النشاط المباشر", "الأنشطة المباشرة"],
+  ja: ["ライブアクティビティ"],
+};
 const LIVE_ACTIVITY_KEYS = [
   "widgetGuide.postMealBodyAndroid",
   "widgetGuide.liveTitle",
@@ -282,32 +299,91 @@ const LIVE_ACTIVITY_KEYS = [
   "widgetGuide.liveOff",
   "scWidgets.liveActivity",
 ];
-KEY_EXEMPTIONS.push(
-  ...LIVE_ACTIVITY_KEYS.map((key) => ({
-    locale: "it",
-    key,
-    terms: ["tempo reale"],
-    reason: LIVE_ACTIVITY_REASON,
-  }))
-);
 
-function isKeyExempt(exemptions, locale, key, matchedText) {
-  const lower = matchedText.toLowerCase();
+const KEY_EXEMPTIONS = LOCALES.flatMap((locale) => [
+  ...["disclaimer.body", "disclaimer.short"].map((key) => ({
+    locale,
+    key,
+    anchors: DISCLAIMER_ANCHORS[locale],
+    reason: DISCLAIMER_REASON,
+  })),
+  {
+    locale,
+    key: "onboarding.diabetes_none",
+    anchors: NO_DIAGNOSIS_ANCHORS[locale],
+    reason: NO_DIAGNOSIS_REASON,
+  },
+  ...LIVE_ACTIVITY_KEYS.map((key) => ({
+    locale,
+    key,
+    anchors: LIVE_ACTIVITY_ANCHORS[locale],
+    reason: LIVE_ACTIVITY_REASON,
+  })),
+]);
+
+// [start, end) spans of every occurrence of any anchor in `text`. Case-
+// insensitive; tr text is folded first (length-preserving) so "I"/"ı" match.
+function anchorSpans(locale, text, anchors) {
+  const spans = [];
+  const folded = foldTr(locale, text);
+  for (const anchor of anchors) {
+    const re = new RegExp(escapeRegExp(foldTr(locale, anchor)), "giu");
+    for (const m of folded.matchAll(re)) spans.push([m.index, m.index + m[0].length]);
+  }
+  return spans;
+}
+
+function insideSpans(spans, index, length) {
+  return spans.some(([start, end]) => index >= start && index + length <= end);
+}
+
+function isKeyExempt(exemptions, locale, key, text, index, length) {
   return exemptions.some(
     (e) =>
       e.locale === locale &&
       e.key === key &&
       typeof e.reason === "string" &&
-      e.reason.length > 0 &&
-      e.terms.some((t) => lower.includes(t.toLowerCase()))
+      e.reason.trim().length > 0 &&
+      Array.isArray(e.anchors) &&
+      insideSpans(anchorSpans(locale, text, e.anchors), index, length)
   );
+}
+
+const STORE_ENTRY_PREFIXES = ["zerospike-store/", "fastlane/metadata/"];
+
+// Every allowlist entry is "<where>#<anchor>" with a non-empty reason. A locale
+// entry is "<locale>.<key>#<anchor>" and excuses only matches inside the anchor.
+// There is no whole-key escape: an entry without an anchor or a reason is an
+// error. Returns Map("<locale>.<key>" -> anchors) for the locale entries.
+function validateAllowlist(allowlist) {
+  const byKey = new Map();
+  for (const [entry, reason] of Object.entries(allowlist)) {
+    const hash = entry.indexOf("#");
+    if (hash === -1 || hash === entry.length - 1) {
+      throw new Error(`reg-allowlist.json: "${entry}" needs an anchor: "<where>#<phrase>"`);
+    }
+    if (typeof reason !== "string" || reason.trim().length === 0) {
+      throw new Error(`reg-allowlist.json: "${entry}" needs a non-empty reason`);
+    }
+    if (STORE_ENTRY_PREFIXES.some((p) => entry.startsWith(p))) continue;
+    const where = entry.slice(0, hash);
+    const dot = where.indexOf(".");
+    if (dot === -1 || dot === where.length - 1 || !LOCALES.includes(where.slice(0, dot))) {
+      throw new Error(`reg-allowlist.json: "${entry}" must look like "<locale>.<key>#<phrase>"`);
+    }
+    if (!byKey.has(where)) byKey.set(where, []);
+    byKey.get(where).push(entry.slice(hash + 1));
+  }
+  return byKey;
 }
 
 function loadAllowlist() {
   if (!fs.existsSync(ALLOWLIST_FILE)) return {};
   const raw = fs.readFileSync(ALLOWLIST_FILE, "utf8").trim();
   if (raw === "") return {};
-  return JSON.parse(raw);
+  const allowlist = JSON.parse(raw);
+  validateAllowlist(allowlist);
+  return allowlist;
 }
 
 function escapeRegExp(s) {
@@ -389,6 +465,9 @@ module.exports = {
   KEY_EXEMPTIONS,
   ALLOWLIST_FILE,
   isKeyExempt,
+  anchorSpans,
+  insideSpans,
+  validateAllowlist,
   loadAllowlist,
   buildLatinMatcher,
   buildSubstringMatcher,

@@ -25,6 +25,7 @@ import {
   computeInsights,
   consecutiveLogDays,
   dailyAverages,
+  gmiWithheldReason,
   trendVsPrevious,
   windowPercentiles,
 } from "../lib/insights";
@@ -45,6 +46,9 @@ function ok(name: string, cond: boolean, detail = ""): void {
     failed++;
     console.log(`  FAIL ${name}${detail ? ": " + detail : ""}`);
   }
+}
+function eq<T>(name: string, got: T, want: T): void {
+  ok(name, got === want, `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
 }
 function near(name: string, got: number | null, want: number, eps = 0.01): void {
   ok(name, got != null && Math.abs(got - want) <= eps, `got ${got}, want ${want}`);
@@ -150,6 +154,15 @@ section("D. GMI needs a long enough window, well covered");
   ok("30 days, 60 % sensor + fingersticks: GMI hidden (below 70 %)", mixed(30, 0.6).gmi === null);
   ok("30 days, 30 % sensor + fingersticks: GMI hidden", mixed(30, 0.3).gmi === null);
   ok("30 days, 90 % sensor + fingersticks: GMI shown", mixed(30, 0.9).gmi != null);
+  const finger = Array.from({ length: 120 }, (_, i) => sugar(new Date(NOW - (i + 1) * 6 * 60 * MIN).toISOString(), 140, "manual", false));
+  const withFive = [...finger, ...stream(NOW - 4 * 5 * MIN, 5, 5, () => 150)];
+  const fiveMixed = computeInsights(withFive, [], [], 30, { low: 70, high: 180 });
+  ok("120 fingersticks + 5 sensor readings: GMI withheld", fiveMixed.gmi === null && fiveMixed.basis === "manual" && fiveMixed.cgmReadings === 5);
+  eq("...and the screen asks for sensor coverage, not 14 readings", gmiWithheldReason(fiveMixed), "coverage");
+  eq("fingersticks only, too few: asks for readings", gmiWithheldReason(computeInsights(finger.slice(0, 3), [], [], 30, { low: 70, high: 180 })), "readings");
+  eq("sensor basis: asks for coverage", gmiWithheldReason(computeInsights(mk(14, 0.5), [], [], 14, { low: 70, high: 180 })), "coverage");
+  const insightsSrc = readFileSync(join(__dirname, "..", "app/insights.tsx"), "utf8");
+  ok("the screen picks the GMI hint by gmiWithheldReason", /gmiWithheldReason\(data\) === "coverage"/.test(insightsSrc));
   ok("eligibility: manual basis never", !cgmGmiEligible({ kind: "all", coverage: 1 }, w14));
   ok("eligibility: 13-day custom range hidden", !cgmGmiEligible({ kind: "cgm", coverage: 1 }, { start: NOW - 13 * DAY, end: NOW }));
   ok("eligibility: 14-day pick ending 23:59 shown", cgmGmiEligible({ kind: "cgm", coverage: 1 }, { start: NOW - 14 * DAY + 1, end: NOW }));

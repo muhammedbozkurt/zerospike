@@ -171,11 +171,12 @@ export function cgmWidgetModel(
   };
 }
 
-/** The Live Activity pill text: the value and the clock time it was read at
- *  ("142 · 14:05"). The activity's content state is written only when the app
+/** The Live Activity pill text: the value with its unit, then the clock time it
+ *  was read at ("142 mg/dL · 14:05"). The unit sits right after the value so it
+ *  can never read as belonging to the time. The activity's content state is written only when the app
  *  syncs, so an arrow or a bare number would keep looking current on the lock
  *  screen after the sensor stopped; the reading time stays true on its own. No
  *  arrow, fresh or old. */
-export function cgmReadingText(cgm: LiveCgm): string {
-  return `${cgm.display} · ${formatTime(new Date(cgm.at).toISOString())}`;
+export function cgmReadingText(cgm: LiveCgm, unitLabel: string): string {
+  return `${cgm.display} ${unitLabel} · ${formatTime(new Date(cgm.at).toISOString())}`;
 }
