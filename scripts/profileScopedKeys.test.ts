@@ -74,6 +74,7 @@ section("A. every base name is really written by the file that owns it");
     "zerospike.cgmGlucoseOptIn": "lib/cgm/reminderMode.ts",
     "zerospike.cgmPostMealPending": "lib/cgm/postMealLink.ts",
     "zerospike.cgmCurveHours": "lib/useCgmWindow.ts",
+    "zerospike.nightscoutFloor": "lib/nightscout/sync.ts",
   };
   for (const base of PROFILE_SCOPED_KEY_BASES) {
     const file = owners[base];

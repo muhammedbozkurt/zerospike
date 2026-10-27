@@ -129,10 +129,10 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
   }
   const count = Number(u.searchParams.get("count") ?? "10");
   const gt = u.searchParams.get("find[date][$gt]");
-  const lt = u.searchParams.get("find[date][$lt]");
+  const lte = u.searchParams.get("find[date][$lte]");
   let list = [...srv.data].sort((a, b) => b.date - a.date);
   if (gt != null) list = list.filter((e) => e.date > Number(gt));
-  if (lt != null) list = list.filter((e) => e.date < Number(lt));
+  if (lte != null) list = list.filter((e) => e.date <= Number(lte));
   list = list.slice(0, count);
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify(list));
@@ -436,7 +436,7 @@ async function main(): Promise<void> {
     ok("page size 2000", reqs.every((r) => r.query.get("count") === "2000"));
     const gt0 = Number(reqs[0].query.get("find[date][$gt]"));
     ok("first connect asks 30 days back", Math.abs(gt0 - (NOW - 30 * 24 * 60 * MIN)) < MIN);
-    ok("older pages page back with $lt", reqs[1].query.has("find[date][$lt]") && reqs[2].query.has("find[date][$lt]"));
+    ok("older pages page back with $lte", reqs[1].query.has("find[date][$lte]") && reqs[2].query.has("find[date][$lte]"));
     ok("all rows are sensor rows from nightscout", [...imported.values()].every((r) => r.isCgm) && [...imported.keys()].every((k) => k.startsWith("nightscout:")));
     const state = await readNightscoutState(PROFILE, deps);
     eq("cursor = newest reading", state.cursorMs, NOW - 2 * MIN);
@@ -606,7 +606,7 @@ async function main(): Promise<void> {
     await runNightscoutSync(PROFILE, deps, { entitled: true });
     await disconnectNightscout(PROFILE, deps);
     eq("secret gone", vault.size, 0);
-    eq("state gone", kv.size, 0);
+    ok("state is only a disconnected marker", [...kv.values()].every((v) => JSON.parse(v).connected === false));
     eq("state reads as disconnected", (await readNightscoutState(PROFILE, deps)).connected, false);
     srv.log = [];
     const out = await runNightscoutSync(PROFILE, deps, { entitled: true });
@@ -664,7 +664,8 @@ async function main(): Promise<void> {
       | [string, Record<string, unknown>]
       | undefined;
     ok("expo-secure-store plugin is configured", entry != null);
-    eq("android backup rules exclude the SecureStore prefs", entry?.[1]?.configureAndroidBackup, true);
+    eq("the plugin's own backup rules are off (its include would drop SQLite from backups)", entry?.[1]?.configureAndroidBackup, false);
+    ok("own backup rules plugin is listed", (app.plugins as unknown[]).includes("./plugins/withAndroidBackupRules"));
     eq("no Face ID prompt string for an unused feature", entry?.[1]?.faceIDPermission, false);
     eq("android auto backup stays on", app.android.allowBackup, true);
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));

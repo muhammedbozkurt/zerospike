@@ -7,6 +7,13 @@
  *  - URL and token: the secure store only, one JSON value per profile.
  *  - Everything else (connected, cursor, last sync, status, backoff): plain
  *    storage. None of it can identify the server.
+ *  - The "Delete data" floor lives under its own profile-scoped key, so a
+ *    disconnect (which wipes the state) cannot hand the deleted readings back.
+ *
+ * Races: every state change that matters (disconnect, connect, "Delete data",
+ * the end of a sync) goes through a per-profile lock and bumps or checks a
+ * generation counter. A sync remembers the generation it started under and
+ * writes nothing once it has changed.
  *
  * Nothing here logs, tracks or returns an error message. Failures are enums;
  * unexpected exceptions go to deps.onError(stage, err), and the wiring turns
@@ -25,6 +32,8 @@ import { parseNightscoutUrl, validateNightscoutToken } from "./url";
 
 export const NS_STATE_KEY = "zerospike.nightscoutState";
 export const NS_SECRET_KEY = "zerospike.nightscout";
+/** Per-profile: readings at or before this were cleared by the user. */
+export const NS_FLOOR_KEY = "zerospike.nightscoutFloor";
 export const NS_FIRST_IMPORT_DAYS = 30;
 export const NS_PAGE_SIZE = 2000;
 /** 25 pages x 2000 covers 30 days of one reading a minute. */
@@ -73,6 +82,13 @@ export interface NsState {
   status: NsStatus;
   failures: number;
   nextAttemptAt: number | null;
+  /** Bumped by connect, disconnect and "Delete data": a running sync that started
+   *  under another value must not write anything. Survives a disconnect. */
+  generation: number;
+  /** A range a sync could not finish within its page budget: (from, to] still
+   *  has to be read. Both null when nothing is pending. */
+  backfillFromMs: number | null;
+  backfillToMs: number | null;
 }
 
 const EMPTY_STATE: NsState = {
@@ -83,10 +99,17 @@ const EMPTY_STATE: NsState = {
   status: "ok",
   failures: 0,
   nextAttemptAt: null,
+  generation: 0,
+  backfillFromMs: null,
+  backfillToMs: null,
 };
 
 export function nightscoutStateKey(profileId: string): string {
   return `${NS_STATE_KEY}.${profileId}`;
+}
+
+export function nightscoutFloorKey(profileId: string): string {
+  return `${NS_FLOOR_KEY}.${profileId}`;
 }
 
 export function nightscoutSecretKey(profileId: string): string {
@@ -113,6 +136,9 @@ function parseState(raw: string | null): NsState {
           : "ok",
       failures: Math.max(0, Math.floor(numOrNull(o.failures) ?? 0)),
       nextAttemptAt: numOrNull(o.nextAttemptAt),
+      generation: Math.max(0, Math.floor(numOrNull(o.generation) ?? 0)),
+      backfillFromMs: numOrNull(o.backfillFromMs),
+      backfillToMs: numOrNull(o.backfillToMs),
     };
   } catch {
     return { ...EMPTY_STATE };
@@ -120,15 +146,43 @@ function parseState(raw: string | null): NsState {
 }
 
 export async function readNightscoutState(profileId: string, deps: NsDeps): Promise<NsState> {
+  let state: NsState;
   try {
-    return parseState(await deps.storage.getItem(nightscoutStateKey(profileId)));
+    state = parseState(await deps.storage.getItem(nightscoutStateKey(profileId)));
   } catch {
-    return { ...EMPTY_STATE };
+    state = { ...EMPTY_STATE };
   }
+  try {
+    const floor = numOrNull(Number(await deps.storage.getItem(nightscoutFloorKey(profileId))));
+    // An older build kept the floor inside the state: the larger one wins.
+    if (floor != null && floor > 0) state.floorMs = Math.max(state.floorMs ?? 0, floor);
+  } catch {
+    // the state's own copy (if any) is all there is
+  }
+  return state;
+}
+
+async function writeFloor(profileId: string, deps: NsDeps, floorMs: number): Promise<void> {
+  const key = nightscoutFloorKey(profileId);
+  const current = Number(await deps.storage.getItem(key));
+  // Never lowers: a stale writer cannot bring deleted readings back.
+  if (Number.isFinite(current) && current >= floorMs) return;
+  await deps.storage.setItem(key, String(floorMs));
 }
 
 async function writeState(profileId: string, deps: NsDeps, state: NsState): Promise<void> {
-  await deps.storage.setItem(nightscoutStateKey(profileId), JSON.stringify(state));
+  const { floorMs, ...rest } = state;
+  if (floorMs != null) await writeFloor(profileId, deps, floorMs);
+  await deps.storage.setItem(nightscoutStateKey(profileId), JSON.stringify(rest));
+}
+
+const locks = new Map<string, Promise<unknown>>();
+
+/** Serialises the read-check-write steps on one profile's state. */
+function withLock<T>(profileId: string, fn: () => Promise<T>): Promise<T> {
+  const next = (locks.get(profileId) ?? Promise.resolve()).then(fn);
+  locks.set(profileId, next.catch(() => undefined));
+  return next;
 }
 
 interface Credentials {
@@ -136,16 +190,29 @@ interface Credentials {
   token: string | null;
 }
 
-async function readCredentials(profileId: string, deps: NsDeps): Promise<Credentials | null> {
-  if (!deps.secure) return null;
+type CredentialsRead = { kind: "ok"; creds: Credentials } | { kind: "missing" } | { kind: "error" };
+
+/** "error" is a store that failed to answer (try again later); "missing" is a
+ *  secret that is really gone or unusable (the person has to reconnect). */
+async function readCredentials(profileId: string, deps: NsDeps): Promise<CredentialsRead> {
+  if (!deps.secure) return { kind: "missing" };
+  let raw: string | null;
   try {
-    const raw = await deps.secure.get(nightscoutSecretKey(profileId));
-    if (!raw) return null;
+    raw = await deps.secure.get(nightscoutSecretKey(profileId));
+  } catch (err) {
+    deps.onError?.("secureGet", err);
+    return { kind: "error" };
+  }
+  if (!raw) return { kind: "missing" };
+  try {
     const o = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof o.url !== "string" || !o.url.startsWith("https://")) return null;
-    return { url: o.url, token: typeof o.token === "string" && o.token ? o.token : null };
+    if (typeof o.url !== "string" || !o.url.startsWith("https://")) return { kind: "missing" };
+    return {
+      kind: "ok",
+      creds: { url: o.url, token: typeof o.token === "string" && o.token ? o.token : null },
+    };
   } catch {
-    return null;
+    return { kind: "missing" };
   }
 }
 
@@ -268,13 +335,18 @@ export async function connectNightscout(
     return { ok: false, result: "invalid", detail: "unavailable" };
   }
   try {
-    const previous = await readNightscoutState(profileId, deps);
-    await writeState(profileId, deps, {
-      ...EMPTY_STATE,
-      connected: true,
-      cursorMs: previous.cursorMs,
-      floorMs: previous.floorMs,
-      lastSyncAt: previous.lastSyncAt,
+    await withLock(profileId, async () => {
+      const previous = await readNightscoutState(profileId, deps);
+      await writeState(profileId, deps, {
+        ...EMPTY_STATE,
+        connected: true,
+        cursorMs: previous.cursorMs,
+        floorMs: previous.floorMs,
+        lastSyncAt: previous.lastSyncAt,
+        generation: previous.generation + 1,
+        backfillFromMs: previous.backfillFromMs,
+        backfillToMs: previous.backfillToMs,
+      });
     });
   } catch (err) {
     deps.onError?.("stateWrite", err);
@@ -289,7 +361,10 @@ export async function connectNightscout(
 }
 
 /** Stops polling and forgets the connection. Imported readings are removed
- *  separately (lib/nightscout/localData.ts), only when the user asks. */
+ *  separately (lib/nightscout/localData.ts), only when the user asks. The
+ *  state is kept as a disconnected tombstone so the generation keeps counting
+ *  (a sync still in flight must see the change); the "Delete data" floor is
+ *  not touched. */
 export async function disconnectNightscout(profileId: string, deps: NsDeps): Promise<void> {
   try {
     await deps.secure?.remove(nightscoutSecretKey(profileId));
@@ -297,7 +372,14 @@ export async function disconnectNightscout(profileId: string, deps: NsDeps): Pro
     deps.onError?.("secureRemove", err);
   }
   try {
-    await deps.storage.removeItem(nightscoutStateKey(profileId));
+    await withLock(profileId, async () => {
+      const previous = await readNightscoutState(profileId, deps);
+      await writeState(profileId, deps, {
+        ...EMPTY_STATE,
+        floorMs: previous.floorMs,
+        generation: previous.generation + 1,
+      });
+    });
   } catch (err) {
     deps.onError?.("stateRemove", err);
   }
@@ -305,22 +387,49 @@ export async function disconnectNightscout(profileId: string, deps: NsDeps): Pro
 
 /** "Delete data": readings up to now never come back, and polling resumes from now. */
 export async function resetNightscoutCursor(profileId: string, deps: NsDeps): Promise<void> {
-  const state = await readNightscoutState(profileId, deps);
-  if (!state.connected) return;
-  const now = (deps.now ?? Date.now)();
-  await writeState(profileId, deps, { ...state, cursorMs: now, floorMs: now });
+  await withLock(profileId, async () => {
+    const state = await readNightscoutState(profileId, deps);
+    const now = (deps.now ?? Date.now)();
+    if (!state.connected) {
+      // Not connected now: a later reconnect must still not bring them back.
+      await writeFloor(profileId, deps, now);
+      return;
+    }
+    await writeState(profileId, deps, {
+      ...state,
+      cursorMs: now,
+      floorMs: now,
+      generation: state.generation + 1,
+      backfillFromMs: null,
+      backfillToMs: null,
+    });
+  });
 }
 
 // ── sync ─────────────────────────────────────────────────────────────────
 
-export type NsSkipReason = "not_connected" | "not_entitled" | "halted" | "backoff" | "no_credentials" | "busy";
+export type NsSkipReason =
+  | "not_connected"
+  | "not_entitled"
+  | "halted"
+  | "backoff"
+  | "no_credentials"
+  | "busy"
+  | "superseded";
 
 export type NsSyncOutcome =
   | { status: "ok"; inserted: number; read: number }
   | { status: "skipped"; reason: NsSkipReason }
   | { status: "error"; error: NsError | "storage" };
 
-const running = new Set<string>();
+const running = new Map<string, Promise<unknown>>();
+
+/** Resolves once no sync is running for the profile (used before deleting the
+ *  readings a sync might still be inserting). */
+export async function awaitNightscoutIdle(profileId: string): Promise<void> {
+  const current = running.get(profileId);
+  if (current) await current.catch(() => undefined);
+}
 
 function backoffMs(failures: number): number {
   const i = Math.min(Math.max(failures, 1), NS_BACKOFF_MINUTES.length) - 1;
@@ -333,13 +442,46 @@ export async function runNightscoutSync(
   opts: { entitled: boolean }
 ): Promise<NsSyncOutcome> {
   if (running.has(profileId)) return { status: "skipped", reason: "busy" };
-  running.add(profileId);
+  const job = runLocked(profileId, deps, opts);
+  running.set(profileId, job);
   try {
-    return await runLocked(profileId, deps, opts);
+    return await job;
   } finally {
     running.delete(profileId);
   }
 }
+
+const SUPERSEDED: NsSyncOutcome = { status: "skipped", reason: "superseded" };
+
+/** The current state when the connection is still the one this sync started under. */
+async function stillCurrent(profileId: string, deps: NsDeps, generation: number): Promise<NsState | null> {
+  const fresh = await readNightscoutState(profileId, deps);
+  return fresh.connected && fresh.generation === generation ? fresh : null;
+}
+
+/** Re-reads the state under the lock and writes `build(fresh)`; false (and no
+ *  write) when the connection changed since the sync started. */
+async function commit(
+  profileId: string,
+  deps: NsDeps,
+  generation: number,
+  build: (fresh: NsState) => NsState
+): Promise<boolean> {
+  return withLock(profileId, async () => {
+    const fresh = await stillCurrent(profileId, deps, generation);
+    if (!fresh) return false;
+    try {
+      await writeState(profileId, deps, build(fresh));
+    } catch (err) {
+      deps.onError?.("stateWrite", err);
+    }
+    return true;
+  });
+}
+
+type Pull =
+  | { kind: "done"; newest: number | null; oldest: number | null; inserted: number; read: number; complete: boolean }
+  | { kind: "stop"; outcome: NsSyncOutcome };
 
 async function runLocked(
   profileId: string,
@@ -356,83 +498,137 @@ async function runLocked(
   if (state.nextAttemptAt != null && now < state.nextAttemptAt) {
     return { status: "skipped", reason: "backoff" };
   }
-  const creds = await readCredentials(profileId, deps);
-  if (!creds) {
-    await safeWrite(profileId, deps, { ...state, status: "reconnect" });
+  const gen = state.generation;
+  const read0 = await readCredentials(profileId, deps);
+  if (read0.kind === "missing") {
+    await commit(profileId, deps, gen, (fresh) => ({ ...fresh, status: "reconnect" }));
     return { status: "skipped", reason: "no_credentials" };
   }
+  if (read0.kind === "error") {
+    const failures = state.failures + 1;
+    await commit(profileId, deps, gen, (fresh) => ({
+      ...fresh,
+      status: "network",
+      failures,
+      nextAttemptAt: now + backoffMs(failures),
+    }));
+    return { status: "error", error: "storage" };
+  }
+  const creds = read0.creds;
 
   const reqOpts = { fetchImpl: deps.fetchImpl, timeoutMs: deps.timeoutMs ?? NS_REQUEST_TIMEOUT_MS };
   const pageSize = deps.pageSize ?? NS_PAGE_SIZE;
-  const floor = state.floorMs ?? 0;
   const since = Math.max(
     state.cursorMs != null ? state.cursorMs - NS_LOOKBACK_MS : now - NS_FIRST_IMPORT_DAYS * DAY,
-    floor
+    state.floorMs ?? 0
   );
 
-  let beforeMs: number | undefined;
-  let newest: number | null = null;
-  let inserted = 0;
-  let read = 0;
-  try {
+  /** Newest-first pages over (afterMs, startBefore]; stops at the page budget. */
+  async function pull(afterMs: number, startBefore: number | undefined): Promise<Pull> {
+    let beforeMs = startBefore;
+    let newest: number | null = null;
+    let oldest: number | null = null;
+    let inserted = 0;
+    let read = 0;
     for (let page = 0; page < NS_MAX_PAGES; page++) {
-      const got = await fetchEntries(
-        creds.url,
-        creds.token,
-        { count: pageSize, afterMs: since, beforeMs },
-        reqOpts
-      );
-      if (!got.ok) return await failed(profileId, deps, state, now, got.error, got.retryAfterMs);
-      const parsed = parseNightscoutEntries(got.entries, now, state.floorMs);
+      const got = await fetchEntries(creds.url, creds.token, { count: pageSize, afterMs, beforeMs }, reqOpts);
+      if (!got.ok) {
+        return { kind: "stop", outcome: await failed(profileId, deps, gen, now, got.error, got.retryAfterMs) };
+      }
+      // Re-read before touching the database: a disconnect or "Delete data"
+      // that happened while the request was out must win.
+      const fresh = await stillCurrent(profileId, deps, gen);
+      if (!fresh) return { kind: "stop", outcome: SUPERSEDED };
+      const parsed = parseNightscoutEntries(got.entries, now, fresh.floorMs);
       read += parsed.rows.length;
       if (parsed.newestMs != null && (newest == null || parsed.newestMs > newest)) newest = parsed.newestMs;
       if (parsed.rows.length > 0) inserted += await deps.insert(profileId, parsed.rows);
-      if (got.entries.length < pageSize || parsed.oldestMs == null) break;
+      if (parsed.oldestMs != null) oldest = oldest == null ? parsed.oldestMs : Math.min(oldest, parsed.oldestMs);
+      if (got.entries.length < pageSize || parsed.oldestMs == null) {
+        return { kind: "done", newest, oldest, inserted, read, complete: true };
+      }
+      // The boundary is inclusive, so a run of rows sharing one date is not cut
+      // in half. A whole page on one date cannot move on: leave it.
+      if (parsed.oldestMs === beforeMs) return { kind: "done", newest, oldest, inserted, read, complete: true };
       beforeMs = parsed.oldestMs;
+    }
+    return { kind: "done", newest, oldest, inserted, read, complete: false };
+  }
+
+  let newest: number | null = null;
+  let inserted = 0;
+  let read = 0;
+  let backfillFrom = state.backfillFromMs;
+  let backfillTo = state.backfillToMs;
+  try {
+    const forward = await pull(since, undefined);
+    if (forward.kind === "stop") return forward.outcome;
+    newest = forward.newest;
+    inserted += forward.inserted;
+    read += forward.read;
+    if (!forward.complete && forward.oldest != null) {
+      // More than the page budget is waiting: the cursor still moves to the
+      // newest reading, and the older range is left for the next pull.
+      backfillFrom = backfillFrom == null ? since : Math.min(backfillFrom, since);
+      backfillTo = backfillTo == null ? forward.oldest : Math.max(backfillTo, forward.oldest);
+    } else if (backfillFrom != null && backfillTo != null) {
+      const back = await pull(backfillFrom, backfillTo);
+      if (back.kind === "stop") return back.outcome;
+      inserted += back.inserted;
+      read += back.read;
+      if (back.complete || back.oldest == null) {
+        backfillFrom = null;
+        backfillTo = null;
+      } else {
+        backfillTo = back.oldest;
+      }
     }
   } catch (err) {
     deps.onError?.("sync", err);
     return { status: "error", error: "storage" };
   }
 
-  await safeWrite(profileId, deps, {
-    ...state,
-    cursorMs: newest != null ? Math.max(newest, state.cursorMs ?? 0) : state.cursorMs,
+  const wrote = await commit(profileId, deps, gen, (fresh) => ({
+    ...fresh,
+    cursorMs: newest != null ? Math.max(newest, fresh.cursorMs ?? 0) : fresh.cursorMs,
     lastSyncAt: now,
     status: "ok",
     failures: 0,
     nextAttemptAt: null,
-  });
+    backfillFromMs: backfillFrom,
+    backfillToMs: backfillTo,
+  }));
+  if (!wrote) return SUPERSEDED;
   return { status: "ok", inserted, read };
-}
-
-async function safeWrite(profileId: string, deps: NsDeps, state: NsState): Promise<void> {
-  try {
-    await writeState(profileId, deps, state);
-  } catch (err) {
-    deps.onError?.("stateWrite", err);
-  }
 }
 
 async function failed(
   profileId: string,
   deps: NsDeps,
-  state: NsState,
+  generation: number,
   now: number,
   error: NsError,
   retryAfterMs?: number
 ): Promise<NsSyncOutcome> {
   if (error === "auth") {
-    await safeWrite(profileId, deps, { ...state, status: "auth", nextAttemptAt: null });
-    return { status: "error", error };
+    const wrote = await commit(profileId, deps, generation, (fresh) => ({
+      ...fresh,
+      status: "auth",
+      nextAttemptAt: null,
+    }));
+    return wrote ? { status: "error", error } : SUPERSEDED;
   }
-  const failures = state.failures + 1;
-  const wait = Math.max(backoffMs(failures), error === "rate_limited" ? (retryAfterMs ?? 0) : 0);
-  await safeWrite(profileId, deps, {
-    ...state,
-    status: error === "invalid" ? "invalid" : "network",
-    failures,
-    nextAttemptAt: now + wait,
+  let wait = 0;
+  const wrote = await commit(profileId, deps, generation, (fresh) => {
+    const failures = fresh.failures + 1;
+    wait = Math.max(backoffMs(failures), error === "rate_limited" ? (retryAfterMs ?? 0) : 0);
+    return {
+      ...fresh,
+      status: error === "invalid" ? "invalid" : "network",
+      failures,
+      nextAttemptAt: now + wait,
+    };
   });
+  if (!wrote) return SUPERSEDED;
   return { status: "error", error: error === "timeout" ? "network" : error };
 }
