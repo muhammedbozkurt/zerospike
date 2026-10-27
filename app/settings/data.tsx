@@ -45,6 +45,7 @@ import {
 } from "../../lib/services/health";
 import { registerHealthBackground, requestHealthBackgroundAccess } from "../../lib/services/healthBackground";
 import { clearNightscoutForProfile, resetNightscoutCursorFor } from "../../lib/services/sourceSync";
+import { awaitNightscoutIdle } from "../../lib/nightscout/sync";
 import type { HealthLastSync, HealthWriteKind } from "../../lib/services/healthTypes";
 import {
   countHealthRecordCopies,
@@ -312,9 +313,11 @@ export default function DataSettings() {
     // Before the rows go: their Health ids live only on those rows.
     await revokeHealthRecordsBeforeDelete(activeProfile.id);
     await revokeHealthCopiesBeforeDelete(activeProfile.id);
-    await clearAllLogs(activeProfile.id);
     // Readings up to now must not come back from a connected Nightscout server.
+    // Reset first so a sync already inserting stops, then let it finish before the delete.
     await resetNightscoutCursorFor(activeProfile.id);
+    await awaitNightscoutIdle(activeProfile.id);
+    await clearAllLogs(activeProfile.id);
     // The countdown was armed for a meal in the history that was just erased:
     // leaving it running would ring for a record the user asked to be gone.
     const runningTimer = await getPostMealTimerState();
