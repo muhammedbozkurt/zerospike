@@ -592,7 +592,7 @@ export default function DashboardScreen() {
           lang,
           loadLimit,
           undefined,
-          cgmActive ? { cgm: "exclude" } : undefined
+          cgmActive ? { cgm: "exclude" } : { cgm: "twins" }
         ),
         getJournal(activeProfile.id, lang, loadLimit, undefined, {
           excludeCalculatorInjections: true,

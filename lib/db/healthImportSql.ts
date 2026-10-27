@@ -109,6 +109,9 @@ export const CGM_MGDL_MAX = 600;
 const LEGACY_WINDOW_MS = SUGAR_DEDUP_WINDOW_MINUTES * 60_000;
 /** The widest window any rule looks at. */
 const MAX_WINDOW_MS = LEGACY_WINDOW_MS;
+/** How far the nearest sensor row each side of a mirrored value may lie
+ *  (cgmSql.ts SENSOR_BRACKET_SECONDS). */
+const TWIN_BRACKET_MS = 330_000;
 
 export interface PlanCandidate {
   atMs: number;
@@ -206,6 +209,11 @@ function streamKey(source: string, sourceApp: string | null): string {
  *     non-sensor row is the old "typed twice" duplicate. Sensor rows are not
  *     part of this rule, and neither is a sensor candidate: consecutive equal
  *     readings of a flat stretch are real.
+ *  Rules 4 and 6 never drop a non-sensor candidate because of a non-sensor row
+ *  of ANOTHER stream that is itself a sensor twin (its value sits in the
+ *  band of the sensor rows of yet another stream around it, stored or in this
+ *  batch; cgmSql.ts sensorBandTwinSql): a mirror that came
+ *  first must not cost a real glucometer reading its place.
  */
 export function planGlucoseImport(
   candidates: readonly PlanCandidate[],
@@ -225,6 +233,48 @@ export function planGlucoseImport(
   for (const e of ex) {
     if (e.externalId) extKeys.add(`${e.source}\u0000${e.externalId}`);
   }
+  // Every sensor row stored or in this batch, time-ordered: what a non-sensor
+  // row is compared with to tell whether it only mirrors a sensor value.
+  const sensorPool = [
+    ...ex.filter((e) => e.isCgm),
+    ...candidates.filter((c) => c.isCgm),
+  ].sort((a, b) => a.atMs - b.atMs);
+  const sensorMs = sensorPool.map((s) => s.atMs);
+  const isSensorTwin = (r: {
+    atMs: number;
+    mgdl: number;
+    source: string;
+    sourceApp: string | null;
+    isCgm: boolean;
+    tagged?: boolean;
+  }): boolean => {
+    if (r.isCgm || r.source === "manual" || r.tagged) return false;
+    const stream = streamKey(r.source, r.sourceApp);
+    // The same two tests as cgmSql.ts sensorBandTwinSql: (a) a sensor row
+    // within 150 s at the same value +-1; (b) one within 150 s at all, and the
+    // value inside the band of the nearest rows before and after (330 s reach).
+    let near = false;
+    let prev: number | null = null;
+    let next: number | null = null;
+    for (let i = lowerBound(sensorMs, r.atMs - TWIN_BRACKET_MS); i < sensorPool.length && sensorMs[i] <= r.atMs + TWIN_BRACKET_MS; i++) {
+      const s = sensorPool[i];
+      if (streamKey(s.source, s.sourceApp) === stream) continue;
+      const dt = s.atMs - r.atMs;
+      if (Math.abs(dt) <= SAME_READING_WINDOW_MS) {
+        if (Math.abs(s.mgdl - r.mgdl) <= SAME_READING_TOLERANCE_MGDL) return true;
+        near = true;
+      }
+      if (dt <= 0) prev = s.mgdl;
+      if (dt >= 0 && next === null) next = s.mgdl;
+    }
+    if (!near) return false;
+    const p = prev ?? (next as number);
+    const n = next ?? p;
+    return (
+      r.mgdl >= Math.min(p, n) - SAME_READING_TOLERANCE_MGDL &&
+      r.mgdl <= Math.max(p, n) + SAME_READING_TOLERANCE_MGDL
+    );
+  };
   const owned = new Set<number>();
   const accepted: PlanCandidate[] = [];
   const acceptedMs: number[] = [];
@@ -282,7 +332,7 @@ export function planGlucoseImport(
         continue;
       }
       const eStream = streamKey(e.source, e.sourceApp);
-      if (tight && c.isCgm === e.isCgm && eStream !== cStream) {
+      if (tight && c.isCgm === e.isCgm && eStream !== cStream && !isSensorTwin(e)) {
         skip = true;
         break;
       }
@@ -290,7 +340,13 @@ export function planGlucoseImport(
         skip = true;
         break;
       }
-      if (!c.isCgm && !e.isCgm && e.mgdl === c.mgdl && dt <= LEGACY_WINDOW_MS) {
+      if (
+        !c.isCgm &&
+        !e.isCgm &&
+        e.mgdl === c.mgdl &&
+        dt <= LEGACY_WINDOW_MS &&
+        !(eStream !== cStream && isSensorTwin(e))
+      ) {
         skip = true;
         break;
       }
@@ -308,15 +364,16 @@ export function planGlucoseImport(
       const dt = Math.abs(c.atMs - a.atMs);
       const dv = Math.abs(a.mgdl - c.mgdl);
       const tight = dt <= SAME_READING_WINDOW_MS && dv <= SAME_READING_TOLERANCE_MGDL;
-      if (tight && c.isCgm === a.isCgm && streamKey(a.source, a.sourceApp) !== cStream) {
+      const aOther = streamKey(a.source, a.sourceApp) !== cStream;
+      if (tight && c.isCgm === a.isCgm && aOther && !isSensorTwin(a)) {
         skip = true;
         break;
       }
-      if (c.isCgm && a.isCgm && dt < CGM_THINNING_MS && streamKey(a.source, a.sourceApp) === cStream) {
+      if (c.isCgm && a.isCgm && dt < CGM_THINNING_MS && !aOther) {
         skip = true;
         break;
       }
-      if (!c.isCgm && !a.isCgm && a.mgdl === c.mgdl && dt <= LEGACY_WINDOW_MS) {
+      if (!c.isCgm && !a.isCgm && a.mgdl === c.mgdl && dt <= LEGACY_WINDOW_MS && !(aOther && isSensorTwin(a))) {
         skip = true;
         break;
       }
@@ -509,8 +566,10 @@ function normalizeRows(rows: readonly ImportedGlucoseRow[], nowMs: number): Norm
 function lookupRanges(sortedMs: number[]): [number, number][] {
   const ranges: [number, number][] = [];
   for (const t of sortedMs) {
-    const from = t - MAX_WINDOW_MS;
-    const to = t + MAX_WINDOW_MS;
+    // 330 s beyond the widest window: a stored row at the edge still needs its
+    // sensor neighbours to be recognised as a sensor twin (rules 4 and 6).
+    const from = t - MAX_WINDOW_MS - TWIN_BRACKET_MS;
+    const to = t + MAX_WINDOW_MS + TWIN_BRACKET_MS;
     const last = ranges[ranges.length - 1];
     if (last && from <= last[1] + 2 * 60 * 60_000) last[1] = Math.max(last[1], to);
     else ranges.push([from, to]);

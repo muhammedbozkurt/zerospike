@@ -149,13 +149,20 @@ async function main(): Promise<void> {
     const far = makeDb();
     await importGlucoseRows(far.host, "P", [mirror(0, 120)], nid, NOW);
     await importGlucoseRows(far.host, "P", [sensor(40, 120)], nid, NOW);
-    eq("a row 40 s away stays its own measurement (dose path)", dose(far.db), 1);
+    // FIX-N (OPUS-10): within 150 s of a sensor row of another stream an
+    // imported row stays out of the dose path whatever its value; farther it is
+    // its own measurement.
+    eq("a row 40 s away is out of the dose path (value-independent proximity)", dose(far.db), 0);
     eq("and nothing was converted", cgmRows(far.db), 1);
+    const farther = makeDb();
+    await importGlucoseRows(farther.host, "P", [mirror(0, 120)], nid, NOW);
+    await importGlucoseRows(farther.host, "P", [sensor(200, 120)], nid, NOW);
+    eq("a row 200 s from the sensor row stays its own measurement (dose path)", dose(farther.db), 1);
 
     const meter = makeDb();
     await importGlucoseRows(meter.host, "P", [mirror(0, 120)], nid, NOW);
     await importGlucoseRows(meter.host, "P", [sensor(10, 125)], nid, NOW);
-    eq("a value 5 mg/dL off is not a twin", dose(meter.db), 1);
+    eq("a value 5 mg/dL off is out of the dose path too (FIX-N: value-independent)", dose(meter.db), 0);
     eq("and both rows exist", count(meter.db), 2);
   }
 
