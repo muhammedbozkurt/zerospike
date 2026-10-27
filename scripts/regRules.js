@@ -829,7 +829,7 @@ const PATTERNS = {
 const GAP_TOKEN = "<gap3>";
 const TOKEN_SPLIT = /(<(?:gap3|gap6|ws|par|cp|sfx|cl)>)/;
 const CJK_RE = /[぀-ヿ㐀-鿿]/;
-const JA_STOP = "\\s、。，．,.;；:：!！?？（）()「」『』";
+const JA_STOP = "\\s、。，．,.!！?？（）()";
 const ARABIC_MARKS = "[\\u0610-\\u061A\\u064B-\\u065F\\u0670\\u0640]*";
 const GAP_WORD = "(?:[\\p{L}\\p{M}\\p{N}'’-]+\\s+)";
 const TOKEN_SOURCE = {
@@ -880,7 +880,8 @@ const A1C_ESTIMATE_PATTERNS = {
       "geschätzt", "geschätzter", "geschätzte", "geschätztes", "geschätzten", "geschätztem",
       "Schätzung", "Schätzungen", "Schätzwert", "Schätzwerte",
     ],
-    ["<gap6>geschätzt*", "Schätzung*", "Schätzwert*", "-Schätzung*", "-Schätzwert*"]
+    ["<gap6>geschätzt*", "Schätzung*", "Schätzwert*", "-Schätzung*", "-Schätzwert*"],
+    { sfx: "<sfx>" }
   ),
   fr: a1cEstimatePatterns(
     [
