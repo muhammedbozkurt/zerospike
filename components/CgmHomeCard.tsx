@@ -51,7 +51,7 @@ function CgmAge({ atMs }: { atMs: number }) {
 /**
  * The home hero for a profile that reads from a sensor: today's ring (the share
  * of today's sensor readings inside the target band), the curve with its 3 / 6
- * / 12 hour choice, the last reading with its age and direction, the source
+ * / 12 hour choice, the last reading with its age, the source
  * badge, and the note that readings can arrive late. Rendered ONLY when the
  * profile's mode is not manual (see app/(tabs)/index.tsx); a manual profile's
  * home is unchanged.

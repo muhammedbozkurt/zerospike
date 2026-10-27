@@ -261,7 +261,7 @@ console.log("G. the SQL on a scratch database (real v29 columns and indexes)");
   ok("and the model is at most 144 points", model.cgm.length <= 144);
 
   const latest = db.prepare(CGM_LATEST_SQL).all("p1") as { logged_at: string }[];
-  eq("the latest query returns six, newest first", [latest.length, latest[0].logged_at], [6, new Date(now).toISOString()]);
+  eq("the latest query returns one, the newest", [latest.length, latest[0].logged_at], [1, new Date(now).toISOString()]);
 
   const band = { low: 80, high: 160 };
   const stats = toRangeStats(

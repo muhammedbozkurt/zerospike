@@ -77,6 +77,10 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "CE marked",
       "Replaces fingersticks",
       "Use it instead of finger pricks",
+      "Monitor your glucose.",
+      "We'll send a notification if your blood sugar drops.",
+      "Glucose trend analysis",
+      "Notifications if your glucose is high",
     ],
     clean: [
       "Notification settings",
@@ -101,6 +105,10 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "Log a finger prick reading",
       "Fingerstick readings are logged",
       "Time in range",
+      "Monitor resolution settings",
+      "Notification if the timer ends",
+      "Trend analysis of your workouts",
+      "Works with your continuous glucose monitors",
     ],
   },
   tr: {
@@ -130,6 +138,10 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "Düşmek üzere",
       "Tıbbi sınıf doğruluk",
       "Şeker için terapi önerisi",
+      "Kan şekerinizi izleyin.",
+      "Şekerinizi izleyebilirsiniz",
+      "Glukoz trend analizi.",
+      "Şeker eğilim analizi",
     ],
     clean: [
       "Besin değerleri tahminidir, tıbbi referans değildir.",
@@ -144,6 +156,9 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "Takipçi sayısı",
       "Öngörülebilir program",
       "Hatırlatıcı alarmı",
+      "Reklam izle",
+      "Trend analizi için tarih seçin",
+      "Kan şekerinizi takip edin",
     ],
   },
   de: {
@@ -165,6 +180,9 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "CE-Kennzeichen",
       "Ersetzt Fingerstiche",
       "Klinisch bewiesen",
+      "Überwachen Sie Ihren Blutzucker.",
+      "Glukose Trendanalyse",
+      "Benachrichtigung, falls der Blutzucker sinkt",
     ],
     clean: [
       "Benachrichtigungen",
@@ -175,6 +193,9 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "Die Prognose ist sonnig",
       "Schwellenwert für Sync",
       "Kontinuierliches Glukosemessgerät",
+      "Überwachen Sie den Bildschirm",
+      "Trendanalyse der Arbeitszeit",
+      "Tragen Sie Ihren Blutzucker ein",
     ],
   },
   fr: {
@@ -196,6 +217,9 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "Marquage CE",
       "Remplace les piqûres au doigt",
       "Cliniquement prouvé",
+      "Surveillez votre glycémie.",
+      "Analyse de tendance de la glycémie",
+      "Notification si la glycémie baisse",
     ],
     clean: [
       "Notifications push",
@@ -204,6 +228,9 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "Alarme du rappel",
       "Capteur de glycémie en continu",
       "Seuil de chargement",
+      "Surveillance du réseau",
+      "Suivez votre glycémie",
+      "Notification si le minuteur se termine",
     ],
   },
   es: {
@@ -225,6 +252,9 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "Marcado CE",
       "Sustituye los pinchazos",
       "Clínicamente probado",
+      "Monitorice su glucosa.",
+      "Monitoree su azúcar",
+      "Análisis de tendencias de glucosa",
     ],
     clean: [
       "Notificaciones",
@@ -232,6 +262,9 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "El pronóstico del tiempo",
       "Alerta de actualización",
       "Umbral de brillo",
+      "Monitor de pantalla",
+      "Registre su glucosa diaria",
+      "Análisis de tendencias del tiempo",
     ],
   },
   it: {
@@ -252,8 +285,11 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "Marcatura CE",
       "Sostituisce i pungidito",
       "Clinicamente provato",
+      "Monitori la Sua glicemia.",
+      "Monitoraggio con la glicemia",
+      "Analisi dei trend della glicemia",
     ],
-    clean: ["Notifiche", "Allarme della sveglia", "Soglia di luminosità", "Previsioni del tempo"],
+    clean: ["Notifiche", "Allarme della sveglia", "Soglia di luminosità", "Previsioni del tempo", "Monitor del computer", "Registri la Sua glicemia", "Analisi dei trend di vendita"],
   },
   pt: {
     flagged: [
@@ -273,8 +309,11 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "Marcação CE",
       "Substitui as picadas no dedo",
       "Clinicamente comprovado",
+      "Monitore sua glicose.",
+      "Monitorizar a glicose",
+      "Análise de tendências da glicose",
     ],
-    clean: ["Notificações", "Alarme do lembrete", "Previsão do tempo", "Limite de caracteres", "Alerta de atualização"],
+    clean: ["Notificações", "Alarme do lembrete", "Previsão do tempo", "Limite de caracteres", "Alerta de atualização", "Monitor de tela", "Registre sua glicose", "Análise de tendências de vendas"],
   },
   ar: {
     flagged: [
@@ -290,8 +329,9 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "عامل التصحيح",
       "معتمد من FDA",
       "علامة CE",
+      "تحليل الاتجاهات للجلوكوز",
     ],
-    clean: ["إشعارات التذكير", "منبه التذكير", "عتبة الباب", "سجلك اليومي"],
+    clean: ["إشعارات التذكير", "منبه التذكير", "عتبة الباب", "سجلك اليومي", "اتجاه القبلة"],
   },
   ja: {
     flagged: [
@@ -308,8 +348,9 @@ const cases: Record<string, { flagged: string[]; clean: string[] }> = {
       "FDA承認済み",
       "CEマーク",
       "指先採血の代わりになります",
+      "血糖のトレンド分析",
     ],
-    clean: ["通知設定", "リマインダー通知", "予測変換", "緊急連絡先", "持続血糖モニターに対応"],
+    clean: ["通知設定", "リマインダー通知", "予測変換", "緊急連絡先", "持続血糖モニターに対応", "血糖を記録します"],
   },
 };
 
@@ -374,6 +415,22 @@ section("E. continuous glucose monitor stays allowed as a device category");
   }
   ok("monitoring is banned", count("en", "Continuous glucose monitoring app") >= 1);
   ok("monitors your is banned", count("en", "It monitors your readings") >= 1);
+  ok("monitor verb next to the device phrase is still caught", count("en", "Monitor your continuous glucose monitor") >= 1);
+  eq("tr Pro-label code description stays clean", count("tr", "Pro etiketleri paywall kapılarını izler (içgörü, şeker)"), 0);
+}
+
+section("G. monitoring and trend analysis wording, the five review examples");
+{
+  for (const [locale, t] of [
+    ["en", "Monitor your glucose."],
+    ["tr", "Kan şekerinizi izleyin."],
+    ["de", "Überwachen Sie Ihren Blutzucker."],
+    ["fr", "Surveillez votre glycémie."],
+    ["tr", "Glukoz trend analizi."],
+    ["en", "We'll send a notification if your blood sugar drops."],
+  ] as [string, string][]) {
+    ok(`${locale} caught: ${t}`, count(locale, t) >= 1);
+  }
 }
 
 section("F. Google Play disclosure sentence: narrow, anchored, same-language store files only");
