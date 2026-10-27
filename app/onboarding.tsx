@@ -70,6 +70,7 @@ import {
   type OnboardingStepId,
   type TreatmentOption,
 } from "../lib/onboardingSteps";
+import { setCgmBrand, type CgmBrand } from "../lib/cgm/brand";
 import { setCgmMode } from "../lib/cgm/state";
 import { healthStoreLabelKey } from "../lib/cgm/sourceLabel";
 import { hasHealthProvider, requestHealthPermissions } from "../lib/services/health";
@@ -112,6 +113,7 @@ import { DisclaimerBanner } from "../components/Disclaimer";
 import { LanguageChip } from "../components/onboarding/LanguageChip";
 import { Welcome } from "../components/onboarding/Welcome";
 import { QuizStep } from "../components/onboarding/QuizStep";
+import { CgmBrandNote } from "../components/CgmBrandNote";
 import { OptionCard } from "../components/onboarding/OptionCard";
 import { Reveal } from "../components/onboarding/Reveal";
 import { FadeSlideIn, ENTRANCE_STAGGER_MS } from "../components/onboarding/motion";
@@ -537,6 +539,7 @@ export default function OnboardingScreen() {
   // `treatment` so switching diabetes answers never mixes the two.
   const [pillsOnly, setPillsOnly] = useState<boolean | null>(null);
   const [measure, setMeasure] = useState<MeasureOption>(DEFAULT_MEASURE);
+  const [cgmBrand, setCgmBrandChoice] = useState<CgmBrand | null>(null);
   const [askingHealth, setAskingHealth] = useState(false);
   const [measureDenied, setMeasureDenied] = useState(false);
   const [fastingMin, setFastingMin] = useState(
@@ -874,6 +877,13 @@ export default function OnboardingScreen() {
       if (cgmMode !== null) {
         await setCgmMode(activeProfile.id, cgmMode);
         logEvent("cgm_mode_set", { mode: cgmMode });
+        if (cgmMode === "cgm" && cgmBrand !== null) {
+          try {
+            await setCgmBrand(activeProfile.id, cgmBrand);
+          } catch (err) {
+            logCrash(err, { screen: "onboarding", op: "setBrand" });
+          }
+        }
       }
 
       // The basal reminder exists only if the user picked it in the plan step
@@ -1673,6 +1683,14 @@ export default function OnboardingScreen() {
               <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>
                 {t("onboarding.measureDenied", { store })}
               </Txt>
+            ) : null}
+            {measure === "cgm" ? (
+              <CgmBrandNote
+                brand={cgmBrand}
+                onChange={setCgmBrandChoice}
+                store={store}
+                nightscout={nightscoutAvailable() && secureStoreAvailable()}
+              />
             ) : null}
             {nightscoutHandoff(measure) ? (
               <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>
