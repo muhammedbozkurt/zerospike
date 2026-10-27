@@ -823,11 +823,13 @@ const ja: TranslationSchema = {
     dayRowHint: "この日の曲線を開きます",
     proLock: "過去の日の曲線はProでご利用いただけます。直近24時間は常に無料です。",
     trend: {
-      up2: "急上昇中",
+      up2: "速く上昇中",
       up: "上昇中",
+      up45: "ゆるやかに上昇中",
       flat: "横ばい",
+      down45: "ゆるやかに下降中",
       down: "下降中",
-      down2: "急降下中",
+      down2: "速く下降中",
     },
   },
   cgmHome: {

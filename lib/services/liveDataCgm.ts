@@ -1,5 +1,6 @@
 import type { GlucoseUnit } from "../db/types";
 import { cgmTrend, TREND_MAX_AGE_MIN, type CgmTrend } from "../cgm/trend";
+import { formatTime } from "../format";
 import { formatGlucose } from "../glucose";
 
 /**
@@ -98,9 +99,11 @@ export async function loadCgmReadings(profileId: string): Promise<CgmReading[]> 
 
 const TREND_GLYPH: Record<CgmTrend, string> = {
   up2: "↑↑",
-  up: "↗",
+  up: "↑",
+  up45: "↗",
   flat: "→",
-  down: "↘",
+  down45: "↘",
+  down: "↓",
   down2: "↓↓",
 };
 
@@ -168,10 +171,11 @@ export function cgmWidgetModel(
   };
 }
 
-/** The Live Activity pill text: value plus arrow. The activity's content state
- *  has no age or fade, so a stale value is the bare number. */
-export function cgmReadingText(cgm: LiveCgm, nowMs: number): string {
-  if (isCgmStale(ageMinutes(cgm.at, nowMs))) return cgm.display;
-  const glyph = cgmTrendGlyph(cgm.trend);
-  return glyph ? `${cgm.display} ${glyph}` : cgm.display;
+/** The Live Activity pill text: the value and the clock time it was read at
+ *  ("142 · 14:05"). The activity's content state is written only when the app
+ *  syncs, so an arrow or a bare number would keep looking current on the lock
+ *  screen after the sensor stopped; the reading time stays true on its own. No
+ *  arrow, fresh or old. */
+export function cgmReadingText(cgm: LiveCgm): string {
+  return `${cgm.display} · ${formatTime(new Date(cgm.at).toISOString())}`;
 }

@@ -31,6 +31,13 @@ export function cgmWindowNeedsPro(endMs: number, nowMs: number): boolean {
   return endMs < nowMs - FREE_CGM_WINDOW_MS;
 }
 
+/** Where a free account's rows of a day begin: never before the last 24 hours,
+ *  so yesterday shows its tail only and the previous midnight is not a way
+ *  around the limit. Pro reads the whole day. */
+export function freeRowsStartMs(dayLoMs: number, nowMs: number, isPro: boolean): number {
+  return isPro ? dayLoMs : Math.max(dayLoMs, nowMs - FREE_CGM_WINDOW_MS);
+}
+
 export interface CurveRow {
   atMs: number;
   /** mg/dL. */

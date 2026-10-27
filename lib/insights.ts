@@ -325,7 +325,7 @@ export function computeInsights(
     gmi:
       avgGlucose == null
         ? null
-        : basis.kind === "cgm"
+        : basis.cgmCount > 0
           ? cgmGmiEligible(basis, win)
             ? gmiFromMean(avgGlucose)
             : null

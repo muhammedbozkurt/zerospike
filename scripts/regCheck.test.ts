@@ -66,7 +66,7 @@ console.log("zerospike reg-check exemption test");
 
 section("A. every exemption has a reason and terms");
 {
-  eq("exemption count (9 locales x 3 keys)", EXEMPTIONS.length, 27);
+  eq("exemption count (9 locales x 3 keys + 5 it Live Activity keys)", EXEMPTIONS.length, 32);
   for (const e of EXEMPTIONS) {
     ok(`reason ${e.locale}.${e.key}`, typeof e.reason === "string" && e.reason.length > 20);
     ok(`terms ${e.locale}.${e.key}`, Array.isArray(e.terms) && e.terms.length > 0);
@@ -212,6 +212,43 @@ section("I. store scan matcher also folds tr text");
     rules.buildAllMatcher("uyarır*", false, { locale: "tr" })(text).length;
   eq("store UYARIR", hits("SİZİ UYARIR"), 1);
   eq("store uyarır", hits("sizi uyarır"), 1);
+}
+
+section("J. real-time claims and diagnostic event wording are caught in every language");
+{
+  const cases: [string, string[], string[]][] = [
+    ["en", ["Real-time CGM readings", "See it in real time", "Live glucose on your lock screen", "Every hypoglycemic event is listed", "Hypoglycemia events from your sensor"], ["Your journal, in order", "Real estate", "Lives of others"]],
+    ["tr", ["Gerçek zamanlı CGM", "GERÇEK ZAMANLI takip", "Hipoglisemi olayları listelenir", "Hipoglisemik olay sayısı", "Hipoglisemi atakları"], ["Gerçek bir kayıt", "Zaman çizelgesi"]],
+    ["de", ["CGM-Werte in Echtzeit", "Unterzuckerungsereignisse werden gezählt", "Ein hypoglykämisches Ereignis", "Hypoglykämische Ereignisse"], ["Zeitverlauf des Tages"]],
+    ["fr", ["Votre glycémie en temps réel", "Chaque événement hypoglycémique"], ["Votre journal du jour"]],
+    ["es", ["Lecturas en tiempo real", "Eventos hipoglucémicos del día"], ["Su registro del día"]],
+    ["it", ["Valori in tempo reale", "Ogni evento ipoglicemico", "Eventi ipoglicemici del giorno"], ["Registrazione con CGM", "Il Suo diario"]],
+    ["pt", ["Leituras em tempo real", "Eventos hipoglicêmicos do dia"], ["Seu registro do dia"]],
+    ["ar", ["قراءات في الوقت الفعلي", "حدث نقص سكر الدم", "نوبة نقص سكر"], ["سجلك اليومي"]],
+    ["ja", ["リアルタイムの血糖値", "低血糖イベントの一覧", "低血糖発作の記録"], ["記録の一覧"]],
+  ];
+  for (const [locale, flagged, clean] of cases) {
+    const scan = (text: string) =>
+      (reg.scanLocaleEntries(locale, [["x", text]]) as { findings: Finding[] }).findings.length;
+    for (const t of flagged) ok(`${locale} flagged: ${t}`, scan(t) >= 1);
+    for (const t of clean) ok(`${locale} clean: ${t}`, scan(t) === 0);
+  }
+}
+
+section("K. the Italian Live Activity name is excused only under its own keys");
+{
+  const name = "Attività in tempo reale";
+  const it = (key: string) =>
+    (reg.scanLocaleEntries("it", [[key, name]]) as { findings: Finding[]; excused: number });
+  for (const key of ["widgetGuide.liveTitle", "widgetGuide.liveOn", "widgetGuide.liveOff", "widgetGuide.postMealBodyAndroid", "scWidgets.liveActivity"]) {
+    const r = it(key);
+    ok(`it ${key} excused`, r.findings.length === 0 && r.excused === 1);
+  }
+  eq("it elsewhere still a finding", it("cgmHome.watching").findings.length, 1);
+  const mixed = reg.scanLocaleEntries("it", [["widgetGuide.liveTitle", "Valori in tempo reale su Attività in tempo reale"]]) as { findings: Finding[]; excused: number };
+  ok("a second claim in an excused key is still excused by term (documented limit)", mixed.findings.length === 0);
+  const other = reg.scanLocaleEntries("tr", [["widgetGuide.liveTitle", "Gerçek zamanlı Canlı Etkinlik"]]) as { findings: Finding[] };
+  eq("tr Canlı Etkinlik name alone is clean, the claim is not", other.findings.length, 1);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

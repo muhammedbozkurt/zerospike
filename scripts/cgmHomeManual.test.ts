@@ -67,6 +67,7 @@ console.log("E. Pro: the home curve is free (inside 24 hours), older days are no
 {
   const sheet = read("components/CgmDaySheet.tsx");
   ok("a day is locked when it ended more than 24 hours ago and the account is not Pro", /!isProUser && cgmWindowNeedsPro\(range\.hiMs, Date\.now\(\)\)/.test(sheet));
+  ok("a free account's rows are cut to the last 24 hours", /getCgmWindowRows\(profileId, freeRowsStartMs\(range\.loMs, Date\.now\(\), isProUser\), range\.hiMs - 1\)/.test(sheet));
   ok("a locked day runs no query", /if \(!range \|\| !profileId \|\| locked\) \{\s*setRows\(\[\]\);\s*return;/.test(sheet));
   ok("the lock offers the existing upgrade path", /proCta\.upgrade/.test(sheet) && /pathname: "\/paywall"/.test(sheet));
   const card = read("components/CgmHomeCard.tsx");
