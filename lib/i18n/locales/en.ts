@@ -827,15 +827,6 @@ const en: TranslationSchema = {
     dayRowSub: "Avg. {{avg}} · {{share}} in range",
     dayRowHint: "Opens this day's curve",
     proLock: "Curves of earlier days are part of Pro. The last 24 hours are always free.",
-    trend: {
-      up2: "Rising quickly",
-      up: "Rising",
-      up45: "Rising slowly",
-      flat: "Steady",
-      down45: "Falling slowly",
-      down: "Falling",
-      down2: "Falling quickly",
-    },
   },
   cgmHome: {
     waiting: "Waiting for CGM",
@@ -1789,7 +1780,7 @@ const en: TranslationSchema = {
   },
   whatsNew: {
     title: "What's new",
-    itemCgm: "CGM mode: sensor readings that your CGM app writes to Apple Health or Health Connect are added to your journal, and the home screen shows a 3, 6 or 12 hour curve, the latest reading and the trend. Turn it on in Settings > Data sources; manual entry stays the default.",
+    itemCgm: "CGM mode: sensor readings that your CGM app writes to Apple Health or Health Connect are added to your journal, and the home screen shows a 3, 6 or 12 hour curve and the latest reading. Turn it on in Settings > Data sources; manual entry stays the default.",
     itemNightscout: "Nightscout connection: link your own Nightscout server to read its data (read only, Pro).",
     itemInsights: "Insights and the PDF report now show CGM coverage, time in range as a percentage, AGP and GMI.",
     itemSafeSave: "Safer saving: an entry that could not be saved is now reported with a clear message, and the value you typed is kept. Undo is safer too.",

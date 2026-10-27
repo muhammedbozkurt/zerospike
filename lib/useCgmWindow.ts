@@ -98,8 +98,6 @@ export interface CgmWindow {
   rows: CurveRow[];
   /** Newest sensor reading, whatever its age. */
   latest: { atMs: number; mgdl: number } | null;
-  /** The few newest sensor readings, for the direction arrow. */
-  trendReadings: { at: number; mgdl: number }[];
   today: CgmRangeStats;
   week: CgmRangeStats;
 }
@@ -111,7 +109,6 @@ const NOT_LOADED: CgmWindow = {
   endMs: 0,
   rows: [],
   latest: null,
-  trendReadings: [],
   today: EMPTY_STATS,
   week: EMPTY_STATS,
 };
@@ -181,9 +178,6 @@ export function useCgmWindow(input: {
           latest: newest && Number.isFinite(latestAt)
             ? { atMs: latestAt, mgdl: newest.glucose_level_mgdl }
             : null,
-          trendReadings: latestRows
-            .map((r) => ({ at: Date.parse(r.logged_at), mgdl: r.glucose_level_mgdl }))
-            .filter((r) => Number.isFinite(r.at)),
           today,
           week,
         });

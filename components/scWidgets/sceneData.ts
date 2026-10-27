@@ -64,7 +64,7 @@ export function sceneAnchor(mustBeFuture: boolean): number {
 export const SCENE_CGM_AGE_MIN = 4;
 
 /**
- * The same scene in a sensor mode: 112 mg/dL, flat, 4 minutes old. The Android
+ * The same scene in a sensor mode: 112 mg/dL, 4 minutes old. The Android
  * builders measure the age against the real clock (they run on a home screen),
  * so `base` is the real now there and the anchor everywhere else.
  */
@@ -76,7 +76,7 @@ export function sceneCgmSnapshot(snapshot: LiveData, anchor: number, base: numbe
     cgm: {
       mgdl: SCENE_LAST_MGDL,
       at: base - SCENE_CGM_AGE_MIN * MIN,
-      trend: "flat",
+      trend: null,
       ageMin: SCENE_CGM_AGE_MIN,
       display: formatGlucose(SCENE_LAST_MGDL, scene.unit),
     },

@@ -66,13 +66,11 @@ for (const f of NEW_FILES) {
 const curve = "components/charts/CgmCurve.tsx";
 must(curve, /accessible\s+accessibilityRole="image"\s+accessibilityLabel=\{summary\}/,"curve is one image element labelled by its summary");
 
-// Home card: window in the summary, hours choice, trend text, loading state.
+// Home card: window in the summary, hours choice, loading state.
 const home = "components/CgmHomeCard.tsx";
 must(home, 't("cgmCurve.windowSummary"', "chart summary names its window (last N hours)");
 must(home, 't("cgmCurve.hoursA11y", { n: h })', "hours chips speak 'last N hours'");
 must(home, /a11yLabel: `\$\{t\("cgmCurve\.hours", \{ n: h \}\)\}, /, "chip's spoken label starts with its visible text (Voice Control)");
-must(home, "accessibilityLabel={label}", "trend arrow has a text equivalent");
-must(home, "t(`cgmCurve.trend.${trend}`)", "trend text comes from cgmCurve.trend.*");
 must(home, /accessibilityState=\{\{ busy: true \}\}/, "loading placeholder announces busy");
 must("components/ui.tsx", "opt.a11yLabel ?? opt.label", "Segmented honours a spoken label per option");
 
@@ -142,9 +140,8 @@ must("app/calculator.tsx", 'accessibilityRole="header"', "title is a header", re
 must("components/WhatsNewSheet.tsx", "closeLabel={t(\"common.close\")}", "sheet close is labelled");
 must("components/WhatsNewSheet.tsx", "HIDDEN_FROM_A11Y", "bullet dots are decoration");
 
-// Locales: spoken strings exist in all nine languages, no em dash, trend text complete.
+// Locales: spoken strings exist in all nine languages, no em dash.
 const LANGS = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
-const TREND = ["up2", "up", "up45", "flat", "down45", "down", "down2"];
 for (const l of LANGS) {
   const mod = require(`../lib/i18n/locales/${l}`);
   const dict = mod.default ?? mod;
@@ -155,7 +152,6 @@ for (const l of LANGS) {
     "reminders.a11yOn",
     "reminders.a11yOff",
     "reminders.a11yToggle",
-    ...TREND.map((k) => `cgmCurve.trend.${k}`),
   ];
   for (const key of needed) {
     checks++;

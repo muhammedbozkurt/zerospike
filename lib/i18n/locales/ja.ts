@@ -827,15 +827,6 @@ const ja: TranslationSchema = {
     dayRowSub: "平均 {{avg}}・目標内 {{share}}",
     dayRowHint: "この日の曲線を開きます",
     proLock: "過去の日の曲線はProでご利用いただけます。直近24時間は常に無料です。",
-    trend: {
-      up2: "速く上昇中",
-      up: "上昇中",
-      up45: "ゆるやかに上昇中",
-      flat: "横ばい",
-      down45: "ゆるやかに下降中",
-      down: "下降中",
-      down2: "速く下降中",
-    },
   },
   cgmHome: {
     waiting: "CGMを待っています",
@@ -1789,7 +1780,7 @@ const ja: TranslationSchema = {
   },
   whatsNew: {
     title: "新機能",
-    itemCgm: "CGMモード：CGMアプリがヘルスケアやHealth Connectに書き込んだセンサーの測定値が記録に追加され、ホーム画面で3・6・12時間の曲線、最新の測定値、傾向を確認できます。設定 > データソースでオンにできます。手入力は引き続き標準の設定です。",
+    itemCgm: "CGMモード：CGMアプリがヘルスケアやHealth Connectに書き込んだセンサーの測定値が記録に追加され、ホーム画面で3・6・12時間の曲線と最新の測定値を確認できます。設定 > データソースでオンにできます。手入力は引き続き標準の設定です。",
     itemNightscout: "Nightscout連携：ご自身のNightscoutサーバーを接続して、データを読み取れます（読み取り専用、Pro）。",
     itemInsights: "分析とPDFレポートに、CGMのカバー率、目標範囲内の時間の割合、AGP、GMIが表示されます。",
     itemSafeSave: "記録の保存がより安全になりました。保存できなかった記録ははっきりしたメッセージでお知らせし、入力した値は残ります。元に戻すも、より安全になりました。",
