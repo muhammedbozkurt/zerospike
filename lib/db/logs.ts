@@ -12,6 +12,8 @@ import {
   deleteImportedGlucose,
   importGlucoseRows,
   importHealthSamples,
+  KNOWN_CGM_MIN_ROWS,
+  knownCgmSql,
   planHealthImport,
   SUGAR_DEDUP_WINDOW_MINUTES,
   type ExistingSugarReading,
@@ -428,8 +430,9 @@ export async function insertImportedGlucose(
 
 /**
  * What a source app already delivered, for sensor detection (lib/cgm/detect.ts):
- * the times of its stored readings in a span, and whether it has any sensor row
- * in the last 30 days. Imported rows only; a typed reading is never a source's.
+ * the times of its stored readings in a span, and whether it has at least
+ * KNOWN_CGM_MIN_ROWS sensor rows in the last 30 days (one row from a chance
+ * match is not a history). Imported rows only; a typed reading is never a source's.
  */
 export async function getImportedSourceHistory(
   profileId: string,
@@ -449,15 +452,15 @@ export async function getImportedSourceHistory(
       ORDER BY logged_at;`,
     [profileId, source, ...appParams, sinceIso, untilIso]
   );
-  const known = await db.getFirstAsync<{ one: number }>(
-    `SELECT 1 AS one FROM sugar_logs
-      WHERE profile_id = ? AND source = ? AND ${appClause}
-        AND is_cgm = 1 AND logged_at >= ? LIMIT 1;`,
-    [profileId, source, ...appParams, new Date(nowMs - 30 * 86_400_000).toISOString()]
-  );
+  const known = await db.getFirstAsync<{ c: number }>(knownCgmSql(appClause), [
+    profileId,
+    source,
+    ...appParams,
+    new Date(nowMs - 30 * 86_400_000).toISOString(),
+  ]);
   return {
     timesMs: rows.map((r) => Date.parse(r.logged_at)).filter((t) => Number.isFinite(t)),
-    knownCgm: known != null,
+    knownCgm: (known?.c ?? 0) >= KNOWN_CGM_MIN_ROWS,
   };
 }
 

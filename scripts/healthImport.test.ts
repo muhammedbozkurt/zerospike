@@ -181,7 +181,7 @@ section("J. the old source-scoped dedupe query is gone (regression)");
   ok(
     "insertHealthSugarLogs routes its insert decision through the shared planner",
     /importHealthSamples\(db, profileId, samples, uuid\)/.test(logsSrc) &&
-      /planGlucoseImport\(rows, existing, tombstones\)/.test(sqlSrc)
+      /planGlucoseImport\(rows, existing, tombstones, mirrorStreams\)/.test(sqlSrc)
   );
 }
 
