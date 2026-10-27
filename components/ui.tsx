@@ -481,7 +481,7 @@ export function SegmentedStat({
               ? undefined
               : stacked
                 ? { borderTopWidth: 1, borderTopColor: THEME.border }
-                : { borderLeftWidth: 1, borderLeftColor: THEME.border }
+                : { borderStartWidth: 1, borderStartColor: THEME.border }
           }
         >
           {stacked ? (

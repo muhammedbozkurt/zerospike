@@ -327,7 +327,7 @@ function WeekSkeleton() {
           <View
             key={i}
             className="flex-1 items-center px-1"
-            style={i > 0 ? { borderLeftWidth: 1, borderLeftColor: THEME.border } : undefined}
+            style={i > 0 ? { borderStartWidth: 1, borderStartColor: THEME.border } : undefined}
           >
             <Skeleton width={40} height={18} radius={4} style={{ marginBottom: 4 }} />
             <Skeleton width={54} height={11} radius={4} />

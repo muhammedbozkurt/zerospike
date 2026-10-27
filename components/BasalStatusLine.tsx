@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
 
 import { HIT_TARGET, SPACE, THEME } from "../lib/theme/tokens";
-import { formatTime, isolateLtr, num } from "../lib/format";
+import { basalTodaySummary, formatTime, num } from "../lib/format";
 import { getActiveLang } from "../lib/lang";
 import { Button, Card, Txt } from "./ui";
 
@@ -46,15 +46,16 @@ export function BasalStatusLine({
         <Txt kind="caption" numberOfLines={2} style={{ fontWeight: "700", flexShrink: 1 }}>
           {record
             ? t("dashboard.basalTodayLine", {
-                // "22:30, 24 U" is one purely-LTR run; composed and isolated
-                // as a single block (lib/format's LRI/PDI wrap) so RTL never
-                // reorders the time against the dose - same pattern as
-                // components/CarbRatioLine.tsx. The separator matches what
-                // each locale's own (now-merged) template used to spell out
-                // itself - only ja's list comma differs from the rest.
-                summary: isolateLtr(
-                  `${formatTime(record.loggedAt)}${getActiveLang() === "ja" ? "、" : ", "}${num(record.units)} ${t("common.unitsShort")}`
-                ),
+                // One run per language (lib/format basalTodaySummary): the
+                // Arabic time/unit words need per-part isolates, others stay
+                // one LTR block as before.
+                summary: basalTodaySummary({
+                  lang: getActiveLang(),
+                  time: formatTime(record.loggedAt),
+                  units: num(record.units),
+                  unitShort: t("common.unitsShort"),
+                  unitLong: t("common.units"),
+                }),
               })
             : t("dashboard.basalPendingLine")}
         </Txt>
