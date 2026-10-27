@@ -939,14 +939,14 @@ const GOOGLE_DISCLOSURE_REASON =
   "Google Play Health Content policy: non-device health apps must state in the store description that the app is not a medical device and does not diagnose, treat, cure, or prevent any medical condition; the banned words are allowed only inside this exact sentence";
 const GOOGLE_DISCLOSURE_SENTENCES = {
   en: ["not a medical device and does not diagnose, treat, cure, or prevent any medical condition"],
-  tr: [],
-  de: [],
-  fr: [],
-  es: [],
-  it: [],
-  pt: [],
-  ar: [],
-  ja: [],
+  tr: ["tıbbi bir cihaz değildir; herhangi bir tıbbi durumu teşhis etmez, tedavi etmez, iyileştirmez ve önlemez"],
+  de: ["kein Medizinprodukt und diagnostiziert, behandelt, heilt oder verhindert keine Erkrankung"],
+  fr: ["n'est pas un dispositif médical et ne diagnostique, ne traite, ne guérit ni ne prévient aucune affection médicale"],
+  es: ["no es un dispositivo médico y no diagnostica, trata, cura ni previene ninguna afección médica"],
+  it: ["non è un dispositivo medico e non diagnostica, non tratta, non guarisce e non previene alcuna condizione medica"],
+  pt: ["não é um dispositivo médico e não diagnostica, trata, cura nem previne nenhuma condição médica"],
+  ar: ["ليس جهازًا طبيًا ولا يشخّص أي حالة طبية ولا يعالجها ولا يشفيها ولا يمنع حدوثها"],
+  ja: ["医療機器ではなく、いかなる病気や症状についても、診断、治療、治癒、予防を行うものではありません"],
 };
 
 // [start, end) spans of the Google disclosure sentence in a store line whose
