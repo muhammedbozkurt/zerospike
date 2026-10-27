@@ -112,6 +112,9 @@ const MAX_WINDOW_MS = LEGACY_WINDOW_MS;
 /** How far the nearest sensor row each side of a mirrored value may lie
  *  (cgmSql.ts SENSOR_BRACKET_SECONDS). */
 const TWIN_BRACKET_MS = 330_000;
+/** How far before a non-sensor candidate a sensor row of another stream still
+ *  puts it in a CGM context (cgmSql.ts SENSOR_CONTEXT_LEAD_SECONDS). */
+const CGM_CONTEXT_LEAD_MS = 6 * 3600_000;
 
 export interface PlanCandidate {
   atMs: number;
@@ -209,6 +212,13 @@ function streamKey(source: string, sourceApp: string | null): string {
  *     non-sensor row is the old "typed twice" duplicate. Sensor rows are not
  *     part of this rule, and neither is a sensor candidate: consecutive equal
  *     readings of a flat stretch are real.
+ *  In a CGM context (a sensor row of another stream, stored or in this batch,
+ *  lies in [candidate - 6 h, candidate + 150 s]) rules 4 and 6 do not drop a
+ *  non-sensor candidate because of a non-manual non-sensor row of ANOTHER
+ *  stream at all: the sensor feed may not have arrived yet, so a mirror cannot
+ *  be told from a real glucometer reading, and a lost reading is permanent
+ *  while a double row is only shown twice (opus11). Same-stream de-duplication
+ *  is unchanged.
  *  Rules 4 and 6 never drop a non-sensor candidate because of a non-sensor row
  *  of ANOTHER stream that is itself a sensor twin (its value sits in the
  *  band of the sensor rows of yet another stream around it, stored or in this
@@ -275,6 +285,25 @@ export function planGlucoseImport(
       r.mgdl <= Math.max(p, n) + SAME_READING_TOLERANCE_MGDL
     );
   };
+  const contextMemo = new Map<PlanCandidate, boolean>();
+  const inCgmContext = (c: PlanCandidate): boolean => {
+    const known = contextMemo.get(c);
+    if (known !== undefined) return known;
+    const stream = streamKey(c.source, c.sourceApp);
+    let found = false;
+    for (let i = lowerBound(sensorMs, c.atMs - CGM_CONTEXT_LEAD_MS); i < sensorPool.length && sensorMs[i] <= c.atMs + SAME_READING_WINDOW_MS; i++) {
+      if (streamKey(sensorPool[i].source, sensorPool[i].sourceApp) !== stream) {
+        found = true;
+        break;
+      }
+    }
+    contextMemo.set(c, found);
+    return found;
+  };
+  // A non-sensor candidate is never matched to a non-manual non-sensor row of
+  // another stream while it sits in a CGM context.
+  const crossStreamExempt = (c: PlanCandidate, other: { isCgm: boolean; source: string }, otherIsOtherStream: boolean): boolean =>
+    otherIsOtherStream && !c.isCgm && !other.isCgm && other.source !== "manual" && inCgmContext(c);
   const owned = new Set<number>();
   const accepted: PlanCandidate[] = [];
   const acceptedMs: number[] = [];
@@ -332,7 +361,7 @@ export function planGlucoseImport(
         continue;
       }
       const eStream = streamKey(e.source, e.sourceApp);
-      if (tight && c.isCgm === e.isCgm && eStream !== cStream && !isSensorTwin(e)) {
+      if (tight && c.isCgm === e.isCgm && eStream !== cStream && !isSensorTwin(e) && !crossStreamExempt(c, e, true)) {
         skip = true;
         break;
       }
@@ -345,7 +374,7 @@ export function planGlucoseImport(
         !e.isCgm &&
         e.mgdl === c.mgdl &&
         dt <= LEGACY_WINDOW_MS &&
-        !(eStream !== cStream && isSensorTwin(e))
+        !(eStream !== cStream && (isSensorTwin(e) || crossStreamExempt(c, e, true)))
       ) {
         skip = true;
         break;
@@ -365,7 +394,7 @@ export function planGlucoseImport(
       const dv = Math.abs(a.mgdl - c.mgdl);
       const tight = dt <= SAME_READING_WINDOW_MS && dv <= SAME_READING_TOLERANCE_MGDL;
       const aOther = streamKey(a.source, a.sourceApp) !== cStream;
-      if (tight && c.isCgm === a.isCgm && aOther && !isSensorTwin(a)) {
+      if (tight && c.isCgm === a.isCgm && aOther && !isSensorTwin(a) && !crossStreamExempt(c, a, true)) {
         skip = true;
         break;
       }
@@ -373,7 +402,7 @@ export function planGlucoseImport(
         skip = true;
         break;
       }
-      if (!c.isCgm && !a.isCgm && a.mgdl === c.mgdl && dt <= LEGACY_WINDOW_MS && !(aOther && isSensorTwin(a))) {
+      if (!c.isCgm && !a.isCgm && a.mgdl === c.mgdl && dt <= LEGACY_WINDOW_MS && !(aOther && (isSensorTwin(a) || crossStreamExempt(c, a, true)))) {
         skip = true;
         break;
       }
@@ -606,6 +635,16 @@ async function importChunk(
       [profileId, from, to]
     );
     for (const r of found) existingById.set(r.id, r);
+    // Sensor rows up to 6 h before the range: only the CGM-context test of the
+    // planner looks at them (one range on idx_sugar_cgm).
+    const lead = await txn.getAllAsync<ExistingRowSql>(
+      `SELECT id, logged_at, glucose_level_mgdl, source, source_app, external_id, is_cgm, period_tag,
+              0 AS meal_linked
+         FROM sugar_logs
+        WHERE profile_id = ? AND is_cgm = 1 AND logged_at >= ? AND logged_at < ?;`,
+      [profileId, new Date(fromMs - CGM_CONTEXT_LEAD_MS).toISOString(), from]
+    );
+    for (const r of lead) if (!existingById.has(r.id)) existingById.set(r.id, r);
     const removed = await txn.getAllAsync<ExistingSugarReading>(
       `SELECT logged_at, glucose_level_mgdl FROM health_import_tombstones
         WHERE profile_id = ? AND logged_at BETWEEN ? AND ?;`,
