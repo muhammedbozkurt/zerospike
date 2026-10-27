@@ -5,6 +5,7 @@ import { insertImportedGlucose } from "../db/logs";
 import { getProfile, listProfiles } from "../db/profiles";
 import { safeNightscoutError } from "../nightscout/safeError";
 import {
+  awaitNightscoutIdle,
   connectNightscout,
   disconnectNightscout,
   nightscoutSecretKey,
@@ -84,6 +85,9 @@ export async function disconnectNightscoutFor(
   options: { deleteReadings: boolean }
 ): Promise<{ removed: number }> {
   await disconnectNightscout(profileId, deps());
+  // A sync that was mid-insert when the connection went must finish before the
+  // rows are deleted, or its last batch would land after the delete.
+  await awaitNightscoutIdle(profileId);
   let removed = 0;
   if (options.deleteReadings) removed = await deleteNightscoutReadings(profileId);
   return { removed };

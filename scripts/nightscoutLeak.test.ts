@@ -227,7 +227,10 @@ async function main(): Promise<void> {
 
     await svc.disconnectNightscoutFor("P1", { deleteReadings: false });
     ok("disconnect empties the secure store", nativeVault.size === 0);
-    ok("disconnect empties plain state", kv.size === 0);
+    ok(
+      "disconnect leaves only a disconnected marker in plain state",
+      [...kv.values()].every((v) => JSON.parse(v).connected === false)
+    );
     clean("after disconnect");
   }
 
@@ -245,6 +248,7 @@ async function main(): Promise<void> {
       threw = true;
     }
     ok("writing throws instead of falling back to a weaker store", threw);
+    kv.clear();
     const c = await svc.connectNightscoutFor("P1", { url: URL_IN, token: TOKEN });
     ok("connect refuses", !c.ok && c.detail === "unavailable");
     eq("nothing in plain storage", kv.size, 0);

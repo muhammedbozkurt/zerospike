@@ -56,6 +56,8 @@ export const PROFILE_SCOPED_KEY_BASES = [
   "zerospike.cgmPostMealPending",
   /** lib/useCgmWindow.ts - the sensor curve window (3, 6 or 12 hours) last chosen. */
   "zerospike.cgmCurveHours",
+  /** lib/nightscout/sync.ts - the "Delete data" floor; a disconnect keeps it, a profile delete clears it. */
+  "zerospike.nightscoutFloor",
 ] as const;
 
 /** The concrete keys one profile owns. The scoped form is always

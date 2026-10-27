@@ -207,6 +207,7 @@
     "plugins": [
       "expo-router",
       "./plugins/withAndroidNavBarContrast",
+      "./plugins/withAndroidBackupRules",
       "./plugins/withAndroidPermissionTrim",
       "./plugins/withAndroidProguardRules",
       "./plugins/withGradleHeap",
@@ -214,7 +215,7 @@
       [
         "expo-secure-store",
         {
-          "configureAndroidBackup": true,
+          "configureAndroidBackup": false,
           "faceIDPermission": false
         }
       ],
