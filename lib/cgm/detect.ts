@@ -11,6 +11,8 @@ export const CGM_CADENCE_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const CGM_CADENCE_MIN_SAMPLES = 36;
 /** ...whose consecutive gaps have a median of at most this, is a sensor. */
 export const CGM_CADENCE_MAX_MEDIAN_GAP_MS = 6 * 60 * 1000;
+/** Readings of one app closer than this are one reading written more than once. */
+export const CGM_SAME_READING_MS = 30 * 1000;
 /** With a supporting hint (name, specimen), a thinner stream is enough. */
 export const CGM_HINT_MIN_SAMPLES = 12;
 
@@ -163,12 +165,13 @@ export function detectCgmSource(
   if (times.length === 0) {
     return { isCgm: false, reason: samples.length > 0 ? "manual" : "none" };
   }
-  // An app that writes each reading several times under one timestamp must not
-  // pass for a dense stream: equal times count once.
+  // An app that writes each reading several times, under one timestamp or a
+  // second or two apart, must not pass for a dense stream: times within
+  // CGM_SAME_READING_MS of the last counted one are the same reading.
   times.sort((a, b) => a - b);
   let unique = 0;
   for (let i = 0; i < times.length; i++) {
-    if (i === 0 || times[i] !== times[unique - 1]) times[unique++] = times[i];
+    if (i === 0 || times[i] - times[unique - 1] >= CGM_SAME_READING_MS) times[unique++] = times[i];
   }
   times.length = unique;
 
