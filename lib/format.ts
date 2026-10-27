@@ -149,6 +149,34 @@ export function isolateLtr(s: string): string {
   return `${LRI}${s}${PDI}`;
 }
 
+const FSI = "⁨";
+
+/** Wraps `s` in a first-strong isolate: the run takes its own direction from
+ *  its first strong letter and never reorders against the surrounding text. */
+export function isolateAuto(s: string): string {
+  return `${FSI}${s}${PDI}`;
+}
+
+/**
+ * The value after "Basal today:" - time and dose. Latin-script languages keep
+ * one LTR block ("22:30, 24 U"; ja uses its list comma). Arabic carries an
+ * Arabic AM/PM letter in the time and an Arabic unit word, so a single LTR
+ * block reorders them; there each part is its own auto-direction isolate,
+ * joined by the Arabic comma, and the long unit word replaces "U".
+ */
+export function basalTodaySummary(p: {
+  lang: string;
+  time: string;
+  units: string;
+  unitShort: string;
+  unitLong: string;
+}): string {
+  if (p.lang === "ar") {
+    return `${isolateAuto(p.time)}، ${isolateAuto(`${p.units} ${p.unitLong}`)}`;
+  }
+  return isolateLtr(`${p.time}${p.lang === "ja" ? "、" : ", "}${p.units} ${p.unitShort}`);
+}
+
 /** Opens an LTR isolate around `s` without closing it - for smuggling the
  *  boundary through an i18n template this code cannot edit, e.g.
  *  `t("x", { min: openLtrIsolate(min), max: closeLtrIsolate(max) })` against
