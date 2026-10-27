@@ -478,6 +478,72 @@ section("H. G252: an estimated A1C is banned in both word orders, GMI and the la
   }
 }
 
+section("I. G252: up to three words between the estimate word and A1C, both orders, nine languages");
+{
+  const gapped: Record<string, { flagged: string[]; clean: string[] }> = {
+    en: {
+      flagged: ["an estimate based on your A1C", "A1C shown here as estimate"],
+      clean: [
+        "an estimate based on all your lab A1C",
+        "Estimated carbs, then your lab A1C",
+        "Your lab A1C: carbs are estimates",
+        "estimate of carbs",
+      ],
+    },
+    tr: {
+      flagged: ["tahmini olarak hesaplanan A1C", "A1C sonucunuz için tahmin"],
+      clean: ["tahmini karbonhidrat", "Tahmini karbonhidrat değeri", "Besin değerleri tahminidir, tıbbi referans değildir."],
+    },
+    de: {
+      flagged: ["geschätzt für Ihren aktuellen HbA1c", "HbA1c laut Ihrem Durchschnitt geschätzt"],
+      clean: ["Schätzung der Kohlenhydrate", "geschätzte Kohlenhydrate"],
+    },
+    fr: {
+      flagged: ["estimée à partir de HbA1c", "HbA1c de votre bilan estimée"],
+      clean: ["l'estimation des glucides", "Une estimation des glucides, votre HbA1c reste la vôtre"],
+    },
+    es: {
+      flagged: ["estimada según su promedio A1C", "A1C de su laboratorio estimada"],
+      clean: ["estimación de carbohidratos", "carbohidratos estimados"],
+    },
+    it: {
+      flagged: ["stima calcolata dalla media HbA1c", "HbA1c della media stimata"],
+      clean: ["stima dei carboidrati", "carboidrati stimati"],
+    },
+    pt: {
+      flagged: ["uma estimativa do seu A1C", "estimativa calculada da sua A1c"],
+      clean: ["estimativa de carboidratos", "carboidratos estimados", "estimativa baseada na média do A1C"],
+    },
+    ar: {
+      flagged: [
+        "تقدير للسكر التراكمي A1C",
+        "تقدير تقريبي لقيمة A1C",
+        "السكر التراكمي المقدر",
+        "A1C لديك خلال الفترة تقدير",
+        "تقدير السكر التراكمي",
+      ],
+      clean: [
+        "تقدير الإنسولين",
+        "التقديرات",
+        "تقديرية",
+        "القيم الغذائية تقديرية وليست مرجعًا طبيًا.",
+        "تقدير الجرعة",
+        "تقديرات الإنسولين والكربوهيدرات المعروضة لغرض المعلومات فقط",
+        "السكر التراكمي",
+        "نتيجة A1C من المختبر",
+      ],
+    },
+    ja: {
+      flagged: ["推定された血液A1C", "A1Cの目安となる推定"],
+      clean: ["炭水化物の推定", "検査のA1C結果"],
+    },
+  };
+  for (const [locale, { flagged, clean }] of Object.entries(gapped)) {
+    for (const t of flagged) ok(`${locale} gap flagged: ${t}`, count(locale, t) >= 1);
+    for (const t of clean) ok(`${locale} gap clean: ${t}`, count(locale, t) === 0);
+  }
+}
+
 section("F. Google Play disclosure sentence: narrow, anchored, same-language store files only");
 {
   const fs = require("fs");
