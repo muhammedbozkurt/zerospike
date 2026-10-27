@@ -51,18 +51,25 @@ export const SENSOR_TWIN_TOLERANCE_MGDL = 1;
 /** How far the nearest sensor row on each side of a mirrored value may lie: a
  *  little over the 270 s the import thins a stream to. */
 export const SENSOR_BRACKET_SECONDS = 330;
+/** Dose path only: how far BEFORE a non-sensor row a sensor row of another
+ *  stream still marks it as part of a running sensor context. At the live edge
+ *  the sensor feed lags (Nightscout minutes, Dexcom through Health hours), so a
+ *  symmetric 150 s window misses it and an imported mirror copy would be offered
+ *  to the calculator. */
+export const SENSOR_CONTEXT_LEAD_SECONDS = 6 * 3600;
 
 /** Sensor rows of another stream (source or app differs) within `windowSeconds`
- *  (default 150) of the row aliased `a`, narrowed by `extra`. One range on
- *  idx_sugar_cgm. */
+ *  (default 150) after and `leadSeconds` (default the same) before the row
+ *  aliased `a`, narrowed by `extra`. One range on idx_sugar_cgm. */
 function otherStreamSensorSql(
   a: string,
   extra = "",
-  windowSeconds = SENSOR_NEAR_WINDOW_SECONDS
+  windowSeconds = SENSOR_NEAR_WINDOW_SECONDS,
+  leadSeconds = windowSeconds
 ): string {
   return `SELECT 1 FROM sugar_logs tw
          WHERE tw.profile_id = ${a}.profile_id AND tw.is_cgm = 1
-           AND tw.logged_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ${a}.logged_at, '-${windowSeconds} seconds')
+           AND tw.logged_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ${a}.logged_at, '-${leadSeconds} seconds')
                                 AND strftime('%Y-%m-%dT%H:%M:%fZ', ${a}.logged_at, '+${windowSeconds} seconds')
            AND (tw.source IS NOT ${a}.source OR tw.source_app IS NOT ${a}.source_app)${extra}`;
 }
@@ -136,9 +143,10 @@ export function notSensorTwinSql(alias: string): string {
 /**
  * Rows that may feed a dose, whatever their value: typed, labelled or
  * meal-linked rows always; any other non-sensor row only when no sensor row of
- * another stream is within 150 s. A mirror of a 1 minute stream cannot slip
- * through between two kept sensor values this way. Accepted consequence: while a
- * sensor runs, a fingerstick that reaches the app only through Health is not
+ * another stream lies in [row - 6 h, row + 150 s]. A mirror of a 1 minute stream
+ * cannot slip through between two kept sensor values this way, nor at the live
+ * edge where the sensor feed has not caught up yet (opus11). Accepted
+ * consequence: while a sensor runs, a fingerstick that reaches the app only through Health is not
  * offered to the calculator (the user can type the value, and a typed reading is
  * always offered).
  */
@@ -146,7 +154,7 @@ export function doseEligibleSql(alias: string): string {
   const a = alias;
   return `(${a}.source = 'manual' OR ${a}.period_tag <> 'unset'
         OR EXISTS (SELECT 1 FROM meal_logs ml WHERE ml.sugar_log_id = ${a}.id)
-        OR NOT EXISTS (${otherStreamSensorSql(a)}))`;
+        OR NOT EXISTS (${otherStreamSensorSql(a, "", SENSOR_NEAR_WINDOW_SECONDS, SENSOR_CONTEXT_LEAD_SECONDS)}))`;
 }
 
 /**

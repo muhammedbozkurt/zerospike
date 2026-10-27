@@ -247,7 +247,7 @@ async function main(): Promise<void> {
     eq("F2: a 3 s exact copy is not converted either", count(db, "external_id='hk-m1' AND is_cgm=0"), 1);
     await importGlucoseRows(host, "P", [meter(240, 0, 180, "hk-m2")], nid, NOW);
     eq("F2: the next reading of that app is stored as a hand reading", count(db, "external_id='hk-m2' AND is_cgm=0"), 1);
-    ok("F2: and sits in the dose path", dose(db) >= 1);
+    ok("F2: and, with a sensor row of another stream 6 h behind it (opus11), is not in the dose path", dose(db) === 0);
 
     const sql = (Sql as Record<string, unknown>).knownCgmSql as undefined | ((clause: string) => string);
     const minRows = (Sql as Record<string, unknown>).KNOWN_CGM_MIN_ROWS as number | undefined;
