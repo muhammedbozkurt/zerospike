@@ -62,6 +62,10 @@ interface ConfirmOptions {
   cancelLabel?: string;
   destructive?: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
+  /** Called when the dialog is torn down WITHOUT an answer (its host went away,
+   *  or another dialog replaced it), just before the promise settles. A caller
+   *  whose answer is stored once uses it to tell "never answered" from "Later". */
+  onAbandon?: () => void;
 }
 
 export interface SheetAction {
@@ -171,17 +175,21 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const [hosts, setHosts] = useState<readonly number[]>([]);
   const hostsRef = useRef<readonly number[]>([]);
 
+  const abandonCb = useRef<(() => void) | null>(null);
   const closeConfirm = useCallback((result: boolean | null) => {
+    abandonCb.current = null;
     resolver.current?.(result);
     resolver.current = null;
     resolverIsChoose.current = false;
     confirmOwner.current = null;
     setConfirmOpts(null);
   }, []);
-  const abandonConfirm = useCallback(
-    () => closeConfirm(resolverIsChoose.current ? null : false),
-    [closeConfirm]
-  );
+  const abandonConfirm = useCallback(() => {
+    const cb = abandonCb.current;
+    abandonCb.current = null;
+    cb?.();
+    closeConfirm(resolverIsChoose.current ? null : false);
+  }, [closeConfirm]);
 
   const closeSheet = useCallback(() => {
     sheetOwner.current = null;
@@ -358,6 +366,8 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
 
   const openConfirm = useCallback((opts: ConfirmOptions, isChoose: boolean) => {
     // A dialog left dangling by a previous caller never blocks a new one.
+    abandonCb.current?.();
+    abandonCb.current = opts.onAbandon ?? null;
     resolver.current?.(resolverIsChoose.current ? null : false);
     resolverIsChoose.current = isChoose;
     confirmOwner.current = activeHostId(hostsRef.current);

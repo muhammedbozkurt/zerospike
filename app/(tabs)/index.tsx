@@ -99,6 +99,7 @@ import {
   type SyncResult,
 } from "../../lib/services/health";
 import { undoNewGlucose } from "../../lib/services/glucoseUndo";
+import { runHealthWriteAsk } from "../../lib/healthWriteAsk";
 import { healthWriteAskSeen, markHealthWriteAskSeen } from "../../lib/services/healthWritePrompt";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
@@ -1686,18 +1687,23 @@ export default function DashboardScreen() {
       // Marked only once Health is known to be usable here: an unavailable
       // Health Connect must not use up the one question.
       if (!(await isHealthAvailable())) return false;
-      await markHealthWriteAskSeen();
       const many = profiles.length > 1 && activeProfile ? displayProfileName(activeProfile, t) : undefined;
-      const yes = await confirm({
-        title: t("dashboard.healthWriteAskTitle", { health: HEALTH_NAME }),
-        message:
-          t("dashboard.healthWriteAskBody", { health: HEALTH_NAME }) +
-          (many ? `\n\n${t("dashboard.healthWriteAskProfile", { name: many })}` : ""),
-        confirmLabel: t("dashboard.healthWriteAskYes"),
-        cancelLabel: t("dashboard.healthWriteAskLater"),
-        icon: "heart-outline",
+      // Marked only once answered: a dialog torn down unanswered keeps the question.
+      const outcome = await runHealthWriteAsk({
+        markAsked: markHealthWriteAskSeen,
+        show: (onAbandon) =>
+          confirm({
+            title: t("dashboard.healthWriteAskTitle", { health: HEALTH_NAME }),
+            message:
+              t("dashboard.healthWriteAskBody", { health: HEALTH_NAME }) +
+              (many ? `\n\n${t("dashboard.healthWriteAskProfile", { name: many })}` : ""),
+            confirmLabel: t("dashboard.healthWriteAskYes"),
+            cancelLabel: t("dashboard.healthWriteAskLater"),
+            icon: "heart-outline",
+            onAbandon,
+          }),
       });
-      if (!yes) return true;
+      if (outcome !== "yes") return true;
       if (!(await requestHealthWritePermission())) {
         await onHealthWriteDenied();
         return true;
