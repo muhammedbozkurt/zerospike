@@ -58,6 +58,8 @@ function DownsellScreen() {
   const { toast } = useFeedback();
   const [offer, setOffer] = useState<DownsellOffer | null>(null);
   const [busy, setBusy] = useState(false);
+  // A payment held for approval: the CTA stays off so the parent gets no second request.
+  const [awaitingApproval, setAwaitingApproval] = useState(false);
   const recordedRef = useRef(false);
 
   useEffect(() => {
@@ -116,12 +118,13 @@ function DownsellScreen() {
   }
 
   async function accept() {
-    if (busy || !offer?.hasRealDiscount) return;
+    if (busy || awaitingApproval || !offer?.hasRealDiscount) return;
     setBusy(true);
     try {
       const res = await purchaseDownsell();
       await refreshPro();
       const feedback = purchaseToastFor(res);
+      if (res.error === "pending") setAwaitingApproval(true);
       // A payment held for approval reports nothing until it is approved.
       if (res.error !== "pending") {
         logEvent("purchase_result", {
@@ -218,7 +221,7 @@ function DownsellScreen() {
 
               <GradientCTA
                 label={t("downsell.acceptCta")}
-                disabled={busy}
+                disabled={busy || awaitingApproval}
                 onPress={accept}
                 style={{ width: "100%", maxWidth: 420, alignSelf: "center" }}
               />

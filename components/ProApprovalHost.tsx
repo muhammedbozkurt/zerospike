@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { useApp } from "../lib/store/AppContext";
-import { subscribePurchaseApproval, takeApprovedPurchase } from "../lib/services/purchases";
+import {
+  ackWelcomeShown,
+  subscribePurchaseApproval,
+  takeApprovedPurchase,
+  welcomeOwed,
+} from "../lib/services/purchases";
+import { onSurveyRelease, overlayOpen, surveyHeld } from "../lib/feedbackSurvey";
+import { onSheetRelease, sheetClaimed } from "../lib/sheetClaim";
 import { scheduleTrialDay1Nudge, scheduleTrialEndingReminder } from "../lib/services/notifications";
 import { getHealthSyncEnabled } from "../lib/services/health";
 import { useHealthAvailable } from "../lib/services/healthAvailability";
-import { approvalSettle, welcomeRouteReady } from "../lib/pendingApproval";
+import { approvalSettle, welcomeMayOpen } from "../lib/pendingApproval";
 import { shouldScheduleTrialNudge } from "../lib/trialTimeline";
 import { PAYWALL_VERSION } from "../lib/analytics/eventSchema";
 import { logCrash, logEvent } from "../lib/analytics";
@@ -24,6 +31,7 @@ export function ProApprovalHost({ root }: { root: string | undefined }) {
   const { activeProfile } = useApp();
   const healthAvailable = useHealthAvailable();
   const [welcomeQueued, setWelcomeQueued] = useState(false);
+  const [tick, setTick] = useState(0);
   const profileId = activeProfile?.id;
   const latest = useRef({ profileId, healthAvailable });
   latest.current = { profileId, healthAvailable };
@@ -64,11 +72,43 @@ export function ProApprovalHost({ root }: { root: string | undefined }) {
     return subscribePurchaseApproval(() => void settle());
   }, [settle]);
 
+  // An approval settled in an earlier run whose welcome never opened is still owed.
   useEffect(() => {
-    if (!welcomeQueued || !welcomeRouteReady(root)) return;
+    let alive = true;
+    void welcomeOwed().then((owed) => {
+      if (alive && owed) setWelcomeQueued(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const wake = () => setTick((t) => t + 1);
+    const offSheet = onSheetRelease(wake);
+    const offOverlay = onSurveyRelease(wake);
+    return () => {
+      offSheet();
+      offOverlay();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!welcomeQueued) return;
+    if (
+      !welcomeMayOpen({
+        root,
+        overlayOpen: overlayOpen(),
+        sheetClaimed: sheetClaimed(),
+        surveyHeld: surveyHeld(),
+      })
+    ) {
+      return;
+    }
     setWelcomeQueued(false);
     router.push("/pro-welcome");
-  }, [welcomeQueued, root, router]);
+    void ackWelcomeShown();
+  }, [welcomeQueued, root, router, tick]);
 
   return null;
 }

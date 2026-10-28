@@ -47,6 +47,7 @@ import { logCrash, logEvent } from "../lib/analytics";
 import { initSupabaseSink, setAnalyticsIsPro } from "../lib/analytics/supabaseSink";
 import { getWinbackOffer, watchEntitlement } from "../lib/services/purchases";
 import { winbackOfferToParams } from "../lib/winbackOffer";
+import { winbackMayOpen, winbackTransition } from "../lib/winbackDue";
 import { clearPaywallTrial, refreshPaywallTrialOnce } from "../lib/proCta";
 import { winbackAlreadyShown, markWinbackShown, sessionOffer } from "../lib/services/downsell";
 import { holdSurvey } from "../lib/feedbackSurvey";
@@ -603,11 +604,20 @@ function RootNavigator() {
   const [winbackDue, setWinbackDue] = useState(false);
   const surveyHold = useRef<(() => void) | null>(null);
   const homeNow = isHomeRoute(segments[0]);
+  const proNowRef = useRef(isProUser);
+  proNowRef.current = isProUser;
   useEffect(() => {
     if (!ready) return;
     const prev = prevProRef.current;
     prevProRef.current = isProUser;
-    if (prev === true && isProUser === false) {
+    const move = winbackTransition(prev, isProUser);
+    if (move === "regained") {
+      // Pro is back before the offer opened: nothing is owed, and the survey's
+      // hold must not outlive the offer it was waiting behind.
+      setWinbackDue(false);
+      surveyHold.current?.();
+      surveyHold.current = null;
+    } else if (move === "lost") {
       // The cancellation survey (components/feedback) follows the same loss; the
       // winback is a paid offer and goes first, so the survey waits until this
       // has decided whether to open it (and, if it does, until it is closed).
@@ -617,7 +627,7 @@ function RootNavigator() {
     }
   }, [ready, isProUser]);
   useEffect(() => {
-    if (!ready || !winbackDue || !homeNow) return;
+    if (!winbackMayOpen({ ready, due: winbackDue, home: homeNow, isPro: isProUser })) return;
     setWinbackDue(false);
     const releaseSurvey = surveyHold.current ?? (() => {});
     surveyHold.current = null;
@@ -629,7 +639,7 @@ function RootNavigator() {
         if (!sessionOffer.reserve()) return;
         const found = await getWinbackOffer();
         const params = winbackOfferToParams(found);
-        if (params) {
+        if (params && !proNowRef.current) {
           await markWinbackShown();
           router.push({ pathname: "/winback", params });
         } else {
@@ -639,7 +649,7 @@ function RootNavigator() {
         releaseSurvey();
       }
     })();
-  }, [ready, winbackDue, homeNow, router]);
+  }, [ready, winbackDue, homeNow, isProUser, router]);
 
   // ── Route gate: decided during RENDER, never in an effect ──────────────────
   // An effect-driven redirect can only run AFTER the wrong screen has already

@@ -25,3 +25,37 @@ export function needsOnboardingRedirect(i: {
 export function isHomeRoute(root: string | undefined): boolean {
   return root === "(tabs)";
 }
+
+/**
+ * Where the Pro welcome's exit and step buttons go. A person who bought Pro from
+ * inside the quiz (Nightscout needs it) has not finished onboarding: leaving
+ * the welcome for the tab stack would only be thrown back to the first quiz
+ * step by the route gate, so it returns to /onboarding, which is still in the
+ * stack at the step it was left on. Use it for the close button's fallback and
+ * for every dismissTo/replace the welcome's step buttons make:
+ *
+ *   router.canGoBack() ? router.back() : router.replace(welcomeExitTarget(done))
+ *   router.dismissTo({ pathname: welcomeExitTarget(done), ... })
+ */
+export function welcomeExitTarget(onboardingDone: boolean): "/(tabs)" | "/onboarding" {
+  return onboardingDone ? "/(tabs)" : "/onboarding";
+}
+
+export type OnboardingBackAction = "ignore" | "swallow" | "toWelcome" | "previousStep";
+
+/**
+ * What the Android hardware back does inside onboarding. Only the focused
+ * onboarding handles it: with the Pro welcome or the paywall on top, the press
+ * belongs to that screen. The reveal swallows it so a press cannot leave
+ * onboarding unfinished; the welcome phase keeps the system default.
+ */
+export function onboardingBackAction(i: {
+  focused: boolean;
+  phase: string;
+  stepIdx: number;
+}): OnboardingBackAction {
+  if (!i.focused) return "ignore";
+  if (i.phase === "reveal") return "swallow";
+  if (i.phase !== "quiz") return "ignore";
+  return i.stepIdx === 0 ? "toWelcome" : "previousStep";
+}

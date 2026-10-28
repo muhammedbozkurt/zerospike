@@ -335,11 +335,6 @@ async function lookupPaywallExit(
     if (!shouldOfferDownsellOnPaywallExit({ ...base, state, now, hasRealDiscount: offer.hasRealDiscount })) {
       return giveBack();
     }
-    try {
-      await deps.markOffered(now);
-    } catch {
-      // The session slot still holds; only the cross-launch date is lost.
-    }
     return "downsell";
   } catch {
     return giveBack();
@@ -380,6 +375,21 @@ export function createPaywallExitController(
     abandoned = false;
   }
 
+  /**
+   * The 7-day stamp is written only here, right before the screen opens: a
+   * decision dropped by a second X, a purchase or the deadline never stamps an
+   * offer nobody saw. Not awaited, so a slow write cannot delay the screen; a
+   * failed write only loses the cross-launch date (the session slot still holds).
+   */
+  function offerDownsell(): void {
+    try {
+      void deps.markOffered(deps.now()).catch(() => undefined);
+    } catch {
+      // A synchronous failure is the same best-effort loss.
+    }
+    nav.openDownsell();
+  }
+
   const controller = {
     /** True from the moment a close or cancel has taken the lock until the
      *  screen has left (or, for a cancel with nothing to show, until it stays).
@@ -409,7 +419,7 @@ export function createPaywallExitController(
         return;
       }
       if (abandoned) return settleAbandoned(decision);
-      if (decision === "downsell") nav.openDownsell();
+      if (decision === "downsell") offerDownsell();
       else nav.closePaywall();
     },
     /**
@@ -432,7 +442,7 @@ export function createPaywallExitController(
         return;
       }
       if (abandoned) return settleAbandoned(decision);
-      if (decision === "downsell") nav.openDownsell();
+      if (decision === "downsell") offerDownsell();
       else exiting = false;
     },
     /** A close the user asked for (X, back, swipe): ignored while blocked, and a

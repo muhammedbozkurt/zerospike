@@ -55,9 +55,9 @@ ok("paywall: buy CTA shows a spinner while purchasing and is locked while busy",
   ok("paywall: the funnel events carry paywall_version", ["paywall_view", "paywall_cta", "paywall_dismiss", "paywall_tier_selected", "purchase_result", "purchase_completed"].every((e) => new RegExp('logEvent\\("' + e + '",[^;]*paywall_version: PAYWALL_VERSION', "s").test(pw)));
 }
 ok("paywall: restore locked while busy", /onPress=\{onRestore\}\s+disabled=\{busy\}/.test(read("app/paywall.tsx")));
-ok("downsell: accept locked while busy", /disabled=\{busy\}\s+onPress=\{accept\}/.test(read("app/downsell.tsx")));
+ok("downsell: accept locked while busy", /disabled=\{busy( \|\| awaitingApproval)?\}\s+onPress=\{accept\}/.test(read("app/downsell.tsx")));
 ok("downsell: decline locked while busy", /onPress=\{decline\}\s+disabled=\{busy\}/.test(read("app/downsell.tsx")));
-ok("winback: accept locked while busy", /disabled=\{busy\}\s+onPress=\{accept\}/.test(read("app/winback.tsx")));
+ok("winback: accept locked while busy", /disabled=\{busy( \|\| awaitingApproval)?\}\s+onPress=\{accept\}/.test(read("app/winback.tsx")));
 ok("winback: decline locked while busy", /onPress=\{decline\}\s+disabled=\{busy\}/.test(read("app/winback.tsx")));
 
 const link = read("components/LegalLink.tsx");

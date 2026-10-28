@@ -303,7 +303,8 @@ export const PENDING_PURCHASE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface PendingNote {
   plan: PlanId;
-  state: "pending" | "approved";
+  /** settled: events and reminder are done, only the welcome is still owed. */
+  state: "pending" | "approved" | "settled";
   at: number;
   trial: boolean;
   trialEndsAt: number | null;
@@ -320,7 +321,7 @@ async function readPendingNote(): Promise<PendingNote | null> {
     if (typeof n.at !== "number" || Date.now() - n.at > PENDING_PURCHASE_TTL_MS) return null;
     return {
       plan,
-      state: n.state === "approved" ? "approved" : "pending",
+      state: n.state === "approved" || n.state === "settled" ? n.state : "pending",
       at: n.at,
       trial: n.trial === true,
       trialEndsAt: typeof n.trialEndsAt === "number" ? n.trialEndsAt : null,
@@ -343,9 +344,24 @@ async function writePendingNote(note: PendingNote | null): Promise<void> {
 
 const approvalListeners = new Set<() => void>();
 
+/**
+ * Pro that shows up while a payment is pending is the pending purchase only when
+ * it is the same product, bought after the note was written, and not a family
+ * share. A restore, an offer code, a second device or a shared plan arriving in
+ * that week is somebody else's purchase and must not open the welcome.
+ */
+function pendingMatchesEntitlement(note: PendingNote, ent: unknown): boolean {
+  const e = ent as any;
+  const id = String(e?.productIdentifier ?? "").split(":")[0];
+  if (id !== PRO_PRODUCTS[note.plan].productId) return false;
+  if (String(e?.ownershipType ?? "").toUpperCase() === "FAMILY_SHARED") return false;
+  return boughtSince(ent, note.at);
+}
+
 async function flipPendingToApproved(ent: unknown): Promise<void> {
   const note = await readPendingNote();
   if (!note || note.state !== "pending") return;
+  if (!pendingMatchesEntitlement(note, ent)) return;
   const trial = trialStatusOf(ent);
   await writePendingNote({
     ...note,
@@ -383,7 +399,9 @@ export function takeApprovedPurchase(): Promise<ApprovedPurchase | null> {
   const run = (async (): Promise<ApprovedPurchase | null> => {
     const note = await readPendingNote();
     if (!note || note.state !== "approved") return null;
-    await writePendingNote(null);
+    // Kept as "settled" until the welcome is really shown (ackWelcomeShown), so
+    // an app killed before it opens still owes it on the next launch.
+    await writePendingNote({ ...note, state: "settled" });
     const trial: TrialVerdict = note.trial
       ? { kind: "started", endsAt: note.trialEndsAt, daysLeft: note.trialDaysLeft }
       : { kind: "none" };
@@ -395,6 +413,16 @@ export function takeApprovedPurchase(): Promise<ApprovedPurchase | null> {
   };
   run.then(release, release);
   return run;
+}
+
+/** True while an approved purchase's welcome has not been shown yet. */
+export async function welcomeOwed(): Promise<boolean> {
+  return (await readPendingNote())?.state === "settled";
+}
+
+/** The welcome opened: the hand-over note has done its job. */
+export async function ackWelcomeShown(): Promise<void> {
+  if ((await readPendingNote())?.state === "settled") await writePendingNote(null);
 }
 
 /** A fresh attempt supersedes an earlier pending one: the attempt's own result settles the screen. */
@@ -909,6 +937,9 @@ export async function restore(): Promise<RestoreResult> {
   if (DEBUG_MOCK_PURCHASES) {
     return (await AsyncStorage.getItem(PRO_KEY)) === "true" ? "restored" : "none";
   }
+  // A restore is never the pending purchase being approved. A settled note stays:
+  // its welcome is still owed.
+  if (!(await welcomeOwed())) await dropPendingNote();
   let request: Promise<any> | null = null;
   try {
     await ensureConfigured();

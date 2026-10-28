@@ -14,10 +14,18 @@
  *
  * Run: npx tsx scripts/proPurchaseLifecycle.test.ts
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type * as PurchasesApi from "../lib/services/purchases";
+import { winbackMayOpen, winbackTransition } from "../lib/winbackDue";
 import { purchaseToastFor } from "../lib/services/purchaseFlow";
-import { approvalSettle, welcomeRouteReady } from "../lib/pendingApproval";
-import { isHomeRoute, needsOnboardingRedirect } from "../lib/onboardingGate";
+import { approvalSettle, welcomeMayOpen, welcomeRouteReady } from "../lib/pendingApproval";
+import {
+  isHomeRoute,
+  needsOnboardingRedirect,
+  onboardingBackAction,
+  welcomeExitTarget,
+} from "../lib/onboardingGate";
 import {
   PAYWALL_EXIT_STORE_TIMEOUT_MS,
   createPaywallExitController,
@@ -481,6 +489,227 @@ async function main(): Promise<void> {
   {
     const fold = (reason: string) => (normalizeEventParams("purchase_result", { reason }) as any).reason;
     eq("folds", [fold("nightscout"), fold("carbEstimate"), fold("cgmHistory"), fold("health"), fold("rotation")], ["health", "spike", "insights", "health", "feature"]);
+  }
+
+  section("B2-1. a pending note is approved only by the purchase it stands for");
+  {
+    const pendingAnnual = async () => {
+      const P = load();
+      rc.offerings = () => offering;
+      rc.customerInfo = () => inactive();
+      rc.purchase = async () => {
+        throw { code: "20", message: "pending" };
+      };
+      await P.purchasePro("annual");
+      return P;
+    };
+    const dated = (id: string, extra: Record<string, unknown>) => {
+      const a = active(id, "NORMAL", 30);
+      Object.assign((a.entitlements.active as any).pro, extra);
+      return a;
+    };
+    // R3: the Ask to Buy was declined, a restore of an old monthly follows.
+    {
+      const P = await pendingAnnual();
+      rc.restore = async () => dated("zerospike_pro", { latestPurchaseDate: new Date(Date.now() - 200 * DAY).toISOString() });
+      eq("restore finds Pro", await P.restore(), "restored");
+      eq("R3: no approval from a restore", await P.takeApprovedPurchase(), null);
+      ok("R3: no welcome is owed", (await P.welcomeOwed()) === false);
+    }
+    // R4: another device (a different product, a fresh purchase date) brings Pro.
+    {
+      const P = await pendingAnnual();
+      rc.customerInfo = () => dated("zerospike_pro", {});
+      await P.verifyProWithStore();
+      eq("R4: another product is not the pending annual", await P.takeApprovedPurchase(), null);
+    }
+    // The right product, but bought before the note: an old purchase found again.
+    {
+      const P = await pendingAnnual();
+      rc.customerInfo = () => dated("zerospike_pro_annual", { latestPurchaseDate: new Date(Date.now() - DAY).toISOString() });
+      await P.verifyProWithStore();
+      eq("an older purchase of the same product is not it", await P.takeApprovedPurchase(), null);
+    }
+    // A family share of the same product.
+    {
+      const P = await pendingAnnual();
+      rc.customerInfo = () => dated("zerospike_pro_annual", { ownershipType: "FAMILY_SHARED" });
+      await P.verifyProWithStore();
+      eq("a family share is not it", await P.takeApprovedPurchase(), null);
+    }
+    // The real approval still settles, even after a mismatch was ignored.
+    {
+      const P = await pendingAnnual();
+      rc.customerInfo = () => dated("zerospike_pro", {});
+      await P.verifyProWithStore();
+      rc.customerInfo = () => dated("zerospike_pro_annual", { ownershipType: "PURCHASED" });
+      await P.verifyProWithStore();
+      eq("the matching purchase is approved", (await P.takeApprovedPurchase())?.plan, "annual");
+    }
+    // Android base plan ids still match.
+    {
+      const P = await pendingAnnual();
+      rc.customerInfo = () => dated("zerospike_pro_annual:yearly", {});
+      await P.verifyProWithStore();
+      eq("a base-plan product id matches", (await P.takeApprovedPurchase())?.plan, "annual");
+    }
+  }
+
+  section("B2-6a. the note outlives the hand-over until the welcome is shown");
+  {
+    const P = load();
+    rc.offerings = () => offering;
+    rc.customerInfo = () => inactive();
+    rc.purchase = async () => {
+      throw { code: "20", message: "pending" };
+    };
+    await P.purchasePro("annual");
+    rc.customerInfo = () => active("zerospike_pro_annual", "NORMAL", 365);
+    await P.verifyProWithStore();
+    eq("approved once", (await P.takeApprovedPurchase())?.plan, "annual");
+    eq("events cannot repeat", await P.takeApprovedPurchase(), null);
+    ok("the welcome is still owed", await P.welcomeOwed());
+    // The app is killed before the welcome opens.
+    const P2 = load(true);
+    ok("owed after a relaunch", await P2.welcomeOwed());
+    rc.restore = async () => active("zerospike_pro_annual", "NORMAL", 365);
+    await P2.restore();
+    ok("a restore does not erase the owed welcome", await P2.welcomeOwed());
+    await P2.ackWelcomeShown();
+    ok("shown: nothing is owed", (await P2.welcomeOwed()) === false);
+    eq("and nothing to hand over", await P2.takeApprovedPurchase(), null);
+  }
+
+  section("B2-4. the welcome waits for every other overlay");
+  {
+    const open = { root: "(tabs)", overlayOpen: false, sheetClaimed: false, surveyHeld: false };
+    ok("home and nothing else open: opens", welcomeMayOpen(open));
+    ok("a Modal sheet is open: waits", !welcomeMayOpen({ ...open, overlayOpen: true }));
+    ok("a sheet has claimed its slot: waits", !welcomeMayOpen({ ...open, sheetClaimed: true }));
+    ok("the survey hold: waits", !welcomeMayOpen({ ...open, surveyHeld: true }));
+    ok("off the home: waits", !welcomeMayOpen({ ...open, root: "spike" }));
+    const host = readFileSync(join(process.cwd(), "components/ProApprovalHost.tsx"), "utf8");
+    ok("the host asks the three sources", /overlayOpen\(\)/.test(host) && /sheetClaimed\(\)/.test(host) && /surveyHeld\(\)/.test(host));
+    ok("the host retries on both release events", /onSheetRelease\(/.test(host) && /onSurveyRelease\(/.test(host));
+    ok("the note is erased only after the push", host.indexOf('router.push("/pro-welcome")') < host.indexOf("ackWelcomeShown()", host.indexOf("router.push")));
+  }
+
+  section("B2-5. the 7-day stamp is written only when the downsell opens");
+  {
+    const mk = (over: Partial<PaywallExitDeps>, log: string[]) => {
+      const deps: PaywallExitDeps = {
+        isScreenshotMode: () => false,
+        session: createSessionOfferFlag(),
+        getState: async () => initialDownsellState,
+        getOffer: async () => ({ hasRealDiscount: true }),
+        entitlementNow: async () => ({ isPro: false, trialActive: false, lifetime: false }),
+        onboardingIncomplete: async () => false,
+        markOffered: async () => void log.push("STAMP"),
+        now: () => 1_800_000_000_000,
+        timer: { set: () => 1, clear: () => {} },
+        ...over,
+      };
+      const ctl = createPaywallExitController(deps, {
+        closePaywall: () => void log.push("back"),
+        openDownsell: () => void log.push("downsell"),
+      });
+      return ctl;
+    };
+    // R1: a second X while the lookup runs, then the store says downsell.
+    {
+      const log: string[] = [];
+      let answer!: (v: { hasRealDiscount: boolean }) => void;
+      const ctl = mk({ getOffer: () => new Promise((r) => (answer = r)) }, log);
+      void ctl.requestUserClose({ plan: "annual", isPro: false });
+      await sleep(5);
+      await ctl.requestUserClose({ plan: "annual", isPro: false });
+      answer({ hasRealDiscount: true });
+      await sleep(20);
+      eq("R1: left at once, no stamp for an offer nobody saw", log, ["back"]);
+    }
+    // R2: the deadline fires while the stamp would be written.
+    {
+      const log: string[] = [];
+      let fire!: () => void;
+      let release!: () => void;
+      const ctl = mk(
+        {
+          markOffered: () => new Promise<void>((r) => ((release = r), void log.push("STAMP"))),
+          getOffer: () => new Promise(() => {}),
+          timer: { set: (fn: () => void) => ((fire = fn), 1), clear: () => {} },
+        },
+        log
+      );
+      void ctl.requestUserClose({ plan: "annual", isPro: false });
+      await sleep(5);
+      fire();
+      await sleep(5);
+      release?.();
+      await sleep(5);
+      eq("R2: the deadline closes, no stamp", log, ["back"]);
+    }
+    // A purchase takes over while the decision is pending.
+    {
+      const log: string[] = [];
+      let answer!: (v: { hasRealDiscount: boolean }) => void;
+      const ctl = mk({ getOffer: () => new Promise((r) => (answer = r)) }, log);
+      void ctl.requestUserClose({ plan: "annual", isPro: false });
+      await sleep(5);
+      ctl.abandonPendingExit();
+      answer({ hasRealDiscount: true });
+      await sleep(20);
+      eq("a purchase took over: no stamp, no screen", log, []);
+    }
+    // A slow stamp write does not hold the screen up, and a failing one is harmless.
+    {
+      const log: string[] = [];
+      const ctl = mk({ markOffered: () => Promise.reject(new Error("disk")) }, log);
+      await ctl.requestUserClose({ plan: "annual", isPro: false });
+      await sleep(5);
+      eq("a failed write still opens the downsell", log, ["downsell"]);
+    }
+  }
+
+  section("B2-2. Pro coming back cancels the win-back");
+  {
+    eq("lapse makes it due", winbackTransition(true, false), "lost");
+    eq("Pro regained clears it", winbackTransition(false, true), "regained");
+    eq("Pro stays Pro: also clears (idempotent)", winbackTransition(true, true), "regained");
+    eq("first read as free is nothing", winbackTransition(null, false), "none");
+    eq("free stays free", winbackTransition(false, false), "none");
+    const s = { ready: true, due: true, home: true, isPro: false };
+    ok("due, home and free: opens", winbackMayOpen(s));
+    ok("Pro: never opens", !winbackMayOpen({ ...s, isPro: true }));
+    ok("not home: waits", !winbackMayOpen({ ...s, home: false }));
+    ok("not due: nothing", !winbackMayOpen({ ...s, due: false }));
+    const layout = readFileSync(join(process.cwd(), "app/_layout.tsx"), "utf8");
+    ok("the root clears the due flag and the survey hold on regain", /move === "regained"[\s\S]{0,400}setWinbackDue\(false\)[\s\S]{0,200}surveyHold\.current\?\.\(\)/.test(layout));
+    ok("the root re-checks Pro right before spending the one-time offer", /params && !proNowRef\.current[\s\S]{0,60}markWinbackShown/.test(layout));
+    const wb = readFileSync(join(process.cwd(), "app/winback.tsx"), "utf8");
+    ok("the winback screen redirects a Pro opener", /proAtOpen \|\| \(offer && !offer\.hasRealDiscount\)/.test(wb) && /if \(!offer \|\| proAtOpen\) return;/.test(wb));
+  }
+
+  section("B2-3. the onboarding back key and the welcome's exit");
+  {
+    ok("unfocused onboarding ignores back (the welcome is on top)", onboardingBackAction({ focused: false, phase: "quiz", stepIdx: 3 }) === "ignore");
+    eq("focused quiz step 0 goes to the welcome phase", onboardingBackAction({ focused: true, phase: "quiz", stepIdx: 0 }), "toWelcome");
+    eq("focused later step goes one back", onboardingBackAction({ focused: true, phase: "quiz", stepIdx: 2 }), "previousStep");
+    eq("the reveal swallows it", onboardingBackAction({ focused: true, phase: "reveal", stepIdx: 0 }), "swallow");
+    eq("the welcome phase keeps the system default", onboardingBackAction({ focused: true, phase: "welcome", stepIdx: 0 }), "ignore");
+    const onb = readFileSync(join(process.cwd(), "app/onboarding.tsx"), "utf8");
+    ok("the handler lives in useFocusEffect", /useFocusEffect\(\s*useCallback\(\(\) => \{\s*if \(Platform\.OS !== "android"\) return;\s*const sub = BackHandler/.test(onb));
+    eq("unfinished onboarding exits the welcome to the quiz", welcomeExitTarget(false), "/onboarding");
+    eq("finished onboarding exits to the tabs", welcomeExitTarget(true), "/(tabs)");
+  }
+
+  section("B2-6b. downsell and winback keep the CTA off while an approval is awaited");
+  {
+    for (const f of ["app/downsell.tsx", "app/winback.tsx"]) {
+      const src = readFileSync(join(process.cwd(), f), "utf8");
+      ok(`${f}: pending sets the awaiting flag`, /res\.error === "pending"\) setAwaitingApproval\(true\)/.test(src));
+      ok(`${f}: the CTA is disabled while awaiting`, /disabled=\{busy \|\| awaitingApproval\}\s*\n\s*onPress=\{accept\}/.test(src));
+      ok(`${f}: accept refuses a second request`, /awaitingApproval \|\|/.test(src));
+    }
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

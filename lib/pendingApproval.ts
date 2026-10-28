@@ -38,3 +38,17 @@ export function approvalSettle(
 export function welcomeRouteReady(root: string | undefined): boolean {
   return isHomeRoute(root);
 }
+
+/**
+ * Route AND no other overlay: a Modal sheet (What's new, thanks, a dialog), a
+ * sheet that has claimed its slot but not rendered yet, or the survey's hold.
+ * Pushing the welcome over any of them would stack two presentations.
+ */
+export function welcomeMayOpen(s: {
+  root: string | undefined;
+  overlayOpen: boolean;
+  sheetClaimed: boolean;
+  surveyHeld: boolean;
+}): boolean {
+  return welcomeRouteReady(s.root) && !s.overlayOpen && !s.sheetClaimed && !s.surveyHeld;
+}
