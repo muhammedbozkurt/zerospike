@@ -16,7 +16,7 @@ import {
   canonicalSite,
 } from "../db/types";
 import { targetBandFor } from "../agpChart";
-import { glucoseToDisplay } from "../glucose";
+import { glucoseToDisplay, VERY_HIGH_MGDL } from "../glucose";
 import { computeInsights, type DateRange } from "../insights";
 import { insulinModeUsesInsulin } from "../insulinMode";
 import { CGM_DETECT_MIN_READINGS } from "../db/cgmSql";
@@ -545,7 +545,7 @@ export interface SpikeContextSource {
  */
 export const CGM_AGGREGATE_SQL =
   "SELECT COUNT(*) AS n, AVG(glucose_level_mgdl) AS avg, " +
-  "COALESCE(SUM(CASE WHEN glucose_level_mgdl >= ? AND glucose_level_mgdl <= ? THEN 1 ELSE 0 END), 0) AS inr " +
+  `COALESCE(SUM(CASE WHEN glucose_level_mgdl >= ? AND glucose_level_mgdl <= ? AND glucose_level_mgdl < ${VERY_HIGH_MGDL} THEN 1 ELSE 0 END), 0) AS inr ` +
   "FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 AND logged_at >= ? AND logged_at <= ?;";
 
 export function cgmAggregateParams(

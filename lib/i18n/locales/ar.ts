@@ -1,6 +1,11 @@
 import type { TranslationSchema } from "./tr";
 
-const ar: TranslationSchema = {
+// The cgmInsights day counts carry Arabic's own plural forms (i18next v3 suffixes
+// for the CLDR categories: _3 few = n%100 in 3-10, _4 many = n%100 in 11-99,
+// _5 other = 100-102, 200-202 ...): "7 أيام", "14 يومًا", "100 يوم". 0, 1 and 2
+// fall back to the base key.
+// The other languages have one form, so these keys exist here only.
+const ar: TranslationSchema & { cgmInsights: Record<string, string> } = {
   common: {
     saveFailed: "تعذّر الحفظ. يرجى المحاولة مرة أخرى.",
     showMore: "عرض المزيد",
@@ -112,6 +117,10 @@ const ar: TranslationSchema = {
     measureNightscoutHint: "تصل القراءات من حسابك في Nightscout.",
     measureNightscoutNote: "تُعدّ الاتصال بعد انتهاء الإعداد الأولي، من الإعدادات > مصادر البيانات.",
     measureDenied: "لم يُمنح الوصول إلى {{store}}، لذلك ستُدخل قراءاتك بنفسك. يمكنك المحاولة مجددًا لاحقًا من الإعدادات > مصادر البيانات.",
+    measureCgmNeedsHc: "يتطلب هذا الخيار تطبيق Health Connect. اضغط لتثبيته من Google Play.",
+    measureCgmNeedsHcUpdate: "يحتاج Health Connect إلى تحديث. اضغط لفتح Google Play.",
+    libreManual: "المتابعة بالإدخال اليدوي",
+    libreCgm: "البقاء في وضع CGM",
     qTargets: "نطاقاتك المستهدفة",
     qTargetsHintTracking: "هذه نطاقات مرجعية عامة. ويمكنك أيضًا تحديد نطاقك المستهدف مع طبيبك.",
     qPostmealHint: "هدفك بعد الأكل بساعتين تقريبًا.",
@@ -259,6 +268,7 @@ const ar: TranslationSchema = {
     healthUpToDate: "محدَّث بالفعل، لا توجد قراءات جديدة",
     healthDenied: "لم يُمنح الوصول إلى {{health}}. فعّل سكر الدم من إعدادات {{health}}.",
     healthUnavailable: "بيانات {{health}} غير متاحة على هذا الجهاز",
+    healthNeedsUpdate: "يحتاج {{health}} إلى تحديث من Google Play قبل استخدامه.",
     healthError: "تعذّرت القراءة من {{health}}. يرجى المحاولة مرة أخرى.",
     dailyCarbs: "كربوهيدرات اليوم",
     dailyCarbsOf: "{{current}} / {{target}} g",
@@ -859,6 +869,7 @@ const ar: TranslationSchema = {
   cgmHome: {
     waiting: "بانتظار CGM",
     waitingBody: "ستظهر القراءات هنا فور وصولها.",
+    waitingBodyFree: "أثناء فتح التطبيق، تُستورد قراءات آخر 24 ساعة. أما المزامنة في الخلفية والسجل الأطول فهما ضمن Pro.",
     manualBasis: "إدخال يدوي",
     manualBasisA11y: "متوسط اليوم محسوب من قراءات أُدخلت يدويًا",
     watching: "CGM يتابع",
@@ -878,8 +889,8 @@ const ar: TranslationSchema = {
     modeCgmHint: "تُضاف إلى سجلك قراءات المستشعر التي يكتبها تطبيق CGM لديك في \u2068{{store}}\u2069.",
     stateActive: "تصل قراءات CGM.",
     stateInactive: "لم تصل أي قراءات CGM خلال آخر 24 ساعة.",
-    needsHealth: "تصل القراءات عبر المزامنة مع {{store}}، ويمكنك تفعيلها من إعدادات البيانات.",
-    openData: "فتح إعدادات البيانات",
+    needsHealth: "المزامنة مع {{store}} متوقفة. فعّلها لتصل قراءاتك.",
+    enableSync: "تفعيل المزامنة",
     keepsData: "العودة إلى الإدخال اليدوي لا تحذف أي قراءة.",
   },
   healthSync: {
@@ -1223,8 +1234,14 @@ const ar: TranslationSchema = {
     basisCgmManual: "البيانات: CGM ({{sources}}) · التغطية {{pct}} · {{n}} قراءات يدوية",
     basisAll: "البيانات: جميع القراءات من المستشعر والمدخلة يدويًا · تغطية CGM {{pct}}",
     coverage: "تغطية CGM",
-    coverageLine: "خلال آخر {{days}} يومًا: تغطية CGM {{pct}}",
-    gmiNeedCoverage: "يتطلب GMI تغطية CGM لا تقل عن {{pct}} خلال الفترة المحددة البالغة {{days}} يومًا.",
+    coverageLine: "خلال آخر {{days}} يوم: تغطية CGM {{pct}}",
+    coverageLine_3: "خلال آخر {{days}} أيام: تغطية CGM {{pct}}",
+    coverageLine_4: "خلال آخر {{days}} يومًا: تغطية CGM {{pct}}",
+    coverageLine_5: "خلال آخر {{days}} يوم: تغطية CGM {{pct}}",
+    gmiNeedCoverage: "يتطلب GMI تغطية CGM لا تقل عن {{pct}} خلال الفترة المحددة البالغة {{days}} يوم.",
+    gmiNeedCoverage_3: "يتطلب GMI تغطية CGM لا تقل عن {{pct}} خلال الفترة المحددة البالغة {{days}} أيام.",
+    gmiNeedCoverage_4: "يتطلب GMI تغطية CGM لا تقل عن {{pct}} خلال الفترة المحددة البالغة {{days}} يومًا.",
+    gmiNeedCoverage_5: "يتطلب GMI تغطية CGM لا تقل عن {{pct}} خلال الفترة المحددة البالغة {{days}} يوم.",
     legendHourly: "الوسيط الساعي لـ CGM",
     reportBelowPeriods: "الفترات تحت النطاق المستهدف",
     reportDuration: "المدة",
@@ -1925,6 +1942,7 @@ const ar: TranslationSchema = {
     connectedToast: "تم الاتصال بـ Nightscout.",
     connected: "متصل · آخر مزامنة {{time}}",
     connectedNever: "متصل · لم تتم المزامنة بعد",
+    notSetUp: "غير مُعدّ",
     syncNow: "زامِن الآن",
     syncing: "جارٍ المزامنة...",
     synced: "تمت المزامنة. قراءات جديدة: {{n}}.",

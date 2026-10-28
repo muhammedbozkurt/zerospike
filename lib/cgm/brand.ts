@@ -32,6 +32,11 @@ export async function setCgmBrand(profileId: string, brand: CgmBrand): Promise<v
   await AsyncStorage.setItem(cgmBrandKey(profileId), brand);
 }
 
+/** Forgets the sensor brand (the profile went back to manual entry). */
+export async function clearCgmBrand(profileId: string): Promise<void> {
+  await AsyncStorage.removeItem(cgmBrandKey(profileId));
+}
+
 /** Translation keys of the note for a brand, in display order. The Nightscout
  *  sentence is included only when that option exists in this build. */
 export function cgmBrandMessageKeys(brand: CgmBrand, nightscout: boolean): string[] {

@@ -337,7 +337,7 @@ async function main(): Promise<void> {
       ok(`${lang}: 30 daily dips are capped at 20 period rows (+ header)`, periodRows >= 2 && periodRows <= 21, String(periodRows));
       ok(`${lang}: the periods table is titled and neutral`, lows.html.includes(T("cgmInsights.reportBelowPeriods")));
       ok(`${lang}: the source line is generic and names the coverage`, quiet.html.includes(T("cgmInsights.coverage")) && !BRANDS.test(quiet.html) && />\s*[^<]*CGM \(/.test(quiet.html), "");
-      ok(`${lang}: coverage line uses pct()`, quiet.html.includes(T("cgmInsights.coverageLine", { days: 30, pct: i18nMod.default && require("../lib/format").pct(100) })));
+      ok(`${lang}: coverage line uses pct()`, quiet.html.includes(T("cgmInsights.coverageLine", { days: 30, count: 30, pct: i18nMod.default && require("../lib/format").pct(100) })));
       ok(`${lang}: GMI is named by its abbreviation and described`, T("insights.gmi") === "GMI" && quiet.html.includes(T("insights.gmi")) && quiet.html.includes(T("insights.gmiExplain")));
       ok(`${lang}: the GMI note sits in the summary row, under the label`, quiet.html.includes(`<div class="sub">${T("insights.gmiExplain")}</div>`));
       ok(`${lang}: no estimate or diagnosis wording was added`, !/diagnos|alarm|real-time/i.test(quiet.html.replace(/<style[\s\S]*?<\/style>/, "")));

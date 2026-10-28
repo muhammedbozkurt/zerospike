@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { useFocusEffect } from "expo-router";
 
 import { getHealthConnectStatus, hasHealthProvider, type HealthConnectStatus } from "./health";
@@ -26,7 +26,12 @@ import { getHealthConnectStatus, hasHealthProvider, type HealthConnectStatus } f
 let cachedStatus: { status: HealthConnectStatus; loaded: boolean } | null =
   Platform.OS === "android" ? null : { status: "available", loaded: true };
 
-export function useHealthAvailable(): boolean {
+/**
+ * The Health Connect status itself, for a screen that must tell "not installed"
+ * from "needs a Play update" (null off Android and until the first check has
+ * answered). Same cache and the same re-check on focus as useHealthAvailable.
+ */
+export function useHealthConnectStatus(): HealthConnectStatus | null {
   const [hcStatus, setHcStatus] = useState<HealthConnectStatus>(
     cachedStatus?.status ?? (Platform.OS === "android" ? "unavailable" : "available")
   );
@@ -37,19 +42,30 @@ export function useHealthAvailable(): boolean {
     useCallback(() => {
       if (Platform.OS !== "android") return;
       let alive = true;
-      void getHealthConnectStatus().then((status) => {
-        cachedStatus = { status, loaded: true };
-        if (!alive) return;
-        setHcStatus(status);
-        setHcStatusLoaded(true);
+      const check = () =>
+        void getHealthConnectStatus().then((status) => {
+          cachedStatus = { status, loaded: true };
+          if (!alive) return;
+          setHcStatus(status);
+          setHcStatusLoaded(true);
+        });
+      check();
+      // The Play install or update happens outside the app and brings the person
+      // back to the SAME screen, so a navigation focus never fires: ask again
+      // whenever the app comes to the foreground.
+      const sub = AppState.addEventListener("change", (s) => {
+        if (s === "active") check();
       });
       return () => {
         alive = false;
+        sub.remove();
       };
     }, [])
   );
-  return (
-    hasHealthProvider() &&
-    (Platform.OS !== "android" || (hcStatusLoaded && hcStatus !== "unavailable"))
-  );
+  return Platform.OS === "android" && hcStatusLoaded ? hcStatus : null;
+}
+
+export function useHealthAvailable(): boolean {
+  const status = useHealthConnectStatus();
+  return hasHealthProvider() && (Platform.OS !== "android" || (status !== null && status !== "unavailable"));
 }

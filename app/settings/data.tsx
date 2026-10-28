@@ -83,6 +83,7 @@ import {
 import { deleteMyServerRecords } from "../../lib/analytics/serverRecords";
 import { getDeviceId, isInstallId } from "../../lib/identity/deviceId";
 import { switchProps } from "../../lib/a11y";
+import { HEALTH_CONNECT_PLAY_URL } from "../../lib/cgm/sourceAvailability";
 
 const PDF_MODE_KEY = "zerospike.pdfMode";
 // Longer than an iOS Modal slide-out; only matters if onDismiss never arrives.
@@ -732,9 +733,7 @@ export default function DataSettings() {
   // Play Store listing. Never throws - an emulator/device with no Play Store
   // app to handle the market:// scheme just leaves the user on this screen.
   function onOpenHealthConnectUpdate() {
-    Linking.openURL(
-      "market://details?id=com.google.android.apps.healthdata&url=healthconnect%3A%2F%2Fonboarding"
-    ).catch(() => {});
+    Linking.openURL(HEALTH_CONNECT_PLAY_URL).catch(() => {});
   }
 
   // Writing to Health is free for everyone (reading/auto-sync stays Pro and is

@@ -79,6 +79,10 @@ async function main(): Promise<void> {
   eq("a failed write reaches the caller", threw, true);
   eq("and the mode did not move", await state.getCgmMode("p1"), "manual");
   off();
+  // Going back to manual on purpose is an answer to the offer (A-10): it was
+  // recorded above, and section C below needs p1 unanswered again.
+  eq("leaving CGM for manual settled the offer", await state.getCgmOfferAnswer("p1"), "declined");
+  await AsyncStorage.removeItem(state.cgmOfferKey("p1"));
 
   console.log("C. detection never changes the mode");
   {

@@ -279,7 +279,7 @@ async function main() {
     stop2();
   }
   const home = src("app", "(tabs)", "index.tsx");
-  ok("dashboard stats follow the clock", /const clock = useMinuteClock\(\);/.test(home) && /\[entries, activeProfile, cgmDates, clock\]\);/.test(home));
+  ok("dashboard stats follow the clock", /const clock = useMinuteClock\(\);/.test(home) && /\[entries, weekEntries, activeProfile, cgmDates, clock\]\);/.test(home));
   ok("the hook runs only while focused", /useFocusEffect\(/.test(src("lib", "useMinuteClock.ts")) && /startMinuteTick\(/.test(src("lib", "useMinuteClock.ts")));
 
   // ---- C-11 / C-12: Injection form ----

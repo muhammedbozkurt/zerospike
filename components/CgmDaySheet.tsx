@@ -15,7 +15,7 @@ import {
   type CurveRow,
 } from "../lib/cgm/curve";
 import { getCgmWindowRows } from "../lib/db/cgmCurveSql";
-import { formatGlucose, glucoseUnitLabel } from "../lib/glucose";
+import { formatGlucose, glucoseUnitLabel, inTargetBand } from "../lib/glucose";
 import { formatDate, isolateLtr, pct } from "../lib/format";
 import { SPACE } from "../lib/theme/tokens";
 import { CgmCurve } from "./charts/CgmCurve";
@@ -84,7 +84,7 @@ export function CgmDaySheet({
   const count = sensorRows.length;
   const avg =
     count > 0 ? Math.round(sensorRows.reduce((s, r) => s + r.mgdl, 0) / count) : null;
-  const inRange = sensorRows.filter((r) => r.mgdl >= band.low && r.mgdl <= band.high).length;
+  const inRange = sensorRows.filter((r) => inTargetBand(r.mgdl, band)).length;
   const title = range ? formatDate(new Date(range.loMs).toISOString()) : "";
 
   const summary =

@@ -1,4 +1,5 @@
 import { pct } from "../format";
+import { getActiveLang } from "../lang";
 import type { CgmSourceKind } from "./metrics";
 import { healthStoreLabelKey } from "./sourceLabel";
 
@@ -47,6 +48,8 @@ export function windowDaysText(t: T, n: number): string {
 
 /** "In the last 14 days, 92 % CGM coverage". */
 export function coverageLine(t: T, days: number, coveragePct: number): string {
-  if (days <= 1) return `${t("cgmInsights.coverage")}: ${pct(coveragePct)}`;
-  return t("cgmInsights.coverageLine", { days, pct: pct(coveragePct) });
+  // French sets a (non-breaking) space before a colon.
+  const colon = getActiveLang() === "fr" ? "\u00A0:" : ":";
+  if (days <= 1) return `${t("cgmInsights.coverage")}${colon} ${pct(coveragePct)}`;
+  return t("cgmInsights.coverageLine", { days, count: days, pct: pct(coveragePct) });
 }

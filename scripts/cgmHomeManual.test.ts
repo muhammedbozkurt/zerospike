@@ -41,7 +41,7 @@ ok("the hero is CgmHomeCard only when cgmActive", /\{cgmActive && activeProfile 
 ok("CgmHomeCard has exactly one call site", (index.match(/<CgmHomeCard/g) ?? []).length === 1);
 ok("the manual hero is the else branch", /<CgmHomeCard[^>]*\/>\s*\) : lastGlucose \? \(/.test(index));
 ok("the day summaries are loaded only when active", /useCgmDaySummaries\(\{[\s\S]{0,200}enabled: cgmActive/.test(index));
-ok("the stats feed leaves sensor rows out only when active", /cgmActive \? \{ cgm: "exclude" \} : \{ cgm: "twins" \}/.test(index));
+ok("the stats feed leaves sensor rows out for every profile (Today and This week share one base)", /getJournal\(activeProfile\.id, lang, loadLimit, undefined, \{ cgm: "exclude" \}\)/.test(index) && !/cgm: "twins"/.test(index));
 ok("the summary rows are merged only when active", /cgmActive && cgmDaysForFilter\(filter\)/.test(index));
 ok("the tracking caption only when active", /\{cgmActive \? \(\s*<Txt kind="micro" tone="muted" style=\{\{ marginBottom: SPACE\.sm \}\}>\s*\{t\("cgmHome\.watching"\)\}/.test(index));
 ok("the small add button only when active, the gradient bar otherwise", /\{cgmActive \? \([\s\S]{0,700}variant="outlined"[\s\S]{0,300}\) : \(\s*<GradientCTA/.test(index));

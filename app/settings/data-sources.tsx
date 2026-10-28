@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { AccessibilityInfo, Platform, Pressable, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, Linking, Platform, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -19,14 +19,28 @@ import {
   type CgmMode,
 } from "../../lib/cgm/state";
 import { cgmDetected, countCgmReadingsLast24h } from "../../lib/db/cgmSql";
-import { nightscoutAvailable as nightscoutEnabled } from "../../lib/cgm/sourceAvailability";
+import {
+  cgmChoiceGate,
+  cgmChoiceGateNow,
+  HEALTH_CONNECT_PLAY_URL,
+  nightscoutAvailable as nightscoutEnabled,
+} from "../../lib/cgm/sourceAvailability";
+import { connectHealthSync } from "../../lib/cgm/connectSync";
+import { createHealthFlow, realClock, type HealthFlow } from "../../lib/healthConnectFlow";
+import { HEALTH_IMPORT_FLAG, readProfileFlag, writeProfileFlag } from "../../lib/profileFlag";
+import { useHealthConnectStatus } from "../../lib/services/healthAvailability";
 import { formatDate, formatTime, num } from "../../lib/format";
 import { statusKey, testDetailKey } from "../../lib/nightscout/messages";
 import { countNightscoutReadings } from "../../lib/nightscout/localData";
 import { safeNightscoutError } from "../../lib/nightscout/safeError";
 import type { NsState, NsTestDetail } from "../../lib/nightscout/sync";
 import { parseNightscoutUrl } from "../../lib/nightscout/url";
-import { hasHealthProvider } from "../../lib/services/health";
+import {
+  getHealthConnectStatus,
+  hasHealthProvider,
+  importHealthGlucose,
+  requestHealthPermissions,
+} from "../../lib/services/health";
 import { registerHealthBackground } from "../../lib/services/healthBackground";
 import {
   connectNightscoutFor,
@@ -47,6 +61,8 @@ interface ModeOption {
   hint: string;
   badge?: string;
   lockedHint?: string;
+  /** Drawn quieter: the device cannot do this yet (Health Connect missing). */
+  dimmed?: boolean;
 }
 
 function ModeCard({
@@ -74,6 +90,7 @@ function ModeCard({
         borderWidth: selected ? 2 : 1,
         borderColor: selected ? THEME.accent : THEME.border,
         backgroundColor: THEME.surface,
+        opacity: option.dimmed ? 0.6 : 1,
       }}
     >
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -110,12 +127,14 @@ type NsBusy = "test" | "connect" | "sync" | null;
 function NightscoutPanel({
   profileId,
   connected,
+  modeIsNightscout,
   isPro,
   onConnected,
   onDisconnect,
 }: {
   profileId: string;
   connected: boolean;
+  modeIsNightscout: boolean;
   isPro: boolean;
   onConnected: () => void;
   onDisconnect: () => void;
@@ -282,6 +301,13 @@ function NightscoutPanel({
 
   return (
     <View style={{ marginTop: SPACE.sm, marginBottom: SPACE.md }}>
+      {/* The mode is already Nightscout (onboarding chose it) but no address was
+          ever saved: say so plainly instead of "connected", and keep the form open. */}
+      {modeIsNightscout ? (
+        <Txt kind="body" style={{ fontWeight: "600", marginBottom: SPACE.xs }}>
+          {t("nightscout.notSetUp")}
+        </Txt>
+      ) : null}
       <Txt kind="caption" tone="muted" style={{ marginBottom: SPACE.md }}>
         {t("nightscout.intro")}
       </Txt>
@@ -359,10 +385,18 @@ export default function DataSourcesScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { toast, confirm } = useFeedback();
-  const { activeProfile, isProUser } = useApp();
+  const { activeProfile, isProUser, bumpData } = useApp();
   const profileId = activeProfile?.id;
+  const hcGate = cgmChoiceGate({ os: Platform.OS, status: useHealthConnectStatus() });
 
   const [mode, setMode] = useState<CgmMode>("manual");
+  // The Health import switch for this profile (null = not read yet) and the
+  // connect run in flight.
+  const [syncOn, setSyncOn] = useState<boolean | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [nsConnected, setNsConnected] = useState(false);
+  const flowRef = useRef<HealthFlow | null>(null);
+  useEffect(() => () => flowRef.current?.cancel(), []);
   const [detected, setDetected] = useState<boolean | null>(null);
   const [brand, setBrand] = useState<CgmBrand | null>(null);
   const [nsFormOpen, setNsFormOpen] = useState(false);
@@ -370,8 +404,19 @@ export default function DataSourcesScreen() {
 
   const refresh = useCallback(async () => {
     if (!profileId) return;
-    setMode(await getCgmMode(profileId));
+    const current = await getCgmMode(profileId);
+    setMode(current);
     setBrand(await getCgmBrand(profileId));
+    try {
+      setSyncOn(await readProfileFlag(HEALTH_IMPORT_FLAG, profileId));
+    } catch {
+      setSyncOn(false);
+    }
+    try {
+      setNsConnected(current === "nightscout" ? (await getNightscoutState(profileId)).connected : false);
+    } catch (err) {
+      logCrash(safeNightscoutError("readState", err), { screen: "dataSources", op: "nsState" });
+    }
     try {
       setDetected(cgmDetected(await countCgmReadingsLast24h(profileId)));
     } catch (err) {
@@ -395,7 +440,11 @@ export default function DataSourcesScreen() {
           {
             mode: "cgm" as const,
             label: t("dataSources.modeCgm", { store }),
-            hint: t("dataSources.modeCgmHint", { store }),
+            hint:
+              hcGate === "ready"
+                ? t("dataSources.modeCgmHint", { store })
+                : t(hcGate === "update" ? "onboarding.measureCgmNeedsHcUpdate" : "onboarding.measureCgmNeedsHc"),
+            dimmed: hcGate !== "ready",
           },
         ]
       : []),
@@ -425,6 +474,15 @@ export default function DataSourcesScreen() {
     }
   }
 
+  // Health Connect usable right now? A stale "not installed" (the person just came
+  // back from Play) is re-asked first; a gate that stays closed opens the listing.
+  async function gateReady(): Promise<boolean> {
+    if (hcGate === "ready") return true;
+    if ((await cgmChoiceGateNow(Platform.OS, getHealthConnectStatus)) === "ready") return true;
+    void Linking.openURL(HEALTH_CONNECT_PLAY_URL).catch(() => {});
+    return false;
+  }
+
   async function switchTo(next: CgmMode) {
     if (!profileId) return;
     try {
@@ -434,6 +492,54 @@ export default function DataSourcesScreen() {
     } catch (err) {
       logCrash(err, { screen: "dataSources", op: "setMode" });
       toast(t("common.saveFailed"), "error");
+      return;
+    }
+    // Choosing CGM is also asking for the readings: the permission sheet, then
+    // the import switch, then a first pull (lib/cgm/connectSync).
+    if (next === "cgm") void enableSync();
+    // A free profile only imports in CGM mode. Leaving it turns its switch off,
+    // so the dashboard has no "auto-sync is now Pro" notice to show for a switch
+    // the person set themselves a moment ago.
+    else if (!isProUser) {
+      try {
+        await writeProfileFlag(HEALTH_IMPORT_FLAG, profileId, false);
+        setSyncOn(false);
+      } catch (err) {
+        logCrash(err, { screen: "dataSources", op: "clearSync" });
+      }
+    }
+  }
+
+  // Health import on, through the same permission flow as the dashboard card.
+  // The switch is saved only after the grant; a refusal leaves it off and the
+  // button stays for another try.
+  async function enableSync() {
+    if (!profileId || connecting) return;
+    if (!(await gateReady())) return;
+    const flow = (flowRef.current ??= createHealthFlow({ isBlocked: () => false, clock: realClock }));
+    try {
+      await connectHealthSync(flow, {
+        setBusy: setConnecting,
+        request: async () => ({ read: await requestHealthPermissions() }),
+        writeFlag: (on) => writeProfileFlag(HEALTH_IMPORT_FLAG, profileId, on),
+        importNow: async () => {
+          // Free: the last 24 hours only; Pro: the full window and the background sync.
+          const res = await importHealthGlucose(profileId, "manual", { freeWindow: !isProUser });
+          if (isProUser) void registerHealthBackground();
+          return res;
+        },
+        onDenied: async () => {
+          toast(t("dashboard.healthDenied", { health: store }), "info");
+        },
+        onDone: async (res) => {
+          if (res && res.inserted > 0) bumpData();
+        },
+      });
+    } catch (err) {
+      logCrash(err, { screen: "dataSources", op: "enableSync" });
+      toast(t("common.saveFailed"), "error");
+    } finally {
+      void refresh();
     }
   }
 
@@ -495,9 +601,13 @@ export default function DataSourcesScreen() {
         toast(t("nightscout.errUnavailable"), "info");
         return;
       }
-      if (mode !== "nightscout") setNsFormOpen(true);
+      if (mode !== "nightscout" || !nsConnected) setNsFormOpen(true);
       return;
     }
+    // Health Connect missing or waiting for its Play update: the mode would only
+    // wait for readings that cannot come, so the tap leads to the listing. Checked
+    // before anything else, the Nightscout exit included (it ends in this mode too).
+    if (next === "cgm" && next !== mode && !(await gateReady())) return;
     setNsFormOpen(false);
     if (mode === "nightscout") {
       await leaveNightscout(next);
@@ -529,7 +639,8 @@ export default function DataSourcesScreen() {
       {profileId && nsEnabled && (mode === "nightscout" || nsFormOpen) ? (
         <NightscoutPanel
           profileId={profileId}
-          connected={mode === "nightscout"}
+          connected={mode === "nightscout" && nsConnected}
+          modeIsNightscout={mode === "nightscout"}
           isPro={isProUser}
           onConnected={() => {
             setNsFormOpen(false);
@@ -548,9 +659,11 @@ export default function DataSourcesScreen() {
           ) : null}
           {mode === "cgm" ? (
             <>
-              <Txt kind="caption" tone="muted">
-                {t("dataSources.needsHealth", { store })}
-              </Txt>
+              {syncOn === false ? (
+                <Txt kind="caption" tone="muted">
+                  {t("dataSources.needsHealth", { store })}
+                </Txt>
+              ) : null}
               <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>
                 {t("cgmSource.delayNote")}
               </Txt>
@@ -560,13 +673,15 @@ export default function DataSourcesScreen() {
                 store={store}
                 nightscout={nsEnabled}
               />
-              <View style={{ marginTop: SPACE.md }}>
-                <Row
-                  icon="settings-outline"
-                  label={t("dataSources.openData")}
-                  onPress={() => router.push("/settings/data")}
-                />
-              </View>
+              {syncOn === false ? (
+                <View style={{ marginTop: SPACE.md }}>
+                  <Button
+                    label={t("dataSources.enableSync")}
+                    loading={connecting}
+                    onPress={() => void enableSync()}
+                  />
+                </View>
+              ) : null}
             </>
           ) : null}
         </View>

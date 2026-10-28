@@ -1,5 +1,5 @@
 import React, { Children, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Platform, Pressable, ScrollView, SectionList, Switch, View } from "react-native";
+import { Alert, AppState, Linking, Platform, Pressable, ScrollView, SectionList, Switch, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -90,6 +90,7 @@ import { useProCta } from "../../lib/proCta";
 import { syncLiveData } from "../../lib/services/liveData";
 import {
   importHealthGlucose,
+  getHealthConnectStatus,
   writeGlucoseToHealthIfEnabled,
   getHealthWriteEnabled,
   hasHealthProvider,
@@ -109,7 +110,6 @@ import {
   createHealthFlow,
   createRetryQueue,
   realClock,
-  runConnect,
   runGuardedImport,
   switchOff,
   type FlowSession,
@@ -121,7 +121,11 @@ import { runHealthWriteAsk } from "../../lib/healthWriteAsk";
 import { healthWriteAskSeen, markHealthWriteAskSeen } from "../../lib/services/healthWritePrompt";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
-import { useHealthAvailable } from "../../lib/services/healthAvailability";
+import { useHealthAvailable, useHealthConnectStatus } from "../../lib/services/healthAvailability";
+import { connectHealthSync } from "../../lib/cgm/connectSync";
+import { healthImportAllowed } from "../../lib/cgm/importPolicy";
+import { decideFlagRefresh } from "../../lib/cgm/flagRefresh";
+import { cgmChoiceGate, cgmChoiceGateNow, HEALTH_CONNECT_PLAY_URL, type CgmChoiceGate } from "../../lib/cgm/sourceAvailability";
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLog, maybeRequestReview, noteStreakAndMaybeReview, crossedStreak7 } from "../../lib/services/review";
 import {
@@ -132,7 +136,9 @@ import {
 } from "../../lib/services/firstLog";
 import { cgmActivitySinceIso, firstStepPlan } from "../../lib/homeFirstStep";
 import { getCgmMode } from "../../lib/cgm/state";
+import { hasCgmReadings } from "../../lib/db/cgmSql";
 import { getGlucoseOptIn, withCgmPause } from "../../lib/cgm/reminderMode";
+import { HEALTH_IMPORT_FLAG, readProfileFlag, writeProfileFlag } from "../../lib/profileFlag";
 import { listCgmActivity } from "../../lib/db/sugarRange";
 import { logCrash, logEvent } from "../../lib/analytics";
 import { trackSaveFailed } from "../../lib/analytics/saveFailed";
@@ -144,7 +150,7 @@ import { isWidgetInstalled } from "../../modules/zerospike-live-activity";
 // readProfileFlag/writeProfileFlag - each used to be one value for the whole
 // device, so a caregiver switching profiles inherited whatever the PREVIOUS
 // profile had toggled or dismissed (audit findings A and dismiss-flag leak).
-const CGM_KEY = "zerospike.cgmSync";
+const CGM_KEY = HEALTH_IMPORT_FLAG;
 // Shown once to an existing free user who had auto-sync on before it became Pro.
 const HEALTH_PRO_NOTICE_KEY = "zerospike.healthProNoticeShown";
 // One-time discoverability hint: journal rows can be tapped to edit.
@@ -163,26 +169,9 @@ const DEFAULT_LOG_PERIOD: PeriodTag = DEFAULT_NEW_READING_PERIOD;
 // user closes it.
 const FINISH_SETUP_KEY = "zerospike.finishSetupDismissed";
 
-/**
- * Reads a boolean flag now kept per profile. The first read for ANY profile
- * that finds no scoped value yet, but does find the old device-wide one,
- * carries it over to THAT profile and deletes the global key - a one-time,
- * lossless move; every read after that is purely per profile.
- */
-async function readProfileFlag(baseKey: string, profileId: string): Promise<boolean> {
-  const scopedKey = `${baseKey}.${profileId}`;
-  const scoped = await AsyncStorage.getItem(scopedKey);
-  if (scoped != null) return scoped === "true";
-  const legacy = await AsyncStorage.getItem(baseKey);
-  if (legacy == null) return false;
-  await AsyncStorage.setItem(scopedKey, legacy);
-  await AsyncStorage.removeItem(baseKey);
-  return legacy === "true";
-}
-
-async function writeProfileFlag(baseKey: string, profileId: string, value: boolean): Promise<void> {
-  await AsyncStorage.setItem(`${baseKey}.${profileId}`, value ? "true" : "false");
-}
+const WEEK_MS = 7 * 86_400_000;
+// Far above what one person logs by hand in a week; only a runaway import can reach it.
+const WEEK_FEED_LIMIT = 3000;
 // The dashboard shows a PREVIEW of the journal, not the journal: the last
 // couple of days and at most a screenful of rows (JOURNAL_PREVIEW_LIMITS,
 // lib/journalSlice.ts). It deliberately does not grow in place - the old "show
@@ -271,6 +260,7 @@ import {
   classifyGlucose,
   statusLabelKey,
   summarizeReadings,
+  inTargetBand,
   type DayReading,
   STATUS_COLOR,
 } from "../../lib/glucose";
@@ -390,6 +380,11 @@ export default function DashboardScreen() {
   // journal (they count toward "days in a row") and the first-sync tick.
   const [cgmDates, setCgmDates] = useState<string[]>([]);
   const [syncDone, setSyncDone] = useState(false);
+  // A manual profile can hold sensor readings the stats feed leaves out (null =
+  // not read yet): without this it would read as a brand-new, empty profile.
+  // Keyed by profile so a switch never shows the previous profile's answer.
+  const [sensorState, setSensorState] = useState<{ id: string; seen: boolean } | null>(null);
+  const sensorSeen = sensorState && sensorState.id === activeProfile?.id ? sensorState.seen : null;
   const firstPlan = firstStepPlan(dataMode, syncDone);
   // Store-screenshot only: zerospike://?shot=cgm opens this screen in sensor mode
   // over a demo curve; any dashboard link without it puts the profile back to
@@ -424,9 +419,21 @@ export default function DashboardScreen() {
   // alone is not enough on Android.
   const healthAvailable = useHealthAvailable();
   const showsHealthCard = healthAvailable && !androidSourceShot;
-  const proCta = useProCta(!isProUser && showsHealthCard);
+  // Pro imports everything and in the background. A free profile in CGM mode
+  // still gets the last 24 hours while the app is open (lib/cgm/importPolicy),
+  // so the card is a plain switch for it too; any other free profile keeps the
+  // Pro card.
+  const importAllowed = healthImportAllowed({ isPro: isProUser, mode: dataMode });
+  const importGate = isProUser ? "pro" : dataModeReady ? (importAllowed ? "free" : "off") : "pending";
+  // Android: Health Connect missing or waiting for a Play update.
+  const hcGate = cgmChoiceGate({ os: Platform.OS, status: useHealthConnectStatus() });
+  const proCta = useProCta(!importAllowed && showsHealthCard);
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  // The last seven days as a RANGE read, for the "this week" tiles and the
+  // streak. The newest-300 window above is a day or two of rows once a sensor
+  // writes every five minutes, which made "this week" an average of ~25 hours.
+  const [weekEntries, setWeekEntries] = useState<JournalEntry[]>([]);
   // The visible journal list only: same window, but with the calculator's own
   // auto-written bolus row (source = 'calculator') filtered out in SQL, so a
   // logged meal no longer shows its dose twice (once on the meal row, once on
@@ -471,8 +478,8 @@ export default function DashboardScreen() {
     });
   }
   const healthFlow = flowRef.current;
-  const latestRef = useRef({ runSync, toggleCgm });
-  latestRef.current = { runSync, toggleCgm };
+  const latestRef = useRef({ runSync, toggleCgm, resumeFreeSync, refreshHealthFlag });
+  latestRef.current = { runSync, toggleCgm, resumeFreeSync, refreshHealthFlag };
   // A run that found the screen covered for too long asks again once it
   // clears, but only for the profile that asked and only while that profile's
   // Health switch is on (a profile switch in between drops it).
@@ -501,6 +508,9 @@ export default function DashboardScreen() {
       focusedRef.current = true;
       healthFlow.touch();
       flushRetry();
+      // Settings > Data sources may have turned the Health switch on while this
+      // screen sat underneath.
+      void latestRef.current.refreshHealthFlag();
       return () => {
         focusedRef.current = false;
         healthFlow.touch();
@@ -671,18 +681,15 @@ export default function DashboardScreen() {
       // the LIMIT, so the row budget is spent on rows that actually display.
       // Issued together rather than in sequence: this is the screen the app
       // opens on, and awaiting them one after the other doubled its first paint.
-      const [feed, visible, ofKind] = await Promise.all([
-        // A sensor profile's stats feed leaves the sensor rows out: 300 of them
-        // would be a day and a half of readings and push every meal, dose and
-        // hand-entered reading out of the window. Its ring and curve read the
-        // sensor data through their own queries (components/CgmHomeCard.tsx).
-        getJournal(
-          activeProfile.id,
-          lang,
-          loadLimit,
-          undefined,
-          cgmActive ? { cgm: "exclude" } : { cgm: "twins" }
-        ),
+      const weekEnd = Date.now();
+      const [feed, visible, ofKind, week] = await Promise.all([
+        // The stats feed leaves the sensor rows out for every profile: 300 of
+        // them would be a day and a half of readings and push every meal, dose
+        // and hand-entered reading out of the window, and "Today" and "This
+        // week" must stand on the same base (hand-entered readings only). A
+        // sensor profile's ring and curve read the sensor data through their own
+        // queries (components/CgmHomeCard.tsx).
+        getJournal(activeProfile.id, lang, loadLimit, undefined, { cgm: "exclude" }),
         getJournal(activeProfile.id, lang, loadLimit, undefined, {
           excludeCalculatorInjections: true,
           cgm: "exclude",
@@ -694,8 +701,14 @@ export default function DashboardScreen() {
               cgm: "exclude",
               kind: filter,
             }),
+        // Hand-entered readings and doses of the last 7 days (sensor rows have
+        // their own ring and curve queries); the span, not a row count, decides.
+        getJournal(activeProfile.id, lang, WEEK_FEED_LIMIT, { start: weekEnd - WEEK_MS, end: weekEnd }, {
+          cgm: "exclude",
+        }),
       ]);
       setEntries(feed);
+      setWeekEntries(week);
       setJournalEntries(visible);
       setKindEntries({ kind: filter, rows: ofKind });
     } catch (err) {
@@ -706,7 +719,7 @@ export default function DashboardScreen() {
       // screen falls back to its empty state instead.
       setLoaded(true);
     }
-  }, [activeProfile, lang, loadLimit, filter, cgmActive]);
+  }, [activeProfile, lang, loadLimit, filter]);
 
   useEffect(() => {
     load();
@@ -730,6 +743,28 @@ export default function DashboardScreen() {
   useEffect(() => {
     if (profileId) void seedFirstLogFlags();
   }, [profileId]);
+
+  // Does a MANUAL profile hold sensor readings at all? One index probe. A sensor
+  // profile needs no answer: its layout is its own.
+  useEffect(() => {
+    if (!profileId) return;
+    if (cgmActive) {
+      setSensorState({ id: profileId, seen: true });
+      return;
+    }
+    let alive = true;
+    void hasCgmReadings(profileId)
+      .then((seen) => {
+        if (alive) setSensorState({ id: profileId, seen });
+      })
+      .catch((err) => {
+        logCrash(err, { screen: "dashboard", load: "sensorSeen" });
+        if (alive) setSensorState({ id: profileId, seen: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [profileId, cgmActive, dataVersion]);
 
   // Sensor days for the streak, and the first-sync tick; both read only on a
   // sensor mode, so a manual profile does no extra work here.
@@ -1009,6 +1044,7 @@ export default function DashboardScreen() {
         void retryPendingHealthWrites(profileId);
         void retryHealthRecords(profileId);
       }
+      latestRef.current.resumeFreeSync();
     });
     return () => sub.remove();
   }, [refreshPostMealTimer, refreshNextReminder, profileId, glucoseUnit]);
@@ -1025,6 +1061,9 @@ export default function DashboardScreen() {
     // Profile lock (A): nothing to key the preference off until the active
     // profile has resolved.
     if (!activeProfile) return;
+    // A free profile's mode is still being read: whether it may import is not
+    // known yet, and answering now would show the Pro notice to a CGM profile.
+    if (importGate === "pending") return;
     const profileId = activeProfile.id;
     // Reset to the skeleton state immediately on a profile switch: without this
     // the card could flash the PREVIOUS profile's sync preference (and briefly
@@ -1045,7 +1084,7 @@ export default function DashboardScreen() {
       if (isProUser && isScreenshotMode()) {
         // Store frames show the connected card; no real HealthKit read or prompt in the simulator.
         setCgmOn(true);
-      } else if (isProUser) {
+      } else if (importAllowed) {
         setCgmOn(saved);
         if (saved) runSync(false);
       } else {
@@ -1054,7 +1093,7 @@ export default function DashboardScreen() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProfile?.id, isProUser]);
+  }, [activeProfile?.id, importGate]);
 
   useEffect(() => {
     if (isScreenshotMode() && isProUser && cgmOn === false) setCgmOn(true);
@@ -1100,7 +1139,7 @@ export default function DashboardScreen() {
     if (!activeProfile) return null;
     void retryPendingHealthWrites(activeProfile.id);
     void retryHealthRecords(activeProfile.id);
-    if (!isProUser || (!shared && syncing)) return null;
+    if (!importAllowed || (!shared && syncing)) return null;
     const profileId = activeProfile.id;
     let manualBefore: number | null = null;
     // The import may raise the system permission dialog: not before the screen
@@ -1114,12 +1153,47 @@ export default function DashboardScreen() {
         },
         run: async () => {
           manualBefore = await countNonCgmHealthRows(profileId).catch(() => null);
-          return importHealthGlucose(profileId, announce ? "manual" : "foreground");
+          return importHealthGlucose(profileId, announce ? "manual" : "foreground", {
+            freeWindow: !isProUser,
+          });
         },
         onResult: (res) => finishSync(res, announce, manualBefore),
       },
       shared
     );
+  }
+
+  /** A free profile has no background sync: coming back to the app is its refresh.
+   *  The stored switch decides, not this screen's copy of it (it may be older). */
+  function resumeFreeSync() {
+    if (isProUser || !importAllowed || !activeProfile || syncing) return;
+    const profileId = activeProfile.id;
+    void readProfileFlag(CGM_KEY, profileId)
+      .then((on) => {
+        if (!on || activeProfileIdRef.current !== profileId) return;
+        setCgmOn(true);
+        void runSync(false);
+      })
+      .catch((err) => logCrash(err, { screen: "dashboard", load: "resumeSync" }));
+  }
+
+  /** Re-reads the stored Health switch when the screen is focused again and
+   *  follows it (turning the import on runs the first pull). */
+  async function refreshHealthFlag() {
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
+    let saved: boolean;
+    try {
+      saved = await readProfileFlag(CGM_KEY, profileId);
+    } catch (err) {
+      logCrash(err, { screen: "dashboard", load: "cgmPrefFocus" });
+      return;
+    }
+    if (activeProfileIdRef.current !== profileId) return;
+    const next = decideFlagRefresh({ allowed: importAllowed, cgmOn, syncing, saved });
+    if (next === "none") return;
+    setCgmOn(next === "on");
+    if (next === "on") void runSync(false);
   }
 
   async function finishSync(res: SyncResult, announce: boolean, manualBefore: number | null) {
@@ -1209,7 +1283,6 @@ export default function DashboardScreen() {
    * once.
    */
   const stats = useMemo(() => {
-    const weekAgo = Date.now() - 7 * 86_400_000;
     // Measured against the PROFILE'S band, not a fixed 70-180 rectangle, so
     // these figures agree with Insights and the doctor report.
     const weekBand = targetBandFor(activeProfile ?? {});
@@ -1235,28 +1308,33 @@ export default function DashboardScreen() {
     // Feed order is newest-first; the sparkline reads chronologically.
     const weekValuesDesc: number[] = [];
 
+    // The week figures come from the 7-day range read, never from the newest-N
+    // window the rest of this pass walks. Newest first, like the feed.
+    for (const e of weekEntries) {
+      if (e.kind === "glucose") {
+        weekReadings++;
+        weekSum += e.glucose_level_mgdl;
+        weekValuesDesc.push(e.glucose_level_mgdl);
+        // The shared test: 250 and up is never "in target", whatever the ceiling.
+        if (inTargetBand(e.glucose_level_mgdl, weekBand)) weekInBand++;
+      } else if (e.kind === "injection") {
+        weekInjections++;
+      }
+      // Days a week row falls on count toward the streak even when the
+      // newest-N window no longer reaches them.
+      logDates.push(e.logged_at);
+    }
+
     for (const e of entries) {
       logDates.push(e.logged_at);
       if (e.kind === "meal") continue;
       const isToday = formatDateKey(e.logged_at) === todayKey;
-      const inWeek = new Date(e.logged_at).getTime() >= weekAgo;
       if (e.kind === "glucose") {
         if (!lastGlucose) lastGlucose = e;
         if (isToday) {
           todayReadings++;
           todaySum += e.glucose_level_mgdl;
           todayList.push({ mgdl: e.glucose_level_mgdl, tag: e.period_tag });
-        }
-        if (inWeek) {
-          weekReadings++;
-          weekSum += e.glucose_level_mgdl;
-          weekValuesDesc.push(e.glucose_level_mgdl);
-          if (
-            e.glucose_level_mgdl >= weekBand.low &&
-            e.glucose_level_mgdl <= weekBand.high
-          ) {
-            weekInBand++;
-          }
         }
         continue;
       }
@@ -1265,7 +1343,6 @@ export default function DashboardScreen() {
       // computed from them.
       if (e.kind !== "injection") continue;
       injections.push(e);
-      if (inWeek) weekInjections++;
       if (isToday && e.dose_units != null && e.dose_units > 0) {
         if (e.insulin_type === "bolus") {
           todayBolusTotal += e.dose_units;
@@ -1340,7 +1417,7 @@ export default function DashboardScreen() {
       }),
     };
     // clock: active insulin decays and "today" rolls over with no data change.
-  }, [entries, activeProfile, cgmDates, clock]);
+  }, [entries, weekEntries, activeProfile, cgmDates, clock]);
 
   const {
     todayAvg,
@@ -1893,12 +1970,14 @@ export default function DashboardScreen() {
       });
       return;
     }
+    // Health Connect missing or waiting for a Play update: there is no dialog
+    // to raise, say what is needed instead of a refusal the person never made.
+    if (!(await healthGateOpen())) return;
     setCgmOn(true);
-    if (activeProfile) await writeProfileFlag(CGM_KEY, activeProfile.id, true);
     if (!activeProfile) return;
     const profileId = activeProfile.id;
-    await runConnect(healthFlow, {
-      setSyncing,
+    await connectHealthSync(healthFlow, {
+      setBusy: setSyncing,
       onBlocked: () => {
         retryQueue.queue("connect", profileId);
       },
@@ -1907,16 +1986,18 @@ export default function DashboardScreen() {
       // asks for write access in the same dialog as read; a new grant switches
       // the mirror on for this profile.
       request: (wanted) => requestHealthReadWriteAccess(profileId, wanted),
+      // The switch is saved only after the grant (lib/cgm/connectSync), so a
+      // refusal leaves it off and the next launch asks nothing.
+      writeFlag: (on) => writeProfileFlag(CGM_KEY, profileId, on),
       // Read refused in the combined dialog: opening the read dialog again right
       // away (importHealthGlucose asks for it) would just repeat the same prompt.
       onDenied: async (access) => {
         setCgmOn(false);
-        await writeProfileFlag(CGM_KEY, profileId, false);
         if (access.newlyEnabled) toast(writeOnMessage(), "info");
         else await offerHealthSettings();
       },
-      sync: (session) => runSync(true, session),
-      onConnected: async (synced, access) => {
+      importNow: (session) => runSync(true, session),
+      onDone: async (synced, access) => {
         if (synced?.status === "ok") {
           // Connected and the first import went through: the Health funnel step, and
           // the day-1 nudge (and the Pro welcome step) have nothing left to ask for.
@@ -1940,7 +2021,7 @@ export default function DashboardScreen() {
   // off, and sync now when it is already on. The card used to be inert whenever
   // the switch was off, so only its 30pt switch reacted to a tap.
   function openHealthFlow() {
-    if (!isProUser) {
+    if (!importAllowed) {
       hapticWarning();
       router.push({ pathname: "/paywall", params: { reason: "health" } });
       return;
@@ -1949,8 +2030,34 @@ export default function DashboardScreen() {
     // The persisted preference has not resolved yet (card is still its
     // skeleton, not a Pressable) - nothing to act on either way.
     if (cgmOn == null) return;
-    if (cgmOn) void runSync(true);
-    else void toggleCgm(true);
+    void (async () => {
+      if (!(await healthGateOpen())) return;
+      if (cgmOn) void runSync(true);
+      else void toggleCgm(true);
+    })();
+  }
+
+  /** Health Connect usable right now? The cached gate may predate an install or
+   *  update the person just made, so a closed one is asked again before it blocks
+   *  the tap; a gate that stays closed says why and opens the Play listing. */
+  async function healthGateOpen(): Promise<boolean> {
+    if (hcGate === "ready") return true;
+    const fresh = await cgmChoiceGateNow(Platform.OS, getHealthConnectStatus);
+    if (fresh === "ready") return true;
+    notifyHealthGate(fresh);
+    return false;
+  }
+
+  /** Android without a usable Health Connect: tell which of the two it is and
+   *  open its Play listing (install or update). */
+  function notifyHealthGate(gate: CgmChoiceGate) {
+    toast(
+      t(gate === "update" ? "dashboard.healthNeedsUpdate" : "dashboard.healthUnavailable", {
+        health: HEALTH_NAME,
+      }),
+      "info"
+    );
+    void Linking.openURL(HEALTH_CONNECT_PLAY_URL).catch(() => {});
   }
 
   // "I started eating" timer running: let the user cancel it in place.
@@ -2172,11 +2279,16 @@ export default function DashboardScreen() {
   // existing user, sit there while the hero ring and week strip popped in on
   // top of it a moment later and shoved everything down. See HeroSkeleton /
   // WeekSkeleton below for what fills that gap instead.
-  const homeLoaded = loaded && dataModeReady;
-  const homeState = bosDurumKarari({ loaded: homeLoaded, entries: entries.length, cgm: cgmActive });
+  const homeLoaded = loaded && dataModeReady && sensorSeen !== null;
+  const homeState = bosDurumKarari({
+    loaded: homeLoaded,
+    entries: entries.length,
+    cgm: cgmActive,
+    sensorData: sensorSeen === true,
+  });
   const isFirstRun = homeState === "welcome";
-  const isExistingUser = homeLoaded && (entries.length > 0 || cgmActive);
-  const hasAnyLog = homeLoaded && (entries.length > 0 || cgmActive);
+  const isExistingUser = homeLoaded && (entries.length > 0 || cgmActive || sensorSeen === true);
+  const hasAnyLog = homeLoaded && (entries.length > 0 || cgmActive || sensorSeen === true);
 
   const startSteps: {
     key: string;
@@ -2295,6 +2407,12 @@ export default function DashboardScreen() {
           unless the store reports a running trial. */}
       <TrialCard />
 
+      {/* The one-time "switch to CGM mode?" question, on either layout below: a
+          manual profile that already holds sensor readings is the one it is for. */}
+      {homeLoaded && activeProfile ? (
+        <CgmSwitchOffer profileId={activeProfile.id} mode={dataMode} dataVersion={dataVersion} />
+      ) : null}
+
       {!homeLoaded ? (
         // Unknown yet whether this is a first run or an existing user: neither
         // shell is correct to show, so a same-sized placeholder holds the hero
@@ -2313,17 +2431,10 @@ export default function DashboardScreen() {
               it fell on) as a small line underneath. Still gated on
               `lastGlucose` existing at all: with no reading EVER logged this
               stays out of the way for the FirstRunGuide branch above. */}
-          {activeProfile ? (
-            <CgmSwitchOffer
-              profileId={activeProfile.id}
-              mode={dataMode}
-              dataVersion={dataVersion}
-            />
-          ) : null}
           {cgmActive && activeProfile ? (
             // A sensor profile's hero: the same ring, the curve under it, the
             // last reading with its age. Never drawn for a manual profile.
-            <CgmHomeCard profile={activeProfile} mode={dataMode} dataVersion={dataVersion} />
+            <CgmHomeCard profile={activeProfile} mode={dataMode} dataVersion={dataVersion} isPro={isProUser} />
           ) : lastGlucose ? (
             <Card
               glow={todayAvg != null ? todayColor : THEME.textMuted}
@@ -2824,7 +2935,7 @@ export default function DashboardScreen() {
         {showsHealthCard ? (
           <Pressable
             onPress={openHealthFlow}
-            disabled={isProUser && syncing}
+            disabled={importAllowed && syncing}
             accessibilityRole="button"
             accessibilityLabel={HEALTH_NAME}
             android_ripple={cardRipple()}
@@ -2834,7 +2945,7 @@ export default function DashboardScreen() {
             <Card style={{ flex: 1 }}>
             <View className="flex-row items-center justify-between">
               <IconTile icon="pulse" size={28} radius={9} />
-              {!isProUser ? (
+              {!importAllowed ? (
                 <View className="rounded-full bg-brand px-2 py-0.5">
                   <Txt kind="micro" tone="onAccent" style={{ fontWeight: "700" }}>
                     {t("common.pro")}
@@ -2859,7 +2970,7 @@ export default function DashboardScreen() {
             <Txt kind="caption" numberOfLines={1} style={{ fontWeight: "700", marginTop: SPACE.sm }}>
               {HEALTH_NAME}
             </Txt>
-            {isProUser && cgmOn === null ? (
+            {importAllowed && cgmOn === null ? (
               <Skeleton width={110} height={10} radius={4} style={{ marginTop: SPACE.xs }} />
             ) : (
               <Txt
@@ -2868,7 +2979,7 @@ export default function DashboardScreen() {
                 numberOfLines={2}
                 style={{ fontWeight: "400" }}
               >
-                {!isProUser
+                {!importAllowed
                   ? t(proCta.key, proCta.params)
                   : syncing
                     ? t("dashboard.syncing")

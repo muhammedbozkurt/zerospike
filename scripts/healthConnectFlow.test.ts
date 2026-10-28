@@ -515,12 +515,12 @@ async function main() {
     eq("a finished import is not reused", again, 1);
 
     const wired = src("lib/services/health.ts");
-    ok("health.ts shares imports through the tested helper", /importShare\.share\(profileId/.test(wired));
+    ok("health.ts shares imports through the tested helper", /importShare\.share\((profileId|key),/.test(wired));
   });
 
   await section("G. wiring", async () => {
     const dash = src("app/(tabs)/index.tsx");
-    ok("connect goes through runConnect", /runConnect\(healthFlow/.test(dash));
+    ok("connect goes through runConnect (via connectHealthSync)", /connectHealthSync\(healthFlow/.test(dash) && /runConnect</.test(src("lib/cgm/connectSync.ts")));
     ok("the connect passes the run's wanted() to the permission request", /requestHealthReadWriteAccess\(profileId, wanted\)/.test(dash));
     ok("sync goes through runGuardedImport", /runGuardedImport<SyncResult>\(\s*healthFlow/.test(dash));
     ok("off goes through switchOff", /switchOff\(healthFlow/.test(dash));

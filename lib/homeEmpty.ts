@@ -11,6 +11,10 @@ export interface HomeCounts {
   /** The profile reads from a sensor (any mode but manual). The home then has
    *  its own "waiting for CGM" state instead of the welcome card. */
   cgm?: boolean;
+  /** The profile is on manual entry but sensor readings exist for it (a Health
+   *  import, or a return from Nightscout). The stats feed leaves those rows out,
+   *  so `entries` can be 0 while the profile is anything but new. */
+  sensorData?: boolean;
 }
 
 export type BosDurum = "loading" | "welcome" | "normal";
@@ -20,11 +24,13 @@ export type BosDurum = "loading" | "welcome" | "normal";
  * big empty ring. "loading": the feed has not been read yet, show skeletons.
  * "normal": at least one record exists and the usual layout (ring, week, flow)
  * takes over. A sensor profile is always "normal": with no reading yet it shows
- * "waiting for CGM" in place of the welcome card.
+ * "waiting for CGM" in place of the welcome card. So is a manual profile that
+ * already holds sensor readings: it is not new, and the CGM switch offer lives
+ * on that layout.
  */
 export function bosDurumKarari(counts: HomeCounts): BosDurum {
   if (!counts.loaded) return "loading";
-  if (counts.cgm) return "normal";
+  if (counts.cgm || counts.sensorData) return "normal";
   return counts.entries > 0 ? "normal" : "welcome";
 }
 
