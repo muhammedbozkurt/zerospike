@@ -271,11 +271,12 @@ section("7. coming back from the ratios: the record stays open");
   const line = src("components/CarbRatioLine.tsx");
   const prof = src("app/settings/profile.tsx");
   const calc = src("app/calculator.tsx");
-  ok("the calculator's line sends a return marker to Profile", line.includes('params: { returnTo: "calculator" }') && line.includes("returnAfterConfirm"));
-  ok("other screens' lines are unchanged (plain push)", line.includes(': "/settings/profile"'));
+  ok("the calculator's line sends a return marker to Profile", line.includes('{ returnTo: "calculator" }') && line.includes("returnAfterConfirm"));
+  ok("other screens' lines are a plain push without the marker", line.includes("returnAfterConfirm ? { returnTo") && line.includes('pathname: "/settings/profile"'));
+  ok("the Food tab keeps one compact line, gated by region and insulin mode", line.includes('variant = "line"') && line.includes("calculatorHiddenForRegion()") && !src("app/(tabs)/food.tsx").includes('variant="card"'));
   ok("Profile goes back only after a confirmation that was written, once, through the gate", /createConfirmGate\(\{[\s\S]{0,500}onConfirmed: \(\) => \{[\s\S]{0,200}to === "calculator" && r\.canGoBack\(\)\) r\.back\(\)/.test(prof) && prof.includes("onBusy: setConfirming"));
   ok("going back is a pop, so the open record keeps its state", !/router\.(replace|push)\([^)]*calculator/.test(prof));
-  ok("the sheet closes onto the same screen after its own confirmation", /onConfirmed=\{\(\) => \{\s*setSetupOpen\(false\);/.test(calc));
+  ok("the sheet stays open after its own confirmation (Save closes it)", !calc.includes("onConfirmed"));
   ok("the sheet never resets the form it sits on", !/setPortion\(|setGlucose\(|setSlot\(/.test(calc.slice(calc.indexOf("function CalcSetupSheet("), calc.indexOf("function DetailLabel("))));
   ok("Profile follows what the sheet stored until the user edits there", prof.includes("storedRatiosKey") && prof.includes("ratioTouchedRef.current"));
 }
@@ -289,14 +290,10 @@ section("8. the new strings exist in all nine languages");
     const block = s.slice(s.indexOf("\n  numeric: {"), s.indexOf("\n  ratio: {"));
     for (const k of keysNumeric) ok(`${l}: numeric.${k}`, new RegExp(`\\n    ${k}: "[^"]+"`).test(block));
     ok(`${l}: numeric.range names min, max and unit`, block.includes("{{min}}") && block.includes("{{max}}") && block.includes("{{unit}}"));
-    ok(`${l}: calculator.pending`, /\n    pending: "[^"]+"/.test(s));
     ok(`${l}: calculator.glucoseOffer`, /\n    glucoseOffer: "[^"]*\{\{value\}\}[^"]*\{\{unit\}\}[^"]*"/.test(s));
-    ok(`${l}: calculator.setup.hint`, /\n      hint: "[^"]+"/.test(s));
     ok(`${l}: decrease / increase exist`, /\n    decrease: "[^"]+"/.test(s) && /\n    increase: "[^"]+"/.test(s));
     ok(`${l}: no em dash in the new text`, !/—/.test(block));
   }
-  ok("tr pending is the agreed text", src("lib/i18n/locales/tr.ts").includes('pending: "Onay bekliyor"'));
-  ok("tr hint is the agreed text", src("lib/i18n/locales/tr.ts").includes('hint: "İşaretleyince hesaplanan toplam görünür"'));
   ok("tr offer is the agreed text", src("lib/i18n/locales/tr.ts").includes("Son ölçüm {{value}} {{unit}}, kullanmak için dokunun"));
   ok("de uses Sie in the range text", src("lib/i18n/locales/de.ts").includes("Geben Sie einen Wert"));
 }

@@ -330,12 +330,11 @@ const es: TranslationSchema = {
   ratio: {
     line: "Su proporción ({{slot}}): {{ratio}}",
     enter: "Introduzca sus proporciones",
-    confirm: "Confirme sus proporciones",
   },
   ratioConfirm: {
     until: "El cálculo no se muestra hasta que usted dé esta confirmación.",
     enterTitle: "El cálculo necesita sus proporciones",
-    enterBody: "Introduzca su proporción de carbohidratos y su ISF, establecidos con su equipo de diabetes. El cálculo aparece tras su confirmación.",
+    enterBody: "Introduzca su ratio de carbohidratos y su ISF, establecidos con su equipo de diabetes. El cálculo aparece tras su confirmación.",
     confirmTitle: "El cálculo necesita su confirmación",
     confirmBody: "Si estableció sus proporciones con su equipo de diabetes, confírmelas. El cálculo aparece después.",
     confirmAction: "Confirmar proporciones",
@@ -417,7 +416,6 @@ const es: TranslationSchema = {
     manualDose: "Dosis aplicada (unidades)",
     currentGlucose: "Glucosa actual (opcional)",
     glucoseOffer: "Última medición {{value}} {{unit}}, toque para usarla",
-    pending: "Pendiente de confirmación",
     addPhoto: "Añadir foto",
     takePhoto: "Tomar foto",
     choosePhoto: "Elegir de la galería",
@@ -473,7 +471,6 @@ const es: TranslationSchema = {
       bodyFilled: "Sus valores están guardados. Solo debe confirmarlos.",
       teamNote: "Establezca sus proporciones con su equipo de diabetes.",
       confirm: "He establecido estos valores con mi equipo de diabetes",
-      hint: "El total calculado aparece al marcar la casilla",
     },
   },
   iob: {

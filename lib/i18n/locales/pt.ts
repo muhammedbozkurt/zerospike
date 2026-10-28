@@ -330,7 +330,6 @@ const pt: TranslationSchema = {
   ratio: {
     line: "Sua razão ({{slot}}): {{ratio}}",
     enter: "Informe suas razões",
-    confirm: "Confirme suas razões",
   },
   ratioConfirm: {
     until: "O cálculo não é exibido até você dar esta confirmação.",
@@ -417,7 +416,6 @@ const pt: TranslationSchema = {
     manualDose: "Dose aplicada (unidades)",
     currentGlucose: "Glicemia atual (opcional)",
     glucoseOffer: "Última medição {{value}} {{unit}}, toque para usar",
-    pending: "Aguardando confirmação",
     addPhoto: "Adicionar foto",
     takePhoto: "Tirar foto",
     choosePhoto: "Escolher da galeria",
@@ -473,7 +471,6 @@ const pt: TranslationSchema = {
       bodyFilled: "Seus valores estão salvos. Basta confirmá-los.",
       teamNote: "Defina suas razões com sua equipe de diabetes.",
       confirm: "Defini estes valores com minha equipe de diabetes",
-      hint: "O total calculado aparece quando você marca a caixa",
     },
   },
   iob: {

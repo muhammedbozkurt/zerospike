@@ -330,12 +330,11 @@ const fr: TranslationSchema = {
   ratio: {
     line: "Votre ratio ({{slot}}) : {{ratio}}",
     enter: "Saisissez vos ratios",
-    confirm: "Confirmez vos ratios",
   },
   ratioConfirm: {
     until: "Le calcul ne s'affiche pas tant que vous n'avez pas donné cette confirmation.",
     enterTitle: "Le calcul a besoin de vos ratios",
-    enterBody: "Saisissez votre ratio glucides et votre ISF, tels que définis avec votre équipe diabète. Le calcul s'affiche après votre confirmation.",
+    enterBody: "Saisissez votre ratio glucidique et votre ISF, tels que définis avec votre équipe diabète. Le calcul s'affiche après votre confirmation.",
     confirmTitle: "Le calcul a besoin de votre confirmation",
     confirmBody: "Si vous avez défini vos ratios avec votre équipe diabète, confirmez-les. Le calcul s'affiche ensuite.",
     confirmAction: "Confirmer les ratios",
@@ -417,7 +416,6 @@ const fr: TranslationSchema = {
     manualDose: "Dose appliquée (unités)",
     currentGlucose: "Glycémie actuelle (facultatif)",
     glucoseOffer: "Dernière mesure {{value}} {{unit}}, touchez pour l'utiliser",
-    pending: "En attente de confirmation",
     addPhoto: "Ajouter une photo",
     takePhoto: "Prendre une photo",
     choosePhoto: "Choisir dans la galerie",
@@ -473,7 +471,6 @@ const fr: TranslationSchema = {
       bodyFilled: "Vos valeurs sont enregistrées. Il vous suffit de les confirmer.",
       teamNote: "Définissez vos ratios avec votre équipe diabète.",
       confirm: "J'ai défini ces ratios avec mon équipe diabète",
-      hint: "Le total calculé s'affiche dès que vous cochez la case",
     },
   },
   iob: {

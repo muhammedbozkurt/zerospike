@@ -328,7 +328,6 @@ const tr = {
   ratio: {
     line: "Oranınız ({{slot}}): {{ratio}}",
     enter: "Oranlarınızı girin",
-    confirm: "Oranlarınızı onaylayın",
   },
   ratioConfirm: {
     until: "Hesaplama, bu onayı verene kadar gösterilmez.",
@@ -415,7 +414,6 @@ const tr = {
     manualDose: "Uygulanan doz (ünite)",
     currentGlucose: "Mevcut kan şekeri (opsiyonel)",
     glucoseOffer: "Son ölçüm {{value}} {{unit}}, kullanmak için dokunun",
-    pending: "Onay bekliyor",
     addPhoto: "Fotoğraf ekle",
     takePhoto: "Fotoğraf çek",
     choosePhoto: "Galeriden seç",
@@ -471,7 +469,6 @@ const tr = {
       bodyFilled: "Değerleriniz kayıtlı, yalnızca onaylamanız yeterli.",
       teamNote: "Oranlarınızı diyabet ekibinizle belirleyin.",
       confirm: "Bu oranları diyabet ekibimle belirledim",
-      hint: "İşaretleyince hesaplanan toplam görünür",
     },
   },
   iob: {

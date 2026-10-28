@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,6 +14,7 @@ import { useLayout } from "../lib/useLayout";
 import { useScrollHint } from "../lib/useScrollHint";
 import { hintBottomOffset } from "../lib/scrollHint";
 import { ScrollHint } from "./ScrollHint";
+import { useScrollToTarget } from "./useScrollToTarget";
 
 /** Settings reading column on tablets: one centred column, never two. */
 export const SETTINGS_MAX_WIDTH = 640;
@@ -108,7 +109,12 @@ export function SettingsScaffold({
   overlay,
   fillHeight = false,
   scrollHintId,
+  scrollTargetRef,
+  scrollToActive = false,
 }: {
+  /** A child to scroll to once, while `scrollToActive` is true. */
+  scrollTargetRef?: React.RefObject<View | null>;
+  scrollToActive?: boolean;
   /** Opts this page into the once-per-screen scroll hint (lib/scrollHint). */
   scrollHintId?: string;
   title: string;
@@ -125,6 +131,8 @@ export function SettingsScaffold({
   const router = useRouter();
   const gap = useSettingsGap();
   const scrollHint = useScrollHint(`settings.${scrollHintId ?? "none"}`, scrollHintId != null);
+  const scrollRef = useRef(null as ScrollView | null);
+  useScrollToTarget(scrollRef, scrollTargetRef, scrollToActive);
   const header = (
     <ScreenHeader
       title={title}
@@ -145,6 +153,7 @@ export function SettingsScaffold({
           header
         )}
         <ScrollView
+          ref={scrollRef}
           {...keyboardAwareScrollProps}
           contentContainerStyle={{
             padding: SPACE.lg,

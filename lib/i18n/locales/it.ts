@@ -330,12 +330,11 @@ const it: TranslationSchema = {
   ratio: {
     line: "Il Suo rapporto ({{slot}}): {{ratio}}",
     enter: "Inserisca i Suoi rapporti",
-    confirm: "Confermi i Suoi rapporti",
   },
   ratioConfirm: {
     until: "Il calcolo non viene mostrato finché non dà questa conferma.",
     enterTitle: "Il calcolo richiede i Suoi rapporti",
-    enterBody: "Inserisca il Suo rapporto carboidrati e il Suo ISF, stabiliti con il Suo team diabetologico. Il calcolo compare dopo la Sua conferma.",
+    enterBody: "Inserisca il Suo rapporto insulina/carboidrati e il Suo ISF, stabiliti con il Suo team diabetologico. Il calcolo compare dopo la Sua conferma.",
     confirmTitle: "Il calcolo richiede la Sua conferma",
     confirmBody: "Se ha stabilito i Suoi rapporti con il Suo team diabetologico, li confermi. Il calcolo compare dopo.",
     confirmAction: "Confermi i rapporti",
@@ -417,7 +416,6 @@ const it: TranslationSchema = {
     manualDose: "Dose somministrata (unità)",
     currentGlucose: "Glicemia attuale (facoltativo)",
     glucoseOffer: "Ultima misurazione {{value}} {{unit}}, tocchi per usarla",
-    pending: "In attesa di conferma",
     addPhoto: "Aggiungi foto",
     takePhoto: "Scatta una foto",
     choosePhoto: "Scegli dalla galleria",
@@ -473,7 +471,6 @@ const it: TranslationSchema = {
       bodyFilled: "I Suoi valori sono salvati. Basta confermarli.",
       teamNote: "Stabilisca i Suoi rapporti con il Suo team diabetologico.",
       confirm: "Ho stabilito questi valori con il mio team diabetologico",
-      hint: "Il totale calcolato compare quando spunta la casella",
     },
   },
   iob: {

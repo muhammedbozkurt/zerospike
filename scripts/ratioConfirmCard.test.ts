@@ -123,6 +123,15 @@ eq("incomplete: no reminder", saveNeedsConfirmReminder({ complete: false, confir
 ok("Save still writes through flush and closes", /async function finishSetup\(info[^)]*\)\s*\{\s*setupErrorRef\.current = false;\s*await ratioWriters\.get\(\)\?\.flush\(\);\s*if \(setupErrorRef\.current\) return;\s*setSetupOpen\(false\)/.test(sheetSrc));
 ok("the reminder is a toast after a successful save", sheetSrc.includes('if (info.needsConfirmReminder) toast(t("ratioConfirm.savedReminder"), "info")'));
 
+console.log("6b. values are seen before the confirmation, and the sheet scrolls to the card");
+ok("the card lists the four values read only", card.includes("fields: RatioFields") && card.includes('t("calculator.setup.isfLabel")') && card.includes("glucoseToDisplay("));
+ok("every surface passes its values to the card", [sheetSrc, src("app/settings/profile.tsx"), src("app/profile-setup.tsx")].every((f) => /<RatioConfirmCard[\s\S]{0,400}fields=\{/.test(f)));
+ok("the sheet scrolls to the card on an emphasised open", sheetSrc.includes("scrollTargetRef={confirmCardRef}") && sheetSrc.includes("scrollToActive={emphasizeConfirm}"));
+ok("Profile scrolls to the card on highlight", src("app/settings/profile.tsx").includes('scrollToActive={highlight === "confirm"}'));
+ok("the shells wire the scroll hook", src("components/SheetShell.tsx").includes("useScrollToTarget(") && src("components/settingsUi.tsx").includes("useScrollToTarget("));
+ok("the big state card is calculator only", (sheetSrc.match(/variant="card"/g) ?? []).length === 2);
+ok("the compact line is gated by region", line.includes("calculatorHiddenForRegion()"));
+
 console.log("7. the copy exists in all nine languages, no banned roots");
 const keys = ["until", "enterTitle", "enterBody", "confirmTitle", "confirmBody", "confirmAction", "savedReminder"];
 for (const l of ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"]) {

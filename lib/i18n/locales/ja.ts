@@ -330,7 +330,6 @@ const ja: TranslationSchema = {
   ratio: {
     line: "比率（{{slot}}）：{{ratio}}",
     enter: "比率を入力してください",
-    confirm: "比率を確認してください",
   },
   ratioConfirm: {
     until: "この確認を行うまで、計算は表示されません。",
@@ -417,7 +416,6 @@ const ja: TranslationSchema = {
     manualDose: "実際に使った量(単位)",
     currentGlucose: "現在の血糖値(任意)",
     glucoseOffer: "直近の測定値 {{value}} {{unit}}。タップして使用",
-    pending: "確認待ち",
     addPhoto: "写真を追加",
     takePhoto: "写真を撮る",
     choosePhoto: "ライブラリから選ぶ",
@@ -473,7 +471,6 @@ const ja: TranslationSchema = {
       bodyFilled: "値は保存されています。確認するだけです。",
       teamNote: "比率は糖尿病の医療チームと相談して決めてください。",
       confirm: "これらの比率は糖尿病の医療チームと決めました",
-      hint: "チェックすると計算された合計が表示されます",
     },
   },
   iob: {

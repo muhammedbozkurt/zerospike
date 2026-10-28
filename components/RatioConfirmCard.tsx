@@ -6,13 +6,21 @@ import { useTranslation } from "react-i18next";
 import { HIT_TARGET, RADIUS, SPACE, THEME } from "../lib/theme/tokens";
 import { hapticSelect } from "../lib/haptics";
 import { confirmCardEmphasized, showUntilConfirmNote } from "../lib/ratioConfirmCard";
+import { glucoseToDisplay, glucoseUnitLabel } from "../lib/glucose";
+import { isolateLtr, num } from "../lib/format";
+import type { RatioFields } from "../lib/calcSetup";
+import type { GlucoseUnit } from "../lib/db/types";
 import { Txt } from "./ui";
+
+const SLOTS = ["breakfast", "lunch", "dinner"] as const;
 
 /**
  * The one confirmation card for "I set these ratios with my diabetes team", used
  * by the ratios sheet, Profile and Targets and the profile editor. The whole card
- * is the touch target. It never starts ticked on its own: `checked` comes from
- * the caller and only a stored confirmation sets it.
+ * is the touch target, and it lists the four values being confirmed (read only)
+ * so the confirmation is never given on numbers the user has not seen. It never
+ * starts ticked on its own: `checked` comes from the caller and only a stored
+ * confirmation sets it.
  *
  * While the ratios are complete and the card is still unticked it takes the
  * accent border and says, under the label, that the calculation stays hidden
@@ -22,6 +30,8 @@ export function RatioConfirmCard({
   checked,
   onToggle,
   complete,
+  fields,
+  unit,
   disabled,
   emphasized = false,
 }: {
@@ -29,6 +39,9 @@ export function RatioConfirmCard({
   onToggle: (next: boolean) => void;
   /** All four values are filled in (the box can be ticked). */
   complete: boolean;
+  /** The four values on screen, shown as a short read-only summary. */
+  fields: RatioFields;
+  unit: GlucoseUnit;
   disabled?: boolean;
   /** Opened on purpose from the calculator's "Confirm ratios" button. */
   emphasized?: boolean;
@@ -36,6 +49,24 @@ export function RatioConfirmCard({
   const { t } = useTranslation();
   const accent = confirmCardEmphasized({ complete, checked, emphasized });
   const label = t("calculator.setup.confirm");
+  const rows = [
+    ...SLOTS.map((slot) => ({
+      key: slot,
+      label: t(`slot.${slot}`),
+      value:
+        fields[slot] != null
+          ? isolateLtr(`1 ${t("common.unitsShort")} = ${num(fields[slot] as number)} ${t("common.grams")}`)
+          : "-",
+    })),
+    {
+      key: "isf",
+      label: t("calculator.setup.isfLabel"),
+      value:
+        fields.isfMgdl != null
+          ? isolateLtr(`${num(glucoseToDisplay(fields.isfMgdl, unit))} ${glucoseUnitLabel(unit)}`)
+          : "-",
+    },
+  ];
   return (
     <View
       style={{
@@ -54,26 +85,34 @@ export function RatioConfirmCard({
         }}
         accessibilityRole="checkbox"
         accessibilityState={{ checked, disabled: !!disabled }}
-        accessibilityLabel={label}
+        accessibilityLabel={`${label}. ${rows.map((r) => `${r.label}: ${r.value}`).join(". ")}`}
         accessibilityHint={t("calculator.setup.teamNote")}
-        style={{
-          flexDirection: "row",
-          alignItems: "flex-start",
-          gap: SPACE.md,
-          padding: SPACE.lg,
-          minHeight: HIT_TARGET,
-        }}
+        style={{ padding: SPACE.lg, minHeight: HIT_TARGET }}
       >
-        <Ionicons
-          name={checked ? "checkbox" : "square-outline"}
-          size={28}
-          color={checked || accent ? THEME.accent : THEME.textMuted}
-        />
-        <View style={{ flex: 1 }}>
-          <Txt style={{ fontWeight: "600" }}>{label}</Txt>
-          <Txt kind="caption" tone="muted" style={{ marginTop: 4 }}>
-            {t("calculator.setup.teamNote")}
-          </Txt>
+        <View style={{ gap: SPACE.xs, marginBottom: SPACE.md }}>
+          {rows.map((r) => (
+            <View key={r.key} style={{ flexDirection: "row", justifyContent: "space-between", gap: SPACE.md }}>
+              <Txt kind="caption" tone="muted" style={{ flex: 1 }}>
+                {r.label}
+              </Txt>
+              <Txt kind="caption" style={{ flexShrink: 1, textAlign: "right" }}>
+                {r.value}
+              </Txt>
+            </View>
+          ))}
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: SPACE.md }}>
+          <Ionicons
+            name={checked ? "checkbox" : "square-outline"}
+            size={28}
+            color={checked || accent ? THEME.accent : THEME.textMuted}
+          />
+          <View style={{ flex: 1 }}>
+            <Txt style={{ fontWeight: "600" }}>{label}</Txt>
+            <Txt kind="caption" tone="muted" style={{ marginTop: 4 }}>
+              {t("calculator.setup.teamNote")}
+            </Txt>
+          </View>
         </View>
       </Pressable>
       {showUntilConfirmNote({ complete, checked }) ? (

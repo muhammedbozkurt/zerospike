@@ -154,7 +154,6 @@ import { DirIcon } from "../components/DirIcon";
 import { CarbRatioLine } from "../components/CarbRatioLine";
 import {
   RATIO_CONFIRM_STARTS_CHECKED,
-  ratioConfirmState,
   saveNeedsConfirmReminder,
 } from "../lib/ratioConfirmCard";
 import { useCarbChoiceText } from "../lib/carbDisplayPref";
@@ -439,15 +438,17 @@ function NoticeGroup({
 /**
  * The calculator's numbers, asked in one sheet: a carb ratio for each meal and
  * the correction factor, as four separate fields. It opens by itself once (see
- * lib/calcSetup.ts); afterwards the "Enter your ratios" / "Confirm your ratios"
- * line leads to Profile and Targets.
+ * lib/calcSetup.ts); afterwards the "Enter your ratios" / "Confirm ratios" card
+ * (CarbRatioLine, variant card) opens it again.
  *
  * The fields open with the user's own stored values or EMPTY; nothing is
  * suggested. Whatever is typed is written to the profile as it is typed, through
  * the same writer Profile and Targets uses, so the two are one record: leaving
  * the sheet half-filled, or going to Profile, loses nothing. Ticking the box
- * confirms the numbers on screen; only then does the calculator show a figure,
- * and the sheet closes so it is right there. Changing any value un-ticks the box.
+ * confirms the numbers on screen (the card lists them) and only then does the
+ * calculator show a figure; the sheet stays open until the user presses Save, so
+ * the confirmation is never given on values that were not looked at. Changing
+ * any value un-ticks the box.
  *
  * ISF is held in mg/dL and edited in the profile's display unit.
  */
@@ -455,7 +456,6 @@ function CalcSetupSheet({
   visible,
   onClose,
   onFinish,
-  onConfirmed,
   getWriter,
   saveError,
   unit,
@@ -469,8 +469,6 @@ function CalcSetupSheet({
   /** Save: writes what is pending and closes unless the write failed. Reports
    *  whether all four values are in but the confirmation was not given. */
   onFinish: (info: { needsConfirmReminder: boolean }) => Promise<void>;
-  /** The box was ticked and the confirmation reached the profile. */
-  onConfirmed: () => void;
   getWriter: (opts?: { renew?: boolean }) => RatioWriter | null;
   saveError: boolean;
   unit: GlucoseUnit;
@@ -486,6 +484,7 @@ function CalcSetupSheet({
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const fieldsRef = useRef<RatioFields>(initial);
+  const confirmCardRef = useRef<View>(null);
 
   // Every open starts from what the profile holds now, with a writer that
   // starts from it too. The box always starts unticked.
@@ -525,17 +524,20 @@ function CalcSetupSheet({
     if (next && confirmStillCurrent(ok, sent, fieldsRef.current)) {
       setConfirmed(true);
       hapticSuccess();
-      onConfirmed();
+    } else if (!next && ok) {
+      setConfirmed(false);
     }
   }
 
   const complete = ratioFieldsComplete(fields);
   const confirmCard = (
-    <View style={{ marginTop: emphasizeConfirm ? 0 : 18, marginBottom: emphasizeConfirm ? 16 : 0 }}>
+    <View ref={confirmCardRef} collapsable={false} style={{ marginTop: 18 }}>
       <RatioConfirmCard
         checked={confirmed}
         onToggle={(next) => void toggle(next)}
         complete={complete}
+        fields={fields}
+        unit={unit}
         emphasized={emphasizeConfirm}
         disabled={!complete || confirming}
       />
@@ -545,6 +547,8 @@ function CalcSetupSheet({
   return (
     <SheetShell
       scrollHintId="calculator-setup"
+      scrollTargetRef={confirmCardRef}
+      scrollToActive={emphasizeConfirm}
       visible={visible}
       onClose={onClose}
       title={t("calculator.setup.title")}
@@ -592,8 +596,6 @@ function CalcSetupSheet({
         {prefilled ? t("calculator.setup.bodyFilled") : t("calculator.setup.body")}
       </Text>
 
-      {emphasizeConfirm ? confirmCard : null}
-
       <DetailLabel>{t("calculator.setup.carbLabel")}</DetailLabel>
       {(["breakfast", "lunch", "dinner"] as const).map((slot) => (
         <View key={slot} style={{ marginBottom: 10, maxWidth: 360 }}>
@@ -624,7 +626,7 @@ function CalcSetupSheet({
         </Text>
       </View>
 
-      {emphasizeConfirm ? null : confirmCard}
+      {confirmCard}
     </SheetShell>
   );
 }
@@ -765,9 +767,8 @@ function CalculatorScreen() {
 
   // The ratios sheet (lib/calcSetup.ts). It opens by itself ONCE on a new
   // record while the profile has no confirmed ratios of its own; after that the
-  // "Enter your ratios" line (CarbRatioLine) leads to Profile and Targets.
+  // "Enter your ratios" / "Confirm ratios" card (CarbRatioLine) opens it.
   const setupNeeded = calcSetupNeeded(activeProfile);
-  const ratioState = ratioConfirmState(activeProfile);
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupEmphasize, setSetupEmphasize] = useState(false);
   const [setupSaveError, setSetupSaveError] = useState(false);
@@ -2130,10 +2131,6 @@ function CalculatorScreen() {
       visible={setupOpen}
       onClose={closeSetup}
       onFinish={finishSetup}
-      onConfirmed={() => {
-        setSetupOpen(false);
-        setSetupSaveError(false);
-      }}
       getWriter={ratioWriters.get}
       saveError={setupSaveError}
       unit={unit}
@@ -2258,7 +2255,7 @@ function CalculatorScreen() {
             {glucoseCard()}
 
             {showsDose ? (
-              <CarbRatioLine slot={slot} returnAfterConfirm onOpenSetup={openSetup} />
+              <CarbRatioLine slot={slot} returnAfterConfirm variant="card" onOpenSetup={openSetup} />
             ) : null}
 
             {showsDose ? (
@@ -2536,7 +2533,7 @@ function CalculatorScreen() {
 
           {showsDose ? (
             <>
-              <CarbRatioLine slot={slot} returnAfterConfirm onOpenSetup={openSetup} />
+              <CarbRatioLine slot={slot} returnAfterConfirm variant="card" onOpenSetup={openSetup} />
 
               {doseEst ? (
                 <>

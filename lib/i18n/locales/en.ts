@@ -330,7 +330,6 @@ const en: TranslationSchema = {
   ratio: {
     line: "Your ratio ({{slot}}): {{ratio}}",
     enter: "Enter your ratios",
-    confirm: "Confirm your ratios",
   },
   ratioConfirm: {
     until: "The calculation is not shown until you give this confirmation.",
@@ -417,7 +416,6 @@ const en: TranslationSchema = {
     manualDose: "Applied dose (units)",
     currentGlucose: "Current glucose (optional)",
     glucoseOffer: "Last reading {{value}} {{unit}}, tap to use",
-    pending: "Awaiting confirmation",
     addPhoto: "Add photo",
     takePhoto: "Take photo",
     choosePhoto: "Choose from gallery",
@@ -473,7 +471,6 @@ const en: TranslationSchema = {
       bodyFilled: "Your values are saved. Just confirm them.",
       teamNote: "Set your ratios with your diabetes team.",
       confirm: "I set these ratios with my diabetes team",
-      hint: "The calculated total appears once you tick this",
     },
   },
   iob: {

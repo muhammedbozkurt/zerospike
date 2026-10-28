@@ -66,6 +66,7 @@ export default function ProfileSettings() {
   // Set by the calculator's "Enter your ratios" line: ticking the box here
   // takes the user back to that open record, with the total showing.
   const { returnTo, highlight } = useLocalSearchParams<{ returnTo?: string; highlight?: string }>();
+  const confirmCardRef = useRef<View>(null);
   const carbMode = useCarbDisplayMode();
   const regionNote = carbRegionNote(i18n.language, getLocales()[0]?.regionCode);
   const { confirm, actionSheet, toast } = useFeedback();
@@ -510,7 +511,12 @@ export default function ProfileSettings() {
   }
 
   return (
-    <SettingsScaffold scrollHintId="profile" title={t("onboarding.secProfile")}>
+    <SettingsScaffold
+      scrollHintId="profile"
+      title={t("onboarding.secProfile")}
+      scrollTargetRef={confirmCardRef}
+      scrollToActive={highlight === "confirm"}
+    >
       <FormCard icon="person-outline" title={t("onboarding.secProfile")}>
         <InputRow
           icon="text-outline"
@@ -799,11 +805,13 @@ export default function ProfileSettings() {
 
       {showsBolus ? (
         <FormCard icon="checkmark-circle-outline" title={t("calculator.setup.title")}>
-          <View className="px-4 py-3">
+          <View ref={confirmCardRef} collapsable={false} className="px-4 py-3">
             <RatioConfirmCard
               checked={activeProfile?.ratios_confirmed === 1 && ratioDraftIsStored}
               onToggle={onRatioConfirm}
               complete={ratioFieldsComplete(ratioDraft)}
+              fields={ratioDraft}
+              unit={unit}
               emphasized={highlight === "confirm"}
               disabled={!ratioFieldsComplete(ratioDraft) || confirming}
             />

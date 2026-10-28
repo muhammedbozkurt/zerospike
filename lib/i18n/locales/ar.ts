@@ -330,7 +330,6 @@ const ar: TranslationSchema = {
   ratio: {
     line: "نسبتك ({{slot}}): {{ratio}}",
     enter: "أدخل نسبك",
-    confirm: "أكّد نسبك",
   },
   ratioConfirm: {
     until: "لا يُعرض الحساب إلى أن تقدّم هذا التأكيد.",
@@ -417,7 +416,6 @@ const ar: TranslationSchema = {
     manualDose: "الجرعة المُعطاة (وحدة)",
     currentGlucose: "سكر الدم الحالي (اختياري)",
     glucoseOffer: "آخر قياس {{value}} {{unit}}، اضغط لاستخدامه",
-    pending: "بانتظار التأكيد",
     addPhoto: "إضافة صورة",
     takePhoto: "التقاط صورة",
     choosePhoto: "اختيار من المعرض",
@@ -473,7 +471,6 @@ const ar: TranslationSchema = {
       bodyFilled: "قيمك محفوظة. يكفي أن تؤكدها.",
       teamNote: "حدد نسبك بالتشاور مع فريق السكري.",
       confirm: "حددت هذه النسب مع فريق السكري الخاص بي",
-      hint: "يظهر الإجمالي المحسوب عند وضع علامة في المربع",
     },
   },
   iob: {

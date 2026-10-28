@@ -719,6 +719,8 @@ function ProfileSetupScreen() {
                     checked={ratiosTick}
                     onToggle={setRatiosTick}
                     complete={ratioSetComplete}
+                    fields={ratios}
+                    unit={unit}
                     disabled={!ratioSetComplete}
                   />
                 </View>

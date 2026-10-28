@@ -330,12 +330,11 @@ const de: TranslationSchema = {
   ratio: {
     line: "Ihr KH-Faktor ({{slot}}): {{ratio}}",
     enter: "Geben Sie Ihre Faktoren ein",
-    confirm: "Bestätigen Sie Ihre Faktoren",
   },
   ratioConfirm: {
     until: "Die Berechnung wird erst angezeigt, wenn Sie diese Bestätigung geben.",
     enterTitle: "Die Berechnung benötigt Ihre Faktoren",
-    enterBody: "Geben Sie Ihr KH-Verhältnis und Ihren ISF so ein, wie Ihr Diabetesteam sie festgelegt hat. Die Berechnung erscheint nach Ihrer Bestätigung.",
+    enterBody: "Geben Sie Ihren KE-Faktor und Ihren ISF so ein, wie Ihr Diabetesteam sie festgelegt hat. Die Berechnung erscheint nach Ihrer Bestätigung.",
     confirmTitle: "Die Berechnung benötigt Ihre Bestätigung",
     confirmBody: "Wenn Sie Ihre Faktoren gemeinsam mit Ihrem Diabetesteam festgelegt haben, bestätigen Sie sie. Danach erscheint die Berechnung.",
     confirmAction: "Faktoren bestätigen",
@@ -417,7 +416,6 @@ const de: TranslationSchema = {
     manualDose: "Verabreichte Dosis (Einheiten)",
     currentGlucose: "Aktueller Blutzucker (optional)",
     glucoseOffer: "Letzte Messung {{value}} {{unit}}, zum Verwenden antippen",
-    pending: "Bestätigung ausstehend",
     addPhoto: "Foto hinzufügen",
     takePhoto: "Foto aufnehmen",
     choosePhoto: "Aus Galerie wählen",
@@ -473,7 +471,6 @@ const de: TranslationSchema = {
       bodyFilled: "Ihre Werte sind gespeichert. Bitte bestätigen Sie sie nur noch.",
       teamNote: "Legen Sie Ihre Faktoren gemeinsam mit Ihrem Diabetesteam fest.",
       confirm: "Ich habe diese Werte mit meinem Diabetesteam festgelegt",
-      hint: "Die berechnete Summe erscheint, sobald Sie das Kästchen markieren",
     },
   },
   iob: {
