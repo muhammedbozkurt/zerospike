@@ -1502,7 +1502,6 @@ const ja: TranslationSchema = {
     sideRight: "右",
     rotationHint: "ローテーション",
     selfViewNote: "マップは、向かい合う相手を見るときの向きで表示されます。ご自身の左側は画面の右側に表示されます。",
-    flipNotice: "マップの向きが更新されました。今は向かい合う向きで表示され、左側が右側になります。",
   },
   spike: {
     title: "Spike",

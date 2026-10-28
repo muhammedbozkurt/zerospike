@@ -105,5 +105,9 @@ const at = screen.indexOf("const openEditById");
 const open = screen.slice(at, at + 500);
 ok("openEditById reads one row and opens the sheet", /getInjection\(id\)/.test(open) && /setEditing\(row\)/.test(open) && !/logInjection/.test(open));
 
+console.log("E. map orientation toast is gone");
+ok("injection tab no longer toasts the orientation change", !/flipNotice|injectionMapNotice|FlipNotice/.test(screen));
+ok("no locale carries the orientation toast key", ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"].every((l) => !read(`lib/i18n/locales/${l}.ts`).includes("flipNotice")));
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

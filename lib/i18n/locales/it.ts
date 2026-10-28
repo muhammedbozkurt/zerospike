@@ -1503,8 +1503,6 @@ const it: TranslationSchema = {
     rotationHint: "Rotazione",
     selfViewNote:
       "La mappa è vista come da una persona di fronte a Lei: il Suo lato sinistro appare a destra.",
-    flipNotice:
-      "Orientamento aggiornato: la mappa è ora vista come da una persona di fronte a Lei, il Suo lato sinistro è a destra.",
   },
   spike: {
     title: "Spike",

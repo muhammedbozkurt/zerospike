@@ -1502,7 +1502,6 @@ const ar: TranslationSchema = {
     sideRight: "يمين",
     rotationHint: "التدوير",
     selfViewNote: "تُعرض الخريطة كما لو كان شخص يقف في مواجهتك: يظهر جانبك الأيسر على اليمين.",
-    flipNotice: "تم تحديث اتجاه الخريطة: أصبحت الآن تواجهك، جانبك الأيسر على اليمين.",
   },
   spike: {
     title: "Spike",

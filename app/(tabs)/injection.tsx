@@ -80,10 +80,6 @@ import { logCrash, logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { noteFirstLog } from "../../lib/services/firstLog";
 import { noteJournalActivity } from "../../lib/services/notifications";
-import {
-  injectionMapFlipNoticeSeen,
-  markInjectionMapFlipNoticeSeen,
-} from "../../lib/services/injectionMapNotice";
 import { formatTime, num, relativeDay } from "../../lib/format";
 import {
   groupInjectionsByDay,
@@ -193,7 +189,6 @@ export default function InjectionScreen() {
   // column only toggles between the form and the history: a "map" segment
   // reads as the form there.
   const shownSegment: Segment = twoCol && segment === "map" ? "save" : segment;
-  const mapVisible = twoCol || segment === "map";
 
   const [usage, setUsage] = useState<RotationUsage>({
     sites: [],
@@ -411,29 +406,6 @@ export default function InjectionScreen() {
     const timer = setTimeout(() => setHighlightId(null), SAVED_HIGHLIGHT_MS);
     return () => clearTimeout(timer);
   }, [highlightId]);
-
-  // One-time notice for the injection map's self-view -> observer-view flip
-  // (components/InjectionBodyMap.tsx SIDE CONVENTION note): a profile that
-  // already has injection history had the old left-on-left layout memorised,
-  // so opening MAP shows one short toast the first time, then never again (flag
-  // in lib/services/injectionMapNotice.ts). A fresh install has no history to
-  // reorient from, so `history` staying empty just keeps this effect waiting -
-  // checkedRef is only latched once a real (loaded, non-empty) history read has
-  // decided the outcome, so a profile that logs its first entry later still
-  // gets evaluated on its next visit to MAP instead of being silently skipped.
-  const flipNoticeChecked = useRef(false);
-  useEffect(() => {
-    if (!mapVisible) return;
-    if (flipNoticeChecked.current) return;
-    if (!historyLoaded || history.length === 0) return;
-    if (isScreenshotMode()) return;
-    flipNoticeChecked.current = true;
-    (async () => {
-      if (await injectionMapFlipNoticeSeen()) return;
-      toast(t("injectionMap.flipNotice"), "info");
-      await markInjectionMapFlipNoticeSeen();
-    })();
-  }, [mapVisible, historyLoaded, history, t, toast]);
 
   // Store-screenshot navigation: ?segment=map opens the heat map (the 02-bodymap
   // shot). Only honoured behind the double lock; ignored in a normal build.

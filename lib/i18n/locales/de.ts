@@ -1503,8 +1503,6 @@ const de: TranslationSchema = {
     rotationHint: "Wechsel",
     selfViewNote:
       "Die Karte zeigt Sie, als stünde Ihnen jemand gegenüber: Ihre linke Seite erscheint rechts.",
-    flipNotice:
-      "Kartenausrichtung aktualisiert: Sie zeigt Ihnen jetzt gegenüber, Ihre linke Seite liegt rechts.",
   },
   spike: {
     title: "Spike",

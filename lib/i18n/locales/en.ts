@@ -1502,7 +1502,6 @@ const en: TranslationSchema = {
     sideRight: "R",
     rotationHint: "Rotation",
     selfViewNote: "The map is shown as if someone were facing you: your left side appears on the right.",
-    flipNotice: "Map orientation updated: it now faces you, so your left side is on the right.",
   },
   spike: {
     title: "Spike",

@@ -1503,8 +1503,6 @@ const pt: TranslationSchema = {
     rotationHint: "Rodízio",
     selfViewNote:
       "O mapa mostra você como se alguém estivesse à sua frente: seu lado esquerdo aparece à direita.",
-    flipNotice:
-      "Orientação do mapa atualizada: agora ela fica de frente para você, seu lado esquerdo está à direita.",
   },
   spike: {
     title: "Spike",

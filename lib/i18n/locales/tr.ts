@@ -1500,7 +1500,6 @@ const tr = {
     sideRight: "Sağ",
     rotationHint: "Rotasyon",
     selfViewNote: "Harita, karşınızdaki bir kişi gibi gösterilir: sol tarafınız ekranın sağında görünür.",
-    flipNotice: "Harita yönü güncellendi: artık karşınızdaki gibi gösteriliyor, sol tarafınız sağda.",
   },
   spike: {
     title: "Spike",
