@@ -4,6 +4,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { Platform } from "react-native";
 import i18n, { currentLang } from "../i18n";
 import { getJournal } from "../db/journal";
+import { reportPdfFileName } from "../reportFileName";
 import {
   computeInsights,
   rangeFromWindow,
@@ -1441,7 +1442,21 @@ export async function exportLogsPdf(
 
   opts?.onProgress?.({ stage: "rendering" });
   await yieldToUi();
-  const { uri } = await Print.printToFileAsync({ html });
+  const printed = await Print.printToFileAsync({ html });
+  // expo-print names the file with a random UUID, which is what the recipient
+  // sees in the share sheet. Renamed in the cache dir; on any failure the
+  // original file is shared as before.
+  let uri = printed.uri;
+  if (!opts?.skipShare && FileSystem.cacheDirectory) {
+    const named = `${FileSystem.cacheDirectory}${reportPdfFileName(currentLang(), new Date())}`;
+    try {
+      await FileSystem.deleteAsync(named, { idempotent: true });
+      await FileSystem.moveAsync({ from: printed.uri, to: named });
+      uri = named;
+    } catch {
+      uri = printed.uri;
+    }
+  }
 
   // Store-screenshot path: copy to a deterministic location and skip the share
   // sheet, so the capture pipeline can pull the PDF without any UI interaction.

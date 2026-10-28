@@ -990,6 +990,7 @@ export default function DashboardScreen() {
           }
           const rows = await getJournal(profileId, lang, AFTER_LOGS_THRESHOLD, undefined, {
             excludeCalculatorInjections: true,
+            userEntered: true,
           });
           if (cancelled || sheetsOpenRef.current) return;
           if (

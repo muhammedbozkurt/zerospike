@@ -78,6 +78,11 @@ export interface JournalFeedOptions {
    *  before the outer LIMIT: a screen that filtered the newest N rows in JS
    *  showed "no entries" for a kind the database held (G15). */
   kind?: JournalKind;
+  /** Drops glucose rows the user did not type (Apple Health, Nightscout, CGM
+   *  stream) in SQL, so a LIMIT counts the user's own entries only. Meals,
+   *  injections and meds are always user-entered (calculator rows are the
+   *  separate excludeCalculatorInjections filter). */
+  userEntered?: boolean;
 }
 
 export function journalFeedSql(
@@ -95,6 +100,7 @@ export function journalFeedSql(
       : options.cgm === "twins"
         ? ` AND (s.is_cgm = 1 OR ${notSensorTwinSql("s")})`
         : "";
+  const userOnly = options.userEntered ? " AND s.source = 'manual'" : "";
   const bounds = (col: string) =>
     withRange ? ` AND ${col} BETWEEN ? AND ?` : "";
   const notCalculator = excludeCalculatorInjections
@@ -116,7 +122,7 @@ export function journalFeedSql(
               s.healthkit_uuid AS healthkit_uuid, NULL AS med_name,
               NULL AS insulin_product_id, NULL AS insulin_product_other
          FROM sugar_logs s
-        WHERE s.profile_id = ?${bounds("s.logged_at")}${notCgm}${only("glucose")}
+        WHERE s.profile_id = ?${bounds("s.logged_at")}${notCgm}${userOnly}${only("glucose")}
        UNION ALL
        SELECT 'meal', m.id, m.logged_at, m.tags,
               1,

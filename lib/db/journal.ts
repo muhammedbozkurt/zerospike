@@ -160,6 +160,8 @@ export async function getJournal(
     cgm?: "include" | "exclude" | "twins";
     /** One kind only, filtered in SQL before the limit (G15). */
     kind?: JournalKind;
+    /** Glucose rows the user typed only (see journalSql userEntered). */
+    userEntered?: boolean;
   }
 ): Promise<JournalEntry[]> {
   const db = await getDb();
@@ -170,6 +172,7 @@ export async function getJournal(
     journalFeedSql(range != null, options?.excludeCalculatorInjections ?? false, {
       cgm: options?.cgm,
       kind: options?.kind,
+      userEntered: options?.userEntered,
     }),
     journalFeedArgs(profileId, limit, range)
   );

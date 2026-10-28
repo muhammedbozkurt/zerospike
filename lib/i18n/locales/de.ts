@@ -824,6 +824,8 @@ const de: TranslationSchema = {
     saved: "Gespeichert",
     rtlRestartTitle: "Die Layoutrichtung ändert sich",
     rtlRestartBody: "Die App wird neu gestartet. Ihre Einträge sind nicht betroffen.",
+    rtlManualTitle: "App neu starten",
+    rtlManualBody: "Beenden Sie die App vollständig und öffnen Sie sie erneut, damit die Layoutrichtung übernommen wird. Ihre Einträge sind nicht betroffen.",
   },
   cgmSource: {
     cgm: "CGM",

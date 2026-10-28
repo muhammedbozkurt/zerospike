@@ -824,6 +824,8 @@ const es: TranslationSchema = {
     saved: "Guardado",
     rtlRestartTitle: "La dirección del diseño cambiará",
     rtlRestartBody: "La aplicación se reiniciará. Sus registros no se ven afectados.",
+    rtlManualTitle: "Reinicie la aplicación",
+    rtlManualBody: "Para aplicar la dirección del diseño, cierre la aplicación por completo y ábrala de nuevo. Sus registros no se ven afectados.",
   },
   cgmSource: {
     cgm: "CGM",

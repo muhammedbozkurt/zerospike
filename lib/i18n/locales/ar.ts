@@ -829,6 +829,8 @@ const ar: TranslationSchema & { cgmInsights: Record<string, string> } = {
     saved: "تم الحفظ",
     rtlRestartTitle: "سيتغير اتجاه التخطيط",
     rtlRestartBody: "سيُعاد تشغيل التطبيق. لن تتأثر سجلاتك.",
+    rtlManualTitle: "أعد تشغيل التطبيق",
+    rtlManualBody: "لتطبيق اتجاه الواجهة، أغلق التطبيق تمامًا ثم افتحه من جديد. لن تتأثر سجلاتك.",
   },
   cgmSource: {
     cgm: "CGM",
