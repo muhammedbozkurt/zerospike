@@ -51,6 +51,7 @@ import {
   isWritePermissionBlocked,
 } from "./healthConnect";
 import { healthMock } from "./healthMock";
+import { isImportStale } from "../healthConnectFlow";
 import {
   ANDROID_GLUCOSE_PAGE_SIZE,
   ANDROID_SYNC_ROUND_MAX_SAMPLES,
@@ -1932,16 +1933,18 @@ export async function importHealthGlucose(
 ): Promise<SyncResult> {
   // Overlapping triggers (observer burst, task + foreground, double tap) share
   // the one running import for the profile instead of racing the dedup read.
+  // A run that never settled (a system dialog iOS could not present) must not
+  // be handed to every later caller: past IMPORT_STALE_MS a fresh one starts.
   const running = importsInFlight.get(profileId);
-  if (running) return running;
-  const run = runImportHealthGlucose(profileId, source).finally(() => {
-    importsInFlight.delete(profileId);
+  if (running && !isImportStale(running.startedAt, Date.now())) return running.promise;
+  const promise: Promise<SyncResult> = runImportHealthGlucose(profileId, source).finally(() => {
+    if (importsInFlight.get(profileId)?.promise === promise) importsInFlight.delete(profileId);
   });
-  importsInFlight.set(profileId, run);
-  return run;
+  importsInFlight.set(profileId, { promise, startedAt: Date.now() });
+  return promise;
 }
 
-const importsInFlight = new Map<string, Promise<SyncResult>>();
+const importsInFlight = new Map<string, { promise: Promise<SyncResult>; startedAt: number }>();
 
 async function runImportHealthGlucose(
   profileId: string,

@@ -74,6 +74,12 @@ import { setCgmBrand, type CgmBrand } from "../lib/cgm/brand";
 import { setCgmMode } from "../lib/cgm/state";
 import { healthStoreLabelKey } from "../lib/cgm/sourceLabel";
 import { hasHealthProvider, requestHealthPermissions } from "../lib/services/health";
+import {
+  PERMISSION_TIMEOUT_MS,
+  createHealthFlow,
+  realClock,
+  type HealthFlow,
+} from "../lib/healthConnectFlow";
 import { nightscoutAllowed } from "../lib/cgm/pro";
 import { nightscoutAvailable } from "../lib/cgm/sourceAvailability";
 import { secureStoreAvailable } from "../lib/secureStore";
@@ -541,6 +547,8 @@ export default function OnboardingScreen() {
   const [measure, setMeasure] = useState<MeasureOption>(DEFAULT_MEASURE);
   const [cgmBrand, setCgmBrandChoice] = useState<CgmBrand | null>(null);
   const [askingHealth, setAskingHealth] = useState(false);
+  const healthFlowRef = useRef<HealthFlow | null>(null);
+  useEffect(() => () => healthFlowRef.current?.cancel(), []);
   const [measureDenied, setMeasureDenied] = useState(false);
   const [fastingMin, setFastingMin] = useState(
     String(glucoseToDisplay(activeProfile?.target_fasting_min ?? DEFAULT_FASTING_RANGE.min, unit))
@@ -734,8 +742,14 @@ export default function OnboardingScreen() {
     }
     setAskingHealth(true);
     let granted = false;
+    // A request that never comes back must not keep the step on "asking" for good.
+    const session = (healthFlowRef.current ??= createHealthFlow({
+      isBlocked: () => false,
+      clock: realClock,
+    })).start();
     try {
-      granted = await requestHealthPermissions();
+      const step = await session.race(requestHealthPermissions(), PERMISSION_TIMEOUT_MS);
+      granted = step.kind === "value" && step.value;
     } catch (err) {
       logCrash(err, { screen: "onboarding", op: "measureHealthPermission" });
     } finally {
