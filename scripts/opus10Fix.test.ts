@@ -333,10 +333,16 @@ async function main() {
     }
     db.exec("COMMIT");
     db.exec("ANALYZE");
+    // Fastest of five runs: a slow query plan is slow every time, a busy machine
+    // only some of the time, so the budget keeps catching the first and not the second.
     const time = (f: () => number) => {
-      const t0 = performance.now();
-      for (let k = 0; k < 3; k++) f();
-      return (performance.now() - t0) / 3;
+      let best = Infinity;
+      for (let k = 0; k < 5; k++) {
+        const t0 = performance.now();
+        f();
+        best = Math.min(best, performance.now() - t0);
+      }
+      return best;
     };
     const feedMs = time(() => (db.prepare(journalFeedSql(false, true, { cgm: "exclude" })).all(...(journalFeedArgs("P", 300) as never[])) as unknown[]).length);
     ok("journal feed (exclude) under 100 ms", feedMs < 100, `${feedMs.toFixed(1)} ms`);
