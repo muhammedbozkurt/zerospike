@@ -248,7 +248,6 @@ const de: TranslationSchema = {
     postMealStopBody: "Der Countdown und die zugehörige Erinnerung werden entfernt.",
     postMealStopConfirm: "Beenden",
     postMealStopKeep: "Abbrechen",
-    postMealOtherProfile: "Dieser Countdown gehört zu einem anderen Profil.",
     postMealDurationPick: "Dauer festlegen",
     postMealDurationA11y: "Countdown-Dauer ändern",
     postMealSetAt: "Timer gestellt. Erinnerung um {{time}}, in {{left}} Min.",

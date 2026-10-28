@@ -162,6 +162,7 @@ async function main(): Promise<void> {
   const notif = await import("../lib/services/notifications");
   notifModule = notif;
   const { profileScopedKeys } = await import("../lib/profileScopedKeys");
+  const { postMealTimerKeys } = await import("../lib/postMealTimer");
 
   console.log("R1. delete the active profile while its countdown (and card) runs");
   await resetWorld("p1");
@@ -193,6 +194,19 @@ async function main(): Promise<void> {
   switchTo("p2");
   await notif.applyNotificationPrefs();
   eq("control: card ended on switch", rig.ends > 0, true);
+
+  console.log("R4. fresh process (card owner unknown), active p1 deleted with a running countdown");
+  await resetWorld("p1");
+  const k = postMealTimerKeys("p1");
+  const t0 = Date.now();
+  kv.set(k.end, String(t0 + 60 * MIN));
+  kv.set(k.start, String(t0 - 60 * MIN));
+  rig.ends = 0;
+  const savedP1 = profiles.p1;
+  delete profiles.p1;
+  await notif.cancelPostMealTimer("p1");
+  eq("R4 card of the deleted profile taken down", rig.ends > 0, true);
+  profiles.p1 = savedP1;
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 }

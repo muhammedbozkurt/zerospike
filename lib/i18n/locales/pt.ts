@@ -248,7 +248,6 @@ const pt: TranslationSchema = {
     postMealStopBody: "A contagem regressiva e o lembrete dela serão removidos.",
     postMealStopConfirm: "Parar",
     postMealStopKeep: "Cancelar",
-    postMealOtherProfile: "Essa contagem pertence a outro perfil.",
     lowFollowTitle: "Sua última medição foi {{value}} {{unit}}.",
     lowFollowRemind: "Lembrar de medir de novo em 15 minutos",
     lowFollowSet: "Lembrete marcado para daqui a 15 minutos.",

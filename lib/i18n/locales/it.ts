@@ -248,7 +248,6 @@ const it: TranslationSchema = {
     postMealStopBody: "Il conto alla rovescia e il relativo promemoria verranno rimossi.",
     postMealStopConfirm: "Interrompi",
     postMealStopKeep: "Annulla",
-    postMealOtherProfile: "Quel timer appartiene a un altro profilo.",
     postMealDurationPick: "Imposta durata",
     postMealDurationA11y: "Modificare la durata del timer",
     postMealSetAt: "Timer avviato. Promemoria alle {{time}}, tra {{left}} min.",

@@ -248,7 +248,6 @@ const es: TranslationSchema = {
     postMealStopBody: "Se quitarán la cuenta atrás y su recordatorio.",
     postMealStopConfirm: "Detener",
     postMealStopKeep: "Cancelar",
-    postMealOtherProfile: "Esa cuenta atrás pertenece a otro perfil.",
     postMealDurationPick: "Fijar duración",
     postMealDurationA11y: "Cambiar la duración del temporizador",
     postMealSetAt: "Temporizador iniciado. Recordatorio a las {{time}}, en {{left}} min.",

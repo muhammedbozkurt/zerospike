@@ -1904,8 +1904,9 @@ async function migrateLegacyPostMealTimer(): Promise<"none" | "defer" | { owner:
         [keys.start, String(plan.startedAt)],
       ]);
     }
-    // Cancel first: if a cancel throws, the legacy keys stay and the next
-    // process retries the whole move instead of orphaning a delivery.
+    // Cancel before dropping the keys, so the old delivery is never left
+    // without its record. Both cancels swallow their own errors: a failed
+    // cancel is logged and the move still completes.
     try {
       await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
     } catch (err) {
