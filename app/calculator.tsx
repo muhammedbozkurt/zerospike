@@ -141,7 +141,7 @@ import { useStepperValidity } from "../components/Stepper";
 import { NumericField } from "../components/NumericField";
 import { ResponsiveRow } from "../components/ResponsiveRow";
 import { CarbRatioInput, IsfInput } from "../components/RatioInput";
-import { ConfirmCheckbox } from "../components/ConfirmCheckbox";
+import { RatioConfirmCard } from "../components/RatioConfirmCard";
 import { PortionPresetChips } from "../components/PortionPresetChips";
 import { EMOJI_RENDERS, FoodIconTile } from "../components/FoodPlate";
 import { Tooltip } from "../components/Tooltip";
@@ -152,6 +152,11 @@ import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { Skeleton } from "../components/Skeleton";
 import { DirIcon } from "../components/DirIcon";
 import { CarbRatioLine } from "../components/CarbRatioLine";
+import {
+  RATIO_CONFIRM_STARTS_CHECKED,
+  ratioConfirmState,
+  saveNeedsConfirmReminder,
+} from "../lib/ratioConfirmCard";
 import { useCarbChoiceText } from "../lib/carbDisplayPref";
 import { formatTime, num, relativeDay } from "../lib/format";
 import {
@@ -456,12 +461,14 @@ function CalcSetupSheet({
   unit,
   initial,
   prefilled,
+  emphasizeConfirm,
 }: {
   visible: boolean;
   /** Put the sheet away; whatever was typed is kept. */
   onClose: () => void;
-  /** Save: writes what is pending and closes unless the write failed. */
-  onFinish: () => Promise<void>;
+  /** Save: writes what is pending and closes unless the write failed. Reports
+   *  whether all four values are in but the confirmation was not given. */
+  onFinish: (info: { needsConfirmReminder: boolean }) => Promise<void>;
   /** The box was ticked and the confirmation reached the profile. */
   onConfirmed: () => void;
   getWriter: (opts?: { renew?: boolean }) => RatioWriter | null;
@@ -470,10 +477,12 @@ function CalcSetupSheet({
   initial: RatioFields;
   /** All four values are the user's own and already filled in. */
   prefilled: boolean;
+  /** Opened from the "Confirm ratios" button: the confirmation card leads. */
+  emphasizeConfirm: boolean;
 }) {
   const { t } = useTranslation();
   const [fields, setFields] = useState<RatioFields>(initial);
-  const [confirmed, setConfirmed] = useState(false);
+  const [confirmed, setConfirmed] = useState<boolean>(RATIO_CONFIRM_STARTS_CHECKED);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const fieldsRef = useRef<RatioFields>(initial);
@@ -484,7 +493,7 @@ function CalcSetupSheet({
     if (!visible) return;
     setFields(initial);
     fieldsRef.current = initial;
-    setConfirmed(false);
+    setConfirmed(RATIO_CONFIRM_STARTS_CHECKED);
     getWriter({ renew: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -521,6 +530,17 @@ function CalcSetupSheet({
   }
 
   const complete = ratioFieldsComplete(fields);
+  const confirmCard = (
+    <View style={{ marginTop: emphasizeConfirm ? 0 : 18, marginBottom: emphasizeConfirm ? 16 : 0 }}>
+      <RatioConfirmCard
+        checked={confirmed}
+        onToggle={(next) => void toggle(next)}
+        complete={complete}
+        emphasized={emphasizeConfirm}
+        disabled={!complete || confirming}
+      />
+    </View>
+  );
 
   return (
     <SheetShell
@@ -543,7 +563,12 @@ function CalcSetupSheet({
             onPress={async () => {
               setBusy(true);
               try {
-                await onFinish();
+                await onFinish({
+                  needsConfirmReminder: saveNeedsConfirmReminder({
+                    complete: ratioFieldsComplete(fieldsRef.current),
+                    confirmed,
+                  }),
+                });
               } finally {
                 setBusy(false);
               }
@@ -566,6 +591,8 @@ function CalcSetupSheet({
       <Text style={{ color: THEME.textMuted, fontSize: 13, lineHeight: 19, marginBottom: 16 }}>
         {prefilled ? t("calculator.setup.bodyFilled") : t("calculator.setup.body")}
       </Text>
+
+      {emphasizeConfirm ? confirmCard : null}
 
       <DetailLabel>{t("calculator.setup.carbLabel")}</DetailLabel>
       {(["breakfast", "lunch", "dinner"] as const).map((slot) => (
@@ -597,39 +624,8 @@ function CalcSetupSheet({
         </Text>
       </View>
 
-      <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 18 }}>
-        {t("calculator.setup.teamNote")}
-      </Text>
-      <View style={{ marginTop: 6 }}>
-        <ConfirmCheckbox
-          checked={confirmed}
-          onToggle={(next) => void toggle(next)}
-          label={t("calculator.setup.confirm")}
-          hint={t("calculator.setup.hint")}
-          disabled={!complete || confirming}
-        />
-      </View>
+      {emphasizeConfirm ? null : confirmCard}
     </SheetShell>
-  );
-}
-
-/**
- * The calculated total's place while the ratios are not confirmed: a status
- * line and no number. The figure takes this spot the moment the box is ticked.
- */
-function PendingDoseCard() {
-  const { t } = useTranslation();
-  return (
-    <GlassCard style={{ marginBottom: 12 }}>
-      <Text
-        style={{ color: THEME.textMuted, fontSize: 11, letterSpacing: 1.3, fontWeight: "800" }}
-      >
-        {upper(t("calculator.estimatedDose"))}
-      </Text>
-      <Text style={{ color: THEME.textMuted, fontSize: 16, fontWeight: "700", marginTop: 6 }}>
-        {t("calculator.pending")}
-      </Text>
-    </GlassCard>
   );
 }
 
@@ -771,7 +767,9 @@ function CalculatorScreen() {
   // record while the profile has no confirmed ratios of its own; after that the
   // "Enter your ratios" line (CarbRatioLine) leads to Profile and Targets.
   const setupNeeded = calcSetupNeeded(activeProfile);
+  const ratioState = ratioConfirmState(activeProfile);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [setupEmphasize, setSetupEmphasize] = useState(false);
   const [setupSaveError, setSetupSaveError] = useState(false);
   const setupErrorRef = useRef(false);
   // The sheet and Profile and Targets write the four numbers through the same
@@ -796,6 +794,7 @@ function CalculatorScreen() {
         // an unreadable flag means "ask", which is the safe direction
       }
       if (alive && shouldAutoOpenCalcSetup({ needed: true, isEdit, prompted })) {
+        setSetupEmphasize(false);
         setSetupOpen(true);
         AsyncStorage.setItem(setupPromptedKey, "1").catch(() => {
           // best-effort: worst case the sheet is offered once more next time
@@ -815,13 +814,19 @@ function CalculatorScreen() {
     setSetupSaveError(false);
   }
 
-  async function finishSetup() {
+  function openSetup(opts: { emphasizeConfirm: boolean }) {
+    setSetupEmphasize(opts.emphasizeConfirm);
+    setSetupOpen(true);
+  }
+
+  async function finishSetup(info: { needsConfirmReminder: boolean }) {
     setupErrorRef.current = false;
     await ratioWriters.get()?.flush();
     if (setupErrorRef.current) return;
     setSetupOpen(false);
     setSetupSaveError(false);
     hapticSuccess();
+    if (info.needsConfirmReminder) toast(t("ratioConfirm.savedReminder"), "info");
   }
 
   useEffect(() => {
@@ -2134,6 +2139,7 @@ function CalculatorScreen() {
       unit={unit}
       initial={setupInitial}
       prefilled={calcSetupPrefilled(activeProfile)}
+      emphasizeConfirm={setupEmphasize}
     />
   ) : null;
 
@@ -2251,12 +2257,12 @@ function CalculatorScreen() {
 
             {glucoseCard()}
 
-            {showsDose ? <CarbRatioLine slot={slot} returnAfterConfirm /> : null}
+            {showsDose ? (
+              <CarbRatioLine slot={slot} returnAfterConfirm onOpenSetup={openSetup} />
+            ) : null}
 
             {showsDose ? (
-              activeProfile?.ratios_confirmed !== 1 && calcSetupPrefilled(activeProfile) ? (
-                <PendingDoseCard />
-              ) : !calcFiguresAllowed(activeProfile) ? null : (
+              !calcFiguresAllowed(activeProfile) ? null : (
               <View
                 className="rounded-2xl p-4 mb-3"
                 style={[
@@ -2530,7 +2536,7 @@ function CalculatorScreen() {
 
           {showsDose ? (
             <>
-              <CarbRatioLine slot={slot} returnAfterConfirm />
+              <CarbRatioLine slot={slot} returnAfterConfirm onOpenSetup={openSetup} />
 
               {doseEst ? (
                 <>
@@ -2627,12 +2633,9 @@ function CalculatorScreen() {
                   </View>
                 </>
               ) : null}
-              {!doseEst && activeProfile.ratios_confirmed !== 1 && calcSetupPrefilled(activeProfile) ? (
-                <PendingDoseCard />
-              ) : null}
-              {/* Without confirmed ratios there is no figure: the one line above
-                  (CarbRatioLine, "Enter your ratios") leads to Profile and
-                  Targets, and nothing is computed or shown in its place. */}
+              {/* Without confirmed ratios there is no figure: the card above
+                  (CarbRatioLine, "Enter your ratios" or "Confirm ratios") opens
+                  the ratios sheet, and nothing is computed or shown in its place. */}
 
               {/* Regulation: a non-advice note accompanies every dose display. */}
               <NoticeCard

@@ -332,6 +332,15 @@ const en: TranslationSchema = {
     enter: "Enter your ratios",
     confirm: "Confirm your ratios",
   },
+  ratioConfirm: {
+    until: "The calculation is not shown until you give this confirmation.",
+    enterTitle: "The calculation needs your ratios",
+    enterBody: "Enter your carb ratio and ISF as set by your diabetes team. The calculation appears after you confirm them.",
+    confirmTitle: "The calculation needs your confirmation",
+    confirmBody: "If you set your ratios with your diabetes team, confirm them. The calculation appears after that.",
+    confirmAction: "Confirm ratios",
+    savedReminder: "Ratios saved. The calculation is not shown until you confirm them.",
+  },
   food: {
     category: "Category",
     categories: "Categories",

@@ -332,6 +332,15 @@ const es: TranslationSchema = {
     enter: "Introduzca sus proporciones",
     confirm: "Confirme sus proporciones",
   },
+  ratioConfirm: {
+    until: "El cálculo no se muestra hasta que usted dé esta confirmación.",
+    enterTitle: "El cálculo necesita sus proporciones",
+    enterBody: "Introduzca su proporción de carbohidratos y su ISF, establecidos con su equipo de diabetes. El cálculo aparece tras su confirmación.",
+    confirmTitle: "El cálculo necesita su confirmación",
+    confirmBody: "Si estableció sus proporciones con su equipo de diabetes, confírmelas. El cálculo aparece después.",
+    confirmAction: "Confirmar proporciones",
+    savedReminder: "Proporciones guardadas. El cálculo solo se muestra tras su confirmación.",
+  },
   food: {
     category: "Categoría",
     categories: "Categorías",

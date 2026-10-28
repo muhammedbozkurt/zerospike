@@ -276,7 +276,7 @@ section("7. coming back from the ratios: the record stays open");
   ok("Profile goes back only after a confirmation that was written, once, through the gate", /createConfirmGate\(\{[\s\S]{0,500}onConfirmed: \(\) => \{[\s\S]{0,200}to === "calculator" && r\.canGoBack\(\)\) r\.back\(\)/.test(prof) && prof.includes("onBusy: setConfirming"));
   ok("going back is a pop, so the open record keeps its state", !/router\.(replace|push)\([^)]*calculator/.test(prof));
   ok("the sheet closes onto the same screen after its own confirmation", /onConfirmed=\{\(\) => \{\s*setSetupOpen\(false\);/.test(calc));
-  ok("the sheet never resets the form it sits on", !/setPortion\(|setGlucose\(|setSlot\(/.test(calc.slice(calc.indexOf("function CalcSetupSheet("), calc.indexOf("function PendingDoseCard("))));
+  ok("the sheet never resets the form it sits on", !/setPortion\(|setGlucose\(|setSlot\(/.test(calc.slice(calc.indexOf("function CalcSetupSheet("), calc.indexOf("function DetailLabel("))));
   ok("Profile follows what the sheet stored until the user edits there", prof.includes("storedRatiosKey") && prof.includes("ratioTouchedRef.current"));
 }
 
@@ -434,7 +434,7 @@ section("12. ratios: one atomic confirmation, locked boxes, no silent failures")
   ok("the sheet box is locked while the write runs and shows ticked only on success", calc.includes("disabled={!complete || confirming}") && /if \(next && confirmStillCurrent\(ok, sent, fieldsRef\.current\)\) \{\s*setConfirmed\(true\)/.test(calc) && !/setConfirmed\(next\)/.test(calc));
   ok("Profile reports a failed write", /useRatioWriter\(\(\) => \{\s*trackSaveFailed\("profile", "write"\);\s*toast\(t\("common.saveFailed"\), "error"\);\s*\}\)/.test(prof));
   ok("Profile's box is enabled whenever the four numbers are filled (a tick flushes first)", prof.includes("disabled={!ratioFieldsComplete(ratioDraft) || confirming}") && !prof.includes("disabled={!ratioDraftIsStored}"));
-  ok("the pending card shows only when four values wait for the tick", calc.split("calcSetupPrefilled(activeProfile)").length >= 4 && calc.includes("activeProfile?.ratios_confirmed !== 1 && calcSetupPrefilled(activeProfile)"));
+  ok("the confirm card shows only when four values wait for the tick", src("lib/ratioConfirmCard.ts").includes("calcSetupPrefilled(profile) ? \"unconfirmed\" : \"none\"") && src("components/CarbRatioLine.tsx").includes("ratioConfirmState(activeProfile)"));
   ok("an empty common.saveFailed text exists in all nine languages", ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"].every((l) => /\n    saveFailed: "[^"]+"/.test(src(`lib/i18n/locales/${l}.ts`))));
 }
 

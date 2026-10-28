@@ -332,6 +332,15 @@ const it: TranslationSchema = {
     enter: "Inserisca i Suoi rapporti",
     confirm: "Confermi i Suoi rapporti",
   },
+  ratioConfirm: {
+    until: "Il calcolo non viene mostrato finché non dà questa conferma.",
+    enterTitle: "Il calcolo richiede i Suoi rapporti",
+    enterBody: "Inserisca il Suo rapporto carboidrati e il Suo ISF, stabiliti con il Suo team diabetologico. Il calcolo compare dopo la Sua conferma.",
+    confirmTitle: "Il calcolo richiede la Sua conferma",
+    confirmBody: "Se ha stabilito i Suoi rapporti con il Suo team diabetologico, li confermi. Il calcolo compare dopo.",
+    confirmAction: "Confermi i rapporti",
+    savedReminder: "Rapporti salvati. Il calcolo compare solo dopo la Sua conferma.",
+  },
   food: {
     category: "Categoria",
     categories: "Categorie",

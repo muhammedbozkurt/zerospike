@@ -332,6 +332,15 @@ const de: TranslationSchema = {
     enter: "Geben Sie Ihre Faktoren ein",
     confirm: "Bestätigen Sie Ihre Faktoren",
   },
+  ratioConfirm: {
+    until: "Die Berechnung wird erst angezeigt, wenn Sie diese Bestätigung geben.",
+    enterTitle: "Die Berechnung benötigt Ihre Faktoren",
+    enterBody: "Geben Sie Ihr KH-Verhältnis und Ihren ISF so ein, wie Ihr Diabetesteam sie festgelegt hat. Die Berechnung erscheint nach Ihrer Bestätigung.",
+    confirmTitle: "Die Berechnung benötigt Ihre Bestätigung",
+    confirmBody: "Wenn Sie Ihre Faktoren gemeinsam mit Ihrem Diabetesteam festgelegt haben, bestätigen Sie sie. Danach erscheint die Berechnung.",
+    confirmAction: "Faktoren bestätigen",
+    savedReminder: "Faktoren gespeichert. Die Berechnung wird erst nach Ihrer Bestätigung angezeigt.",
+  },
   food: {
     category: "Kategorie",
     categories: "Kategorien",

@@ -34,7 +34,7 @@ import { FormCard, InputRow } from "../../components/form";
 import { RangeInput } from "../../components/RangeInput";
 import { NumericField } from "../../components/NumericField";
 import { CarbRatioInput, IsfInput } from "../../components/RatioInput";
-import { ConfirmCheckbox } from "../../components/ConfirmCheckbox";
+import { RatioConfirmCard } from "../../components/RatioConfirmCard";
 import {
   ratioFieldsComplete,
   ratioFieldsInitial,
@@ -65,7 +65,7 @@ export default function ProfileSettings() {
   const router = useRouter();
   // Set by the calculator's "Enter your ratios" line: ticking the box here
   // takes the user back to that open record, with the total showing.
-  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const { returnTo, highlight } = useLocalSearchParams<{ returnTo?: string; highlight?: string }>();
   const carbMode = useCarbDisplayMode();
   const regionNote = carbRegionNote(i18n.language, getLocales()[0]?.regionCode);
   const { confirm, actionSheet, toast } = useFeedback();
@@ -800,12 +800,11 @@ export default function ProfileSettings() {
       {showsBolus ? (
         <FormCard icon="checkmark-circle-outline" title={t("calculator.setup.title")}>
           <View className="px-4 py-3">
-            <Text className="text-mut text-xs mb-1">{t("calculator.setup.teamNote")}</Text>
-            <ConfirmCheckbox
+            <RatioConfirmCard
               checked={activeProfile?.ratios_confirmed === 1 && ratioDraftIsStored}
               onToggle={onRatioConfirm}
-              label={t("calculator.setup.confirm")}
-              hint={t("calculator.setup.hint")}
+              complete={ratioFieldsComplete(ratioDraft)}
+              emphasized={highlight === "confirm"}
               disabled={!ratioFieldsComplete(ratioDraft) || confirming}
             />
             <Text className="text-mut text-xs mt-1">{t("settings.ratiosReconfirmHint")}</Text>

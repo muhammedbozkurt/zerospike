@@ -330,6 +330,15 @@ const tr = {
     enter: "Oranlarınızı girin",
     confirm: "Oranlarınızı onaylayın",
   },
+  ratioConfirm: {
+    until: "Hesaplama, bu onayı verene kadar gösterilmez.",
+    enterTitle: "Hesaplama için oranlarınız gerekiyor",
+    enterBody: "Karbonhidrat oranınızı ve ISF değerinizi, diyabet ekibinizin belirlediği şekilde girin. Hesaplama, onayınızdan sonra görünür.",
+    confirmTitle: "Hesaplama için onayınız gerekiyor",
+    confirmBody: "Oranlarınızı diyabet ekibinizle belirlediyseniz onaylayın; hesaplama ondan sonra görünür.",
+    confirmAction: "Oranları onayla",
+    savedReminder: "Oranlar kaydedildi. Hesaplama, onayınızı verene kadar gösterilmez.",
+  },
   food: {
     category: "Kategori",
     categories: "Kategoriler",

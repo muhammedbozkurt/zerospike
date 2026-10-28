@@ -332,6 +332,15 @@ const pt: TranslationSchema = {
     enter: "Informe suas razões",
     confirm: "Confirme suas razões",
   },
+  ratioConfirm: {
+    until: "O cálculo não é exibido até você dar esta confirmação.",
+    enterTitle: "O cálculo precisa das suas razões",
+    enterBody: "Informe sua razão de carboidratos e seu FSI, definidos com sua equipe de diabetes. O cálculo aparece depois da sua confirmação.",
+    confirmTitle: "O cálculo precisa da sua confirmação",
+    confirmBody: "Se você definiu suas razões com sua equipe de diabetes, confirme. O cálculo aparece em seguida.",
+    confirmAction: "Confirmar razões",
+    savedReminder: "Razões salvas. O cálculo só é exibido depois da sua confirmação.",
+  },
   food: {
     category: "Categoria",
     categories: "Categorias",

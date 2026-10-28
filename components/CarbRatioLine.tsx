@@ -7,12 +7,14 @@ import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
 import { activeMealSlot, carbRatioForSlot } from "../lib/insulin";
-import { calcFiguresAllowed, calcSetupPrefilled } from "../lib/calcSetup";
+import { calcFiguresAllowed } from "../lib/calcSetup";
+import { ratioConfirmState, ratioSetupOpenOptions, ratioStateCardKind } from "../lib/ratioConfirmCard";
 import { insulinModeOf, insulinModeShowsBolus } from "../lib/insulinMode";
 import { isolateLtr, num } from "../lib/format";
 import { THEME } from "../lib/theme/tokens";
 import type { MealSlot } from "../lib/db/types";
 import { DirIcon } from "./DirIcon";
+import { RatioStateCard } from "./RatioStateCard";
 
 /**
  * Reference to the active meal slot's own carb ratio, tappable through to
@@ -21,10 +23,10 @@ import { DirIcon } from "./DirIcon";
  * the calculator's own arithmetic for the same slot.
  *
  * A ratio is shown only once the user confirmed their own (ratios_confirmed 1).
- * Until then this is the single "Enter your ratios" line, and no number from a
- * stored value is quoted ("Confirm your ratios" when the user's own values are
- * already saved, "Enter your ratios" otherwise). Profiles without mealtime
- * insulin see nothing.
+ * Until then this is a state card (components/RatioStateCard.tsx) and no number
+ * from a stored value is quoted: "Enter your ratios" when none are saved, "Confirm
+ * ratios" when the user's own values are saved but not confirmed. Profiles
+ * without mealtime insulin see nothing.
  *
  * numberOfLines is 2, not 1: the line fits one row for every language this
  * app ships, but a longer translation (German routinely runs widest) wraps
@@ -34,6 +36,7 @@ export function CarbRatioLine({
   slot,
   style,
   returnAfterConfirm,
+  onOpenSetup,
 }: {
   /** Defaults to the real-time active slot when the caller has none of its own. */
   slot?: MealSlot;
@@ -41,6 +44,8 @@ export function CarbRatioLine({
   /** The line is on the calculator: once the ratios are confirmed in Profile and
    *  Targets, Profile goes back here, to the same open record. */
   returnAfterConfirm?: boolean;
+  /** Opens the ratios sheet on this screen; without it the card goes to Profile. */
+  onOpenSetup?: (opts: { emphasizeConfirm: boolean }) => void;
 }) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -48,6 +53,30 @@ export function CarbRatioLine({
 
   if (!activeProfile) return null;
   if (!insulinModeShowsBolus(insulinModeOf(activeProfile))) return null;
+
+  const state = ratioConfirmState(activeProfile);
+  const cardKind = ratioStateCardKind(state);
+  if (cardKind) {
+    return (
+      <RatioStateCard
+        kind={cardKind}
+        onPress={() => {
+          const opts = ratioSetupOpenOptions(state);
+          if (onOpenSetup) {
+            onOpenSetup(opts);
+            return;
+          }
+          router.push({
+            pathname: "/settings/profile",
+            params: {
+              ...(returnAfterConfirm ? { returnTo: "calculator" } : {}),
+              ...(opts.emphasizeConfirm ? { highlight: "confirm" } : {}),
+            },
+          });
+        }}
+      />
+    );
+  }
 
   const activeSlot = slot ?? activeMealSlot();
   const ratio = carbRatioForSlot(activeProfile, activeSlot);
@@ -61,9 +90,7 @@ export function CarbRatioLine({
   );
   const label = hasRatio
     ? t("ratio.line", { slot: t(`slot.${activeSlot}`), ratio: ratioFragment })
-    : calcSetupPrefilled(activeProfile)
-      ? t("ratio.confirm")
-      : t("ratio.enter");
+    : t("ratio.enter");
 
   return (
     <Pressable

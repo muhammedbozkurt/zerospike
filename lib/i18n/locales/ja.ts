@@ -332,6 +332,15 @@ const ja: TranslationSchema = {
     enter: "比率を入力してください",
     confirm: "比率を確認してください",
   },
+  ratioConfirm: {
+    until: "この確認を行うまで、計算は表示されません。",
+    enterTitle: "計算には比率の入力が必要です",
+    enterBody: "炭水化物比とインスリン効果値(ISF)を、糖尿病の医療チームと決めた値で入力してください。確認後に計算が表示されます。",
+    confirmTitle: "計算にはご確認が必要です",
+    confirmBody: "比率を糖尿病の医療チームと決めた場合は、確認してください。その後に計算が表示されます。",
+    confirmAction: "比率を確認する",
+    savedReminder: "比率を保存しました。確認いただくまで計算は表示されません。",
+  },
   food: {
     category: "カテゴリ",
     categories: "カテゴリ",

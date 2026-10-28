@@ -732,13 +732,13 @@ section("J. the calculator screen wires the gate");
   ok("closing the sheet writes what is pending", /function closeSetup\(\)\s*\{[\s\S]{0,160}void ratioWriters\.get\(\)\?\.flush\(\)/.test(calc));
   ok("the sheet no longer writes the profile itself", !/updateProfile\(/.test(calc) && !calc.includes("calcSetupPatch"));
   ok("a ticked box that reached the profile closes the sheet onto the open record", /if \(next && confirmStillCurrent\(ok, sent, fieldsRef\.current\)\) \{[\s\S]{0,160}onConfirmed\(\)/.test(calc) && /onConfirmed=\{\(\) => \{\s*setSetupOpen\(false\)/.test(calc));
-  ok("the box states what ticking does", calc.includes('hint={t("calculator.setup.hint")}'));
-  ok("the pending state is a status line with no number", /function PendingDoseCard\(\)[\s\S]{0,700}calculator\.pending/.test(calc) && !/function PendingDoseCard\(\)[\s\S]{0,700}(heroDose|totalDose|num\()/.test(calc));
-  ok("the pending card is shown only while ratios_confirmed is not 1", calc.split("ratios_confirmed !== 1").length === 3);
-  ok("the ratio line returns here after a confirmation in Profile", calc.split("returnAfterConfirm").length === 3);
+  ok("the confirmation is a card that says what ticking does", calc.includes("<RatioConfirmCard") && src("components/RatioConfirmCard.tsx").includes('t("ratioConfirm.until")'));
+  ok("the unconfirmed state is a card with no number (the shared line)", !calc.includes("PendingDoseCard") && src("components/RatioStateCard.tsx").includes("ratioConfirm.confirmTitle") && !/heroDose|totalDose/.test(src("components/RatioStateCard.tsx")));
+  ok("the hero stays behind the original gate", calc.includes("!calcFiguresAllowed(activeProfile) ? null") && !calc.includes("ratios_confirmed !== 1"));
+  ok("the ratio line returns here after a confirmation in Profile", calc.split("returnAfterConfirm").length === 3 && calc.split("onOpenSetup={openSetup}").length === 3);
   ok("uses the shared bottom sheet", calc.includes("SheetShell"));
   ok("the one-time flag is per profile", calc.includes("RATIOS_CONFIRM_PROMPTED_KEY"));
-  ok("the sheet has the confirm checkbox", calc.includes("ConfirmCheckbox") && calc.includes("calculator.setup.confirm"));
+  ok("the sheet has the confirm card", calc.includes("RatioConfirmCard") && src("components/RatioConfirmCard.tsx").includes("calculator.setup.confirm"));
   ok("the sheet shows three meal fields", /\(\["breakfast", "lunch", "dinner"\] as const\)\.map\(\(slot\)/.test(calc));
   ok("the sheet fields are the shared ratio inputs (empty start)", calc.includes("<CarbRatioInput") && calc.includes("<IsfInput"));
   ok("the sheet has no single 'every meal' ratio", !calc.includes("perMealNote") && !/initialCarbRatio/.test(calc));
@@ -766,7 +766,7 @@ section("J. the calculator screen wires the gate");
 
   const line = src("components/CarbRatioLine.tsx");
   ok("the ratio line quotes a number only when confirmed", line.includes("calcFiguresAllowed(activeProfile)"));
-  ok("the ratio line otherwise says 'enter' or 'confirm'", line.includes('t("ratio.enter")') && line.includes('t("ratio.confirm")'));
+  ok("the ratio line otherwise shows the enter or confirm card", line.includes('t("ratio.enter")') && line.includes("<RatioStateCard") && src("components/RatioStateCard.tsx").includes("ratioConfirm.confirmAction"));
 
   const keys = src("lib/profileScopedKeys.ts");
   ok("the one-time flag is swept with the profile", keys.includes(RATIOS_CONFIRM_PROMPTED_KEY));
@@ -829,7 +829,7 @@ section("K. no default-ratio constants, and ratio maths only where allowed");
   const sp = src("app/settings/profile.tsx");
   ok("Profile and Targets writes through the queued writer", sp.includes("useRatioWriter(") && sp.includes("ratioWriters.get()?.update("));
   ok("it no longer saves per keystroke or confirms on every change", !sp.includes("persistRatio") && !sp.includes("ratioSetPatch("));
-  ok("the box is in Profile and Targets", sp.includes("ConfirmCheckbox"));
+  ok("the box is in Profile and Targets, the same card", sp.includes("<RatioConfirmCard") && ps.includes("<RatioConfirmCard"));
   ok("every ratio field flushes on blur (ISF and the three meal fields)", (sp.match(/onBlur=\{onRatioBlur\}/g) ?? []).length === 2);
 }
 
