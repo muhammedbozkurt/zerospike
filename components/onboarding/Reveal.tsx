@@ -23,6 +23,9 @@ import { useFontScale } from "../../lib/useFontScale";
 import { STACK_AT_SCALE } from "../../lib/layoutForFontScale";
 import type { RevealPlanItem, RevealPlanKind } from "../../lib/revealPlan";
 import { healthStoreLabelKey } from "../../lib/cgm/sourceLabel";
+import { ScrollHint } from "../ScrollHint";
+import { useScrollHint } from "../../lib/useScrollHint";
+import { hintBottomOffset } from "../../lib/scrollHint";
 
 // Cascade timing (ms): a gentle staggered reveal.
 const D_LABEL = 0;
@@ -327,6 +330,8 @@ export function Reveal({
     return { label: name, value: item.time ?? undefined };
   }
 
+  const scrollHint = useScrollHint("onboarding.reveal");
+
   const { curve, tir, band } = useMemo(() => {
     const readings = demoSugar();
     const agp = computeAgp(readings, 14);
@@ -346,6 +351,10 @@ export function Reveal({
       <ScrollView
         contentContainerStyle={{ paddingBottom: 8 }}
         showsVerticalScrollIndicator={false}
+        onScroll={scrollHint.onScroll}
+        onContentSizeChange={scrollHint.onContentSizeChange}
+        onLayout={scrollHint.onLayout}
+        scrollEventThrottle={scrollHint.scrollEventThrottle}
       >
         <FadeSlideIn delay={D_LABEL}>
           <Text
@@ -500,6 +509,7 @@ export function Reveal({
           <DisclaimerBanner full compact />
         </FadeSlideIn>
       </ScrollView>
+      <ScrollHint inFlow visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
 
       <FadeSlideIn delay={D_CTA} style={{ marginTop: 12 }}>
         <View pointerEvents={ctaReady ? "auto" : "none"}>

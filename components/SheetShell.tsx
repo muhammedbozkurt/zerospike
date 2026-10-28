@@ -249,7 +249,7 @@ export function SheetShell({
           >
             {children}
           </ScrollView>
-          <ScrollHint visible={hint.visible} bottomOffset={hintBottomOffset({})} />
+          <ScrollHint inFlow visible={hint.visible} bottomOffset={hintBottomOffset({})} />
 
           {footer ? <View style={{ paddingTop: 10 }}>{footer}</View> : null}
 

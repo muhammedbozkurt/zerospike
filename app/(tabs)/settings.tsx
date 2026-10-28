@@ -124,7 +124,7 @@ export default function SettingsHub() {
           </Text>
         </View>
       </ScrollView>
-      <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
+      <ScrollHint inFlow visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
     </View>
   );
 }

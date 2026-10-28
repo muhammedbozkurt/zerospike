@@ -18,7 +18,6 @@ import Animated from "react-native-reanimated";
 import type { BolusKind, InjectionSite, InsulinType, SitePoint } from "../lib/db/types";
 import { BOLUS_KINDS, SELECTABLE_SITES } from "../lib/db/types";
 import {
-  findRecentCalculatorBolus,
   getInjection,
   getSiteUsageHistory,
   updateInjection,
@@ -250,24 +249,6 @@ export function InjectionEditSheet({
     });
   }
 
-  /** Same gentle double-bolus nudge as the injection tab's own form (R10 1.4),
-   *  runs before the dose-threshold checks. Excludes the row being edited so a
-   *  calculator-written bolus never flags against its own value. */
-  async function confirmDoubleBolus(): Promise<boolean> {
-    if (!activeProfile || !injection) return true;
-    const existing = await findRecentCalculatorBolus(activeProfile.id, loggedAt, injection.id);
-    if (!existing) return true;
-    return confirm({
-      title: t("injection.doubleBolusTitle", {
-        n: num(existing.dose_units ?? 0),
-        time: formatTime(existing.logged_at),
-      }),
-      message: t("injection.doubleBolusBody"),
-      confirmLabel: t("injection.doubleBolusConfirm"),
-      icon: "help-circle-outline",
-    });
-  }
-
   async function save() {
     if (!injection || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)) return;
     const target = injection;
@@ -276,7 +257,6 @@ export function InjectionEditSheet({
       lock: savingRef,
       setBusy: setSaving,
       confirm: async () => {
-        if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return false;
         if (hasDose && !(await confirmDose(dose))) return false;
         return true;
       },

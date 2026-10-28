@@ -103,7 +103,6 @@ import {
   setHealthWriteEnabled,
   isHealthConnectPermissionBlocked,
   openHealthSettings,
-  HEALTH_NAME,
   type SyncResult,
 } from "../../lib/services/health";
 import {
@@ -232,6 +231,7 @@ import { attemptGlucoseWrite, openNewReadingState } from "../../lib/glucoseSheet
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
 import { createSheetCloseGate } from "../../lib/sheetCloseGate";
 import { useEntryGuardConfirm } from "../../components/useEntryGuardConfirm";
+import { useHealthName } from "../../lib/useHealthName";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback } from "../../components/Feedback";
 import { StatCard } from "../../components/StatCard";
@@ -351,6 +351,7 @@ function WeekSkeleton() {
 export default function DashboardScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const healthName = useHealthName();
   const router = useRouter();
   const params = useLocalSearchParams<{ sheet?: string; health?: string; shot?: string }>();
   const { isWide, isTwoCol, columnPad } = useLayout();
@@ -1111,14 +1112,14 @@ export default function DashboardScreen() {
 
   function describeSync(res: SyncResult): { msg: string; tone: "success" | "info" } {
     if (res.status === "unavailable")
-      return { msg: t("dashboard.healthUnavailable", { health: HEALTH_NAME }), tone: "info" };
+      return { msg: t("dashboard.healthUnavailable", { health: healthName }), tone: "info" };
     if (res.status === "denied")
-      return { msg: t("dashboard.healthDenied", { health: HEALTH_NAME }), tone: "info" };
+      return { msg: t("dashboard.healthDenied", { health: healthName }), tone: "info" };
     if (res.status === "error")
-      return { msg: t("dashboard.healthError", { health: HEALTH_NAME }), tone: "info" };
+      return { msg: t("dashboard.healthError", { health: healthName }), tone: "info" };
     if (res.inserted > 0)
       return {
-        msg: t("dashboard.imported", { n: res.inserted, health: HEALTH_NAME }),
+        msg: t("dashboard.imported", { n: res.inserted, health: healthName }),
         tone: "success",
       };
     if (res.read > 0)
@@ -1127,7 +1128,7 @@ export default function DashboardScreen() {
     // (requestHealthPermissions always resolves true there), so an empty
     // result can mean "nothing new" OR "access was never granted" - this
     // neutral copy names both instead of asserting the wrong one.
-    return { msg: t("dashboard.healthNoDataOrAccess", { health: HEALTH_NAME }), tone: "info" };
+    return { msg: t("dashboard.healthNoDataOrAccess", { health: healthName }), tone: "info" };
   }
 
   // Pulls from Health. `announce` shows a toast (off for the silent open-sync).
@@ -1225,7 +1226,7 @@ export default function DashboardScreen() {
         // on this card, a broken mirror is not written anywhere. The toggle
         // itself is never touched; only the user turns that off.
         if (takeHealthWriteFailureNotice()) {
-          toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+          toast(t("dashboard.healthWriteFailed", { health: healthName }), "info");
         } else {
           let firstEmpty = false;
           try {
@@ -1237,7 +1238,7 @@ export default function DashboardScreen() {
             // best-effort note
           }
           if (firstEmpty) {
-            toast(t("dashboard.healthFirstImportEmpty", { health: HEALTH_NAME }), "info");
+            toast(t("dashboard.healthFirstImportEmpty", { health: healthName }), "info");
           } else if (res.status === "denied") {
             await offerHealthSettings();
           } else {
@@ -1252,16 +1253,16 @@ export default function DashboardScreen() {
   /** Refused access: say where to turn it on and open that place on request. */
   async function offerHealthSettings() {
     if (Platform.OS === "android" && isHealthConnectPermissionBlocked("read")) {
-      toast(t("settings.healthPermissionBlocked", { health: HEALTH_NAME }), "info");
+      toast(t("settings.healthPermissionBlocked", { health: healthName }), "info");
       void openHealthSettings();
       return;
     }
     const open = await confirm({
-      title: t("dashboard.healthDenied", { health: HEALTH_NAME }),
+      title: t("dashboard.healthDenied", { health: healthName }),
       message: t(
         Platform.OS === "ios" ? "settings.healthDeniedStepsIos" : "settings.healthReadDeniedStepsAndroid"
       ),
-      confirmLabel: t("settings.healthOpenApp", { health: HEALTH_NAME }),
+      confirmLabel: t("settings.healthOpenApp", { health: healthName }),
       cancelLabel: t("common.close"),
     });
     if (open) void openHealthSettings();
@@ -1779,7 +1780,7 @@ export default function DashboardScreen() {
     // capped at once per session by shouldAnnounceHealthWriteFailure.
     void writeGlucoseToHealthIfEnabled(addedSugar).then((ok) => {
       if (!ok && shouldAnnounceHealthWriteFailure()) {
-        toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+        toast(t("dashboard.healthWriteFailed", { health: healthName }), "info");
       }
     });
     void noteJournalActivity();
@@ -1874,8 +1875,8 @@ export default function DashboardScreen() {
   // either way it is never asked again; Settings > Data keeps the switch.
   function writeOnMessage(): string {
     return profiles.length > 1 && activeProfile
-      ? t("dashboard.healthWriteOnNamed", { name: displayProfileName(activeProfile, t), health: HEALTH_NAME })
-      : t("dashboard.healthWriteOn", { health: HEALTH_NAME });
+      ? t("dashboard.healthWriteOnNamed", { name: displayProfileName(activeProfile, t), health: healthName })
+      : t("dashboard.healthWriteOn", { health: healthName });
   }
 
   async function maybeAskHealthWrite(log: SugarLog): Promise<boolean> {
@@ -1892,9 +1893,9 @@ export default function DashboardScreen() {
         markAsked: markHealthWriteAskSeen,
         show: (onAbandon) =>
           confirm({
-            title: t("dashboard.healthWriteAskTitle", { health: HEALTH_NAME }),
+            title: t("dashboard.healthWriteAskTitle", { health: healthName }),
             message:
-              t("dashboard.healthWriteAskBody", { health: HEALTH_NAME }) +
+              t("dashboard.healthWriteAskBody", { health: healthName }) +
               (many ? `\n\n${t("dashboard.healthWriteAskProfile", { name: many })}` : ""),
             confirmLabel: t("dashboard.healthWriteAskYes"),
             cancelLabel: t("dashboard.healthWriteAskLater"),
@@ -2053,7 +2054,7 @@ export default function DashboardScreen() {
   function notifyHealthGate(gate: CgmChoiceGate) {
     toast(
       t(gate === "update" ? "dashboard.healthNeedsUpdate" : "dashboard.healthUnavailable", {
-        health: HEALTH_NAME,
+        health: healthName,
       }),
       "info"
     );
@@ -2329,7 +2330,7 @@ export default function DashboardScreen() {
           {
             key: "health",
             icon: "pulse" as keyof typeof Ionicons.glyphMap,
-            label: HEALTH_NAME,
+            label: healthName,
             onPress: openHealthFlow,
             done: cgmOn == null ? undefined : cgmOn,
           },
@@ -2937,7 +2938,7 @@ export default function DashboardScreen() {
             onPress={openHealthFlow}
             disabled={importAllowed && syncing}
             accessibilityRole="button"
-            accessibilityLabel={HEALTH_NAME}
+            accessibilityLabel={healthName}
             android_ripple={cardRipple()}
             className="active:opacity-80"
             style={{ flex: 1, borderRadius: RADIUS.lg }}
@@ -2961,14 +2962,14 @@ export default function DashboardScreen() {
                 <Switch
                   value={cgmOn}
                   onValueChange={toggleCgm}
-                  {...switchProps(HEALTH_NAME)}
+                  {...switchProps(healthName)}
                   {...switchColors()}
                   style={{ transform: [{ scale: 0.75 }], marginVertical: -6 }}
                 />
               )}
             </View>
             <Txt kind="caption" numberOfLines={1} style={{ fontWeight: "700", marginTop: SPACE.sm }}>
-              {HEALTH_NAME}
+              {healthName}
             </Txt>
             {importAllowed && cgmOn === null ? (
               <Skeleton width={110} height={10} radius={4} style={{ marginTop: SPACE.xs }} />

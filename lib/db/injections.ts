@@ -422,32 +422,6 @@ export async function listRecentInjections(
  *  calculator-written bolus to trigger the "double bolus" nudge (R10 1.4). */
 export const DOUBLE_BOLUS_WINDOW_MINUTES = 15;
 
-/**
- * The nearest calculator-written bolus within DOUBLE_BOLUS_WINDOW_MINUTES of
- * `at`, if any, for the gentle "you already have a bolus from the calculator
- * around this time" confirm. Never blocks the save; it only asks first.
- * `excludeId` skips the row being edited itself, so correcting a
- * calculator-written bolus never flags against its own value.
- */
-export async function findRecentCalculatorBolus(
-  profileId: string,
-  at: Date,
-  excludeId?: string
-): Promise<Injection | null> {
-  const db = await getDb();
-  const half = DOUBLE_BOLUS_WINDOW_MINUTES * 60_000;
-  const from = new Date(at.getTime() - half).toISOString();
-  const to = new Date(at.getTime() + half).toISOString();
-  const row = await db.getFirstAsync<InjectionRow>(
-    `SELECT * FROM injection_logs
-      WHERE profile_id = ? AND source = 'calculator' AND insulin_type = 'bolus'
-        AND logged_at BETWEEN ? AND ? AND id != ?
-      ORDER BY logged_at DESC LIMIT 1;`,
-    [profileId, from, to, excludeId ?? ""]
-  );
-  return row ? mapInjection(row) : null;
-}
-
 // ── Rotation helpers ─────────────────────────────────────────────────────
 
 export interface SiteUsage {

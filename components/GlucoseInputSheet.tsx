@@ -53,7 +53,7 @@ import {
 } from "../lib/glucoseSheetInput";
 import { ELEVATION, INPUT_TEXT, RADIUS, RICH_BY_STATUS, SPACE, TABULAR, THEME, glow } from "../lib/theme/tokens";
 import { GlucoseChip } from "./rich/GlucoseChip";
-import { HEALTH_NAME } from "../lib/services/health";
+import { useHealthName } from "../lib/useHealthName";
 import { GradientCTA } from "./rich/GradientCTA";
 import { Button, Chip, Row, Txt } from "./ui";
 import { useLayout } from "../lib/useLayout";
@@ -139,6 +139,7 @@ export function GlucoseInputSheet({
   onDelete,
 }: Props) {
   const { t, i18n } = useTranslation();
+  const healthName = useHealthName();
   const { confirm } = useFeedback();
   const guardEntry = useEntryGuardConfirm();
   const [value, setValue] = useState("");
@@ -374,7 +375,7 @@ export function GlucoseInputSheet({
     const hasHealthNote = edit.healthkit_uuid != null;
     const ok = await confirm({
       message: hasHealthNote
-        ? `${t("journal.deleteEntry")}\n\n${t("journal.deleteHealthNote", { health: HEALTH_NAME })}`
+        ? `${t("journal.deleteEntry")}\n\n${t("journal.deleteHealthNote", { health: healthName })}`
         : t("journal.deleteEntry"),
       confirmLabel: t("common.delete"),
       cancelLabel: t("common.cancel"),

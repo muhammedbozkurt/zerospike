@@ -550,7 +550,7 @@ export function MealComposeSheet({
                 )
               ) : null}
             </ScrollView>
-            <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
+            <ScrollHint inFlow visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
 
             <View style={{ paddingTop: 10, paddingBottom: lift > 0 ? 12 : insets.bottom + 12 }}>
               {composeRowsBlockSave(items) ? (
