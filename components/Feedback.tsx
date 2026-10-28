@@ -32,7 +32,9 @@ import {
 } from "../lib/feedback";
 import {
   initialToastState,
+  pickToastAction,
   reduceToast,
+  toastAnnouncement,
   toastVisibleMs,
   TOAST_MAX_WIDTH,
   type ToastEffect,
@@ -76,6 +78,11 @@ export interface SheetAction {
 interface ActionSheetOptions {
   title?: string;
   actions: SheetAction[];
+  /** Replaces the default "Cancel" label of the closing button. */
+  cancelLabel?: string;
+  /** Called when the sheet closes WITHOUT an action having run (cancel button,
+   *  backdrop, back, owning screen gone), so a caller awaiting a choice settles. */
+  onDismiss?: () => void;
 }
 
 /** What the overlay paints: choose() sets dismissAsNull. */
@@ -186,10 +193,17 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
     [closeConfirm]
   );
 
+  const sheetRef = useRef<ActionSheetOptions | null>(null);
   const closeSheet = useCallback(() => {
     sheetOwner.current = null;
+    sheetRef.current = null;
     setSheet(null);
   }, []);
+  const dismissSheet = useCallback(() => {
+    const open = sheetRef.current;
+    closeSheet();
+    open?.onDismiss?.();
+  }, [closeSheet]);
 
   const registerHost = useCallback((id: number) => {
     hostsRef.current = pushHost(hostsRef.current, id);
@@ -201,9 +215,9 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
       hostsRef.current = popHost(hostsRef.current, id);
       setHosts(hostsRef.current);
       if (confirmOwner.current === id) abandonConfirm();
-      if (sheetOwner.current === id) closeSheet();
+      if (sheetOwner.current === id) dismissSheet();
     },
-    [abandonConfirm, closeSheet]
+    [abandonConfirm, dismissSheet]
   );
 
   // Whether a screen reader is running. Read once and kept current, because
@@ -311,9 +325,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
       // reader user got NO feedback at all that their save/delete/undo landed.
       // Announce it, and name the action so they know one is on offer.
       try {
-        AccessibilityInfo.announceForAccessibility(
-          action ? `${message}. ${action.label}` : message
-        );
+        AccessibilityInfo.announceForAccessibility(toastAnnouncement(message, action));
       } catch {
         // announcing is best-effort; the visual toast is unaffected
       }
@@ -334,7 +346,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const runToastAction = useCallback((which?: "secondary") => {
     const cur = toastRef.current.current;
     if (!cur || !cur.action) return;
-    const action = which === "secondary" && cur.action.secondary ? cur.action.secondary : cur.action;
+    const action = pickToastAction(cur.action, which);
     const isUndo = action.label === t("common.undo");
     dispatchToast({ type: "actionRun", id: cur.id });
     const confirmUndone = () => {
@@ -380,6 +392,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
 
   const actionSheet = useCallback((opts: ActionSheetOptions) => {
     sheetOwner.current = activeHostId(hostsRef.current);
+    sheetRef.current = opts;
     setSheet(opts);
   }, []);
 
@@ -415,7 +428,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
       confirmOpts,
       closeConfirm,
       sheet,
-      closeSheet,
+      closeSheet: dismissSheet,
       runSheetAction,
     }),
     [
@@ -430,7 +443,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
       confirmOpts,
       closeConfirm,
       sheet,
-      closeSheet,
+      dismissSheet,
       runSheetAction,
     ]
   );
@@ -867,11 +880,11 @@ function SheetOverlay({
             <Pressable
               onPress={onClose}
               accessibilityRole="button"
-              accessibilityLabel={t("common.cancel")}
+              accessibilityLabel={sheet.cancelLabel ?? t("common.cancel")}
               className="rounded-2xl bg-glass border border-hair active:opacity-80 px-4 py-3.5 mt-1"
             >
               <DialogLabel className="text-mut font-semibold">
-                {t("common.cancel")}
+                {sheet.cancelLabel ?? t("common.cancel")}
               </DialogLabel>
             </Pressable>
           </Pressable>

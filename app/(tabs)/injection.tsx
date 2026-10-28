@@ -34,7 +34,7 @@ import { isReducedMotionNow } from "../../lib/useReducedMotion";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DirIcon } from "../../components/DirIcon";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
-import { parseEditRequest, pickEditRow } from "../../lib/injectionEditTarget";
+import { handleEditRequest, loadEditRow, type SitePreset } from "../../lib/injectionEditTarget";
 import { useStepperValidity } from "../../components/Stepper";
 import { NumericField } from "../../components/NumericField";
 import { INJECTION_DOSE_BOUNDS } from "../../lib/numericField";
@@ -226,6 +226,7 @@ export default function InjectionScreen() {
   const savingRef = useRef(false);
   const stepperFields = useStepperValidity();
   const [editing, setEditing] = useState<Injection | null>(null);
+  const [editPreset, setEditPreset] = useState<SitePreset | null>(null);
 
   const typeSeeded = useRef(false);
   // True once the dose has been hand-edited this session; while false, an
@@ -350,24 +351,30 @@ export default function InjectionScreen() {
   // guard "Add region to that entry"). Edits it in place, never logs a new row;
   // a row that is gone (deleted, undone) just leaves History showing.
   const openEditById = useCallback(
-    async (id: string) => {
-      try {
-        const row = pickEditRow(id, await getInjection(id), activeProfile?.id);
-        if (row) setEditing(row);
-      } catch (err) {
-        logCrash(err, { screen: "injection", op: "openEditById" });
+    async (id: string, preset: SitePreset | null = null) => {
+      const row = await loadEditRow({
+        id,
+        profileId: activeProfile?.id,
+        fetchRow: getInjection,
+        onError: (err) => logCrash(err, { screen: "injection", op: "openEditById" }),
+      });
+      if (row) {
+        setEditPreset(preset);
+        setEditing(row);
       }
     },
     [activeProfile?.id]
   );
 
   useEffect(() => {
-    const req = parseEditRequest(params);
-    if (!req) return;
-    fromTodayRef.current = false;
-    setSegment("history");
-    router.setParams({ editId: "", focus: "" });
-    if (req.id) void openEditById(req.id);
+    handleEditRequest(params, {
+      showHistory: () => {
+        fromTodayRef.current = false;
+        setSegment("history");
+      },
+      clearParams: () => router.setParams({ editId: "", focus: "" }),
+      openEdit: (id) => void openEditById(id),
+    });
   }, [params.editId, params.focus, router, openEditById]);
 
   // Leaving the tab without saving ends the "came from Today" intent, so a
@@ -534,9 +541,10 @@ export default function InjectionScreen() {
           entryKind: "injection",
           insulinType,
           entryAtIso: stampNow().toISOString(),
+          doseUnits: dose,
           onAddSite: (id) => {
             setSegment("history");
-            void openEditById(id);
+            void openEditById(id, { site: site.site, point: site.point });
           },
         });
       },
@@ -1412,9 +1420,14 @@ export default function InjectionScreen() {
       <InjectionEditSheet
         visible={editing != null}
         injection={editing}
-        onClose={() => setEditing(null)}
+        presetSite={editPreset}
+        onClose={() => {
+          setEditing(null);
+          setEditPreset(null);
+        }}
         onSaved={() => {
           setEditing(null);
+          setEditPreset(null);
           bumpData();
         }}
       />

@@ -41,7 +41,7 @@ import {
   savedToastKey,
   writeBolusRow,
 } from "../lib/mealEditPatch";
-import { siteEditParams } from "../lib/injectionEditTarget";
+import { noSiteToastAction } from "../lib/injectionEditTarget";
 import {
   RECENT_GLUCOSE_WINDOW_MINUTES,
   fieldIsOffer,
@@ -1738,6 +1738,17 @@ function CalculatorScreen() {
         hasSite: chosenSite != null,
         createdReading: createdReading != null,
       });
+      // The bolus row already exists: this opens ITS edit sheet on the Injection
+      // tab (lib/injectionEditTarget.ts). Logging from the map would write a
+      // second bolus. Looks the row up, never writes one.
+      const addSiteAction = (secondary?: { label: string; onPress: () => void | Promise<void> }) =>
+        noSiteToastAction({
+          label: t("calculator.addSite"),
+          lookupRowId: async () => (await getCalculatorInjectionForMeal(mealId))?.id ?? null,
+          navigate: (params) => router.navigate({ pathname: "/(tabs)/injection", params }),
+          onError: (err) => logCrash(err, { screen: "calculator", step: "addSiteLookup" }),
+          secondary,
+        });
       if (toastKey === "bolusSaveFailed") {
         toast(t("calculator.bolusSaveFailed"), "error", {
           label: t("calculator.bolusRetry"),
@@ -1754,7 +1765,8 @@ function CalculatorScreen() {
                 bumpData();
                 toast(
                   t(chosenSite ? "calculator.autoInjection" : "calculator.autoInjectionNoSite"),
-                  "success"
+                  "success",
+                  chosenSite ? undefined : addSiteAction()
                 );
               } else {
                 logCrash(retry.error, { screen: "calculator", step: "logInjectionRetry" });
@@ -1804,23 +1816,7 @@ function CalculatorScreen() {
         },
       };
       if (toastKey === "autoInjectionNoSite") {
-        // The row already exists: the action opens ITS edit sheet on the
-        // Injection tab. Logging from the map would write a second bolus.
-        toast(message, "success", {
-          label: t("calculator.addSite"),
-          onPress: () => {
-            void (async () => {
-              let rowId: string | null = null;
-              try {
-                rowId = (await getCalculatorInjectionForMeal(mealId))?.id ?? null;
-              } catch (err) {
-                logCrash(err, { screen: "calculator", step: "addSiteLookup" });
-              }
-              router.navigate({ pathname: "/(tabs)/injection", params: siteEditParams(rowId) });
-            })();
-          },
-          secondary: undoAction,
-        });
+        toast(message, "success", addSiteAction(undoAction));
       } else {
         toast(message, "success", undoAction);
       }

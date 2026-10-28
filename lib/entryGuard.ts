@@ -6,7 +6,7 @@
  * dose.
  */
 
-import { isRegionlessMealBolus } from "./injectionEditTarget";
+import { offerAddSiteToRow } from "./injectionEditTarget";
 
 export type EntryGuardKind =
   | "recent_basal"
@@ -38,6 +38,9 @@ export interface EntryGuardInput {
   entryAtIso?: string;
   entryKind: "glucose" | "meal" | "injection" | "post_meal_timer";
   insulinType?: "basal" | "bolus" | null;
+  /** Units on the injection form. Only used to decide whether "add region to
+   *  that entry" is a fair offer (same dose as the matched meal bolus). */
+  doseUnits?: number | null;
   foodKey?: string | null;
   foodName?: string | null;
   /** The id of the record being EDITED, if any. Any `recent` row sharing this
@@ -127,7 +130,7 @@ export function checkEntryGuards(input: EntryGuardInput): EntryGuardNotice[] {
   if (input.entryKind === "injection" && (input.insulinType === "basal" || input.insulinType === "bolus")) {
     const windowMs = input.insulinType === "basal" ? GUARD_WINDOW_MS.recent_basal : GUARD_WINDOW_MS.recent_bolus;
     const kind: EntryGuardKind = input.insulinType === "basal" ? "recent_basal" : "recent_bolus";
-    const candidates: NearestMatch<{ id: string; dose_units: number | null; regionless: boolean }>[] = [];
+    const candidates: NearestMatch<{ id: string; dose_units: number | null; addSite: boolean }>[] = [];
     for (const inj of input.recent?.injections ?? []) {
       if (inj.insulin_type !== input.insulinType) continue;
       const ms = parseIso(inj.logged_at);
@@ -139,7 +142,7 @@ export function checkEntryGuards(input: EntryGuardInput): EntryGuardNotice[] {
         record: {
           id: inj.id,
           dose_units: inj.dose_units,
-          regionless: isRegionlessMealBolus(inj),
+          addSite: offerAddSiteToRow({ row: inj, rowAtMs: ms, entryAtMs, doseUnits: input.doseUnits }),
         },
       });
     }
@@ -147,7 +150,7 @@ export function checkEntryGuards(input: EntryGuardInput): EntryGuardNotice[] {
     if (best !== null) {
       const detail: NonNullable<EntryGuardNotice["detail"]> = {};
       if (best.record.dose_units !== null) detail.units = best.record.dose_units;
-      if (kind === "recent_bolus" && best.record.regionless) detail.addSiteToId = best.record.id;
+      if (kind === "recent_bolus" && best.record.addSite) detail.addSiteToId = best.record.id;
       notices.push({ kind, atIso: best.iso, ...(Object.keys(detail).length ? { detail } : {}) });
     }
   }
