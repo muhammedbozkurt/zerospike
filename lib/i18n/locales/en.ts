@@ -446,6 +446,7 @@ const en: TranslationSchema = {
     savedRecord: "Entry saved.",
     bolusSaveFailed: "Meal saved, but the bolus injection entry could not be added. The dose will not show in the injection history or in active insulin.",
     bolusRetry: "Try again",
+    recordNotFound: "Entry not found.",
     undone: "Entry undone.",
     carbFocusBodyBasal: "The mealtime dose section is hidden because you use basal insulin only; you can change this in Settings.",
     emptyDoseTitle: "Dose field is empty",

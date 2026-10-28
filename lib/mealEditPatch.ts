@@ -123,3 +123,23 @@ export function savedToastKey(s: {
   if (s.wroteInjection) return s.hasSite ? "autoInjection" : "autoInjectionNoSite";
   return s.createdReading ? "autoGlucose" : "savedRecord";
 }
+
+/**
+ * What a meal edit writes onto the reading the meal is linked to: the glucose
+ * only when its mg/dL really differs (a value the user did not touch is never
+ * rewritten, so a Health row keeps its tombstone state), and the time only when
+ * the reading is the one that follows the meal's own time correction. An empty
+ * patch means no write at all.
+ */
+export function linkedReadingPatch(input: {
+  storedMgdl: number | null;
+  valueMgdl: number | null;
+  moveToIso: string | null;
+}): { glucose_level_mgdl?: number; logged_at?: string } {
+  const patch: { glucose_level_mgdl?: number; logged_at?: string } = {};
+  if (input.valueMgdl != null && input.valueMgdl !== input.storedMgdl) {
+    patch.glucose_level_mgdl = input.valueMgdl;
+  }
+  if (input.moveToIso != null) patch.logged_at = input.moveToIso;
+  return patch;
+}

@@ -446,6 +446,7 @@ const fr: TranslationSchema = {
     savedRecord: "Entrée enregistrée.",
     bolusSaveFailed: "Repas enregistré, mais l'entrée d'injection de bolus n'a pas pu être ajoutée. La dose n'apparaîtra ni dans l'historique des injections ni dans l'insuline active.",
     bolusRetry: "Réessayer",
+    recordNotFound: "Entrée introuvable.",
     undone: "Entrée annulée.",
     carbFocusBodyBasal: "La section dose du repas est masquée car vous n'utilisez que de l'insuline basale ; modifiable dans les Réglages.",
     emptyDoseTitle: "Le champ dose est vide",

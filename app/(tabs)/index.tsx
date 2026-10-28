@@ -12,6 +12,8 @@ import { retryHealthRecords } from "../../lib/healthRecords";
 import { displayProfileName } from "../../lib/profileName";
 import { getJournal, JournalEntry, GlucoseEntry, InjectionEntry, MealEntry } from "../../lib/db/journal";
 import { activeInsulinBreakdown } from "../../lib/iob";
+import { useMinuteClock } from "../../lib/useMinuteClock";
+import { DEFAULT_NEW_READING_PERIOD } from "../../lib/periodTag";
 import { bolusProfileFor, basalProfileFor } from "../../lib/insulinCatalog";
 import { targetBandFor } from "../../lib/agpChart";
 import { isConfigured as spikeConfigured } from "../../lib/ai/spikeClient";
@@ -155,7 +157,7 @@ const WIDGET_TIP_KEY = "zerospike.widgetTipDismissed";
  *  in-app quick add AND for the widget/notification links that mean the same
  *  thing. One constant so those two can never drift into labelling the same
  *  action differently; the user can change it in the sheet either way. */
-const DEFAULT_LOG_PERIOD: PeriodTag = "fasting";
+const DEFAULT_LOG_PERIOD: PeriodTag = DEFAULT_NEW_READING_PERIOD;
 // The first-run guide is gone once anything is logged, but its optional steps
 // (Health, widget) are not done yet - this compact row carries them until the
 // user closes it.
@@ -449,7 +451,7 @@ export default function DashboardScreen() {
   const [editGlucose, setEditGlucose] = useState<GlucoseEntry | null>(null);
   const [showEditHint, setShowEditHint] = useState(false);
   const [showFinishSetup, setShowFinishSetup] = useState(false);
-  const [initialPeriod, setInitialPeriod] = useState<PeriodTag>("fasting");
+  const [initialPeriod, setInitialPeriod] = useState<PeriodTag>(DEFAULT_LOG_PERIOD);
   // null = the persisted AsyncStorage preference has not been read yet. A Pro
   // user who had sync ON must never see the switch commit to OFF for one frame
   // and then jump to ON - the card stays in its skeleton shape until this
@@ -1192,6 +1194,7 @@ export default function DashboardScreen() {
   }
 
   const unit = activeProfile?.glucose_unit ?? "mgdl";
+  const clock = useMinuteClock();
 
   /**
    * Every derived figure on this screen, from ONE pass over the feed.
@@ -1336,7 +1339,8 @@ export default function DashboardScreen() {
         basalProfile: basalProfileFor(activeProfile?.basal_insulin_id),
       }),
     };
-  }, [entries, activeProfile, cgmDates]);
+    // clock: active insulin decays and "today" rolls over with no data change.
+  }, [entries, activeProfile, cgmDates, clock]);
 
   const {
     todayAvg,

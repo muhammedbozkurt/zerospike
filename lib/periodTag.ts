@@ -31,13 +31,21 @@ export const PERIOD_TAGS: readonly PeriodTag[] = [
 ];
 
 /**
+ * What a brand-new glucose entry opens on when nothing in its context says
+ * otherwise: no label. Defaulting to "fasting" put an afternoon reading into
+ * the fasting averages unless the user noticed and changed it. A context that
+ * knows the period (the post-meal 2-hour reminder) passes its own.
+ */
+export const DEFAULT_NEW_READING_PERIOD: PeriodTag = "unset";
+
+/**
  * The period_tag a new row should be written with.
  *
  * - health_import: always "unset", regardless of `opts` - an imported reading
  *   carries no period at all (see the file header).
  * - manual_entry / widget_quick_add: `opts.explicit` if the user picked one
- *   before saving, otherwise "fasting" (the default shown on the entry
- *   screen, which the user can still change before it is saved).
+ *   before saving, otherwise DEFAULT_NEW_READING_PERIOD (no label; the user can still
+ *   pick one on the entry screen before it is saved).
  * - backdated: `opts.explicit` if the user picked one, otherwise "unset" -
  *   there is no clock-based guess for an entry dated in the past.
  */
@@ -47,7 +55,7 @@ export function autoPeriodTagFor(
 ): PeriodTag {
   if (src === "health_import") return "unset";
   if (src === "manual_entry" || src === "widget_quick_add") {
-    return opts.explicit ?? "fasting";
+    return opts.explicit ?? DEFAULT_NEW_READING_PERIOD;
   }
   // src === "backdated"
   return opts.explicit ?? "unset";
