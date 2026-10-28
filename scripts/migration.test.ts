@@ -52,6 +52,7 @@ import {
   migrateToV28,
   migrateToV29,
   migrateToV30,
+  migrateToV31,
   ensureFoodNameColumns,
   missingColumns,
   stampSchemaVersion,
@@ -112,6 +113,7 @@ import {
 } from "../lib/db/v23Sql";
 import { V24_CREATE } from "../lib/db/v24Sql";
 import { V26_MEAL_COLUMNS, V26_INJECTION_COLUMNS } from "../lib/db/v26Sql";
+import { V31_MEAL_COLUMNS } from "../lib/db/v31Sql";
 import { V27_RESET_RATIO_CONFIRMATION } from "../lib/db/v27Sql";
 import { PORTION_LABEL_KEYS } from "../lib/db/types";
 import {
@@ -4216,7 +4218,7 @@ async function main() {
       join(import.meta.dirname, "..", "lib", "db", "index.ts"),
       "utf8"
     );
-    ok("SCHEMA_VERSION is 30", /const SCHEMA_VERSION = 30;/.test(indexSrc));
+    ok("SCHEMA_VERSION is 31", /const SCHEMA_VERSION = 31;/.test(indexSrc));
     ok(
       "the v21 → v22 step runs the real migration",
       /currentVersion < 22\)\s*\{\s*await migrateToV22\(db\);/.test(indexSrc)
@@ -4892,7 +4894,7 @@ async function main() {
     );
     ok(
       "createSchemaV1 meal_logs carries health_uuid",
-      /meal_template_id TEXT,[^;]*?health_uuid TEXT,\s*FOREIGN KEY/.test(indexSrc)
+      /meal_template_id TEXT,[^;]*?health_uuid TEXT,[^;]*?FOREIGN KEY/.test(indexSrc)
     );
     ok(
       "createSchemaV1 injection_logs carries health_uuid",
@@ -5136,6 +5138,41 @@ async function main() {
       /currentVersion < 30\)\s*\{\s*await migrateToV30\(db\);/.test(indexSrc)
     );
     ok("a fresh install creates the same tables", /for \(const statement of V30_CREATE\)/.test(indexSrc));
+  }
+
+  section("U6. v31 adds meal_logs.created_sugar_log_id and touches no row");
+  {
+    const mk = () => {
+      const db = new DatabaseSync(":memory:");
+      db.exec(`
+        CREATE TABLE user_profiles (id TEXT PRIMARY KEY NOT NULL);
+        CREATE TABLE meal_logs (
+          id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, sugar_log_id TEXT,
+          logged_at TEXT NOT NULL
+        );
+        PRAGMA user_version = 30;
+      `);
+      return db;
+    };
+    const mealCols = (db: DatabaseSync) =>
+      (db.prepare("PRAGMA table_info(meal_logs);").all() as { name: string }[]).map((c) => c.name);
+    eq("V31_MEAL_COLUMNS names", V31_MEAL_COLUMNS.map((c) => c.name).join(","), "created_sugar_log_id");
+
+    const db = mk();
+    db.exec("INSERT INTO user_profiles VALUES ('p1'); INSERT INTO meal_logs VALUES ('m1','p1','s1','2026-01-01T00:00:00.000Z');");
+    const before = snapshotRows(db, "meal_logs");
+    await migrateToV31(adapt(db));
+    eq("from v30: stamps 31", readUserVersion(db), 31);
+    ok("the column exists", mealCols(db).includes("created_sugar_log_id"));
+    eq("existing rows are untouched and carry NULL", (db.prepare("SELECT created_sugar_log_id AS c FROM meal_logs;").get() as { c: string | null }).c, null);
+    sameRows("meal_logs", before, snapshotRows(db, "meal_logs"));
+    await migrateToV31(adapt(db));
+    eq("a replay keeps the stamp and the single column", mealCols(db).filter((c) => c === "created_sugar_log_id").length, 1);
+    db.close();
+
+    const indexSrc = readFileSync(join(import.meta.dirname, "..", "lib", "db", "index.ts"), "utf8");
+    ok("the v30 -> v31 step runs the real migration", /currentVersion < 31\)\s*\{\s*await migrateToV31\(db\);/.test(indexSrc));
+    ok("a fresh install's meal_logs carries the column", /created_sugar_log_id TEXT,\s*FOREIGN KEY/.test(indexSrc));
   }
 
   section("U3. a profile created on an upgraded database is born unconfirmed");

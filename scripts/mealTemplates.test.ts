@@ -479,7 +479,7 @@ section("F. storage rules (read from the source)");
   );
   ok(
     "addMealLog stores the source template",
-    /meal_template_id\)/.test(logs) && /input\.meal_template_id \?\? null/.test(logs)
+    /meal_template_id(?:, created_sugar_log_id)?\)/.test(logs) && /input\.meal_template_id \?\? null/.test(logs)
   );
 
   const templates = src("lib/db/mealTemplates.ts");

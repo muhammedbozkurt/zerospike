@@ -98,7 +98,7 @@ export function journalFeedSql(
   const bounds = (col: string) =>
     withRange ? ` AND ${col} BETWEEN ? AND ?` : "";
   const notCalculator = excludeCalculatorInjections
-    ? " AND (i.source IS NULL OR i.source <> 'calculator')"
+    ? " AND (i.source IS NULL OR i.source <> 'calculator' OR i.insulin_type IS NOT 'bolus')"
     : "";
   return `SELECT * FROM (
        SELECT 'glucose' AS kind, s.id AS id, s.logged_at AS logged_at, s.tags AS tags,

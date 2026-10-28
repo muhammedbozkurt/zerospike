@@ -26,6 +26,7 @@ import {
   migrateToV28,
   migrateToV29,
   migrateToV30,
+  migrateToV31,
   missingColumns,
   repairV28SourceDeleteGuard,
   ensureFoodNameColumns,
@@ -65,7 +66,7 @@ import {
 import type { SeedFood } from "./seed";
 
 const DB_NAME = "zerospike.db";
-const SCHEMA_VERSION = 30;
+const SCHEMA_VERSION = 31;
 
 /** Stable id for the default profile created on first launch. */
 export const DEFAULT_PROFILE_ID = "00000000-0000-4000-8000-000000000001";
@@ -405,6 +406,12 @@ export async function initDatabase(): Promise<void> {
     await migrateToV30(db);
   }
 
+  // v30 → v31: created_sugar_log_id on meal_logs, which reading a meal's own
+  // save created (see ./v31Sql).
+  if (currentVersion >= 1 && currentVersion < 31) {
+    await migrateToV31(db);
+  }
+
   // A database that reached v28/v30 before the source-delete marker existed has no
   // marker table and keeps the older delete trigger; no migration step re-runs for
   // it. One schema read on a current database (see migrations.ts).
@@ -531,6 +538,8 @@ async function createSchemaV1(db: SQLite.SQLiteDatabase): Promise<void> {
       meal_template_id TEXT,
       -- Health mirror id of the carbohydrate sample (schema v26, see ./v26Sql).
       health_uuid TEXT,
+      -- The reading this meal's own save created (schema v31, see ./v31Sql).
+      created_sugar_log_id TEXT,
       FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
       FOREIGN KEY (sugar_log_id) REFERENCES sugar_logs (id) ON DELETE SET NULL,
       FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE SET NULL

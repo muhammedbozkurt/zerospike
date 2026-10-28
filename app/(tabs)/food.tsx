@@ -25,11 +25,10 @@ import {
   searchFoods,
   deleteFood,
   countFoodsByCategory,
-  getFood,
   listCustomFoods,
   listFoodsByCategory,
 } from "../../lib/db/foods";
-import { type DeletionSnapshot } from "../../lib/db/undo";
+import { captureFoodDeletion } from "../../lib/db/undo";
 import { useUndoBatch } from "../../components/useUndoBatch";
 import { DirIcon } from "../../components/DirIcon";
 import {
@@ -973,17 +972,14 @@ export default function FoodScreen() {
   );
 
   // Delete immediately + accumulating 6-second undo (shared useUndoBatch). The
-  // row is re-read first (not trusted from list state) so undo re-inserts it
-  // verbatim; lib/db/undo's captureFoodDeletion only ever snapshotted
-  // is_custom=1 rows, which would silently restore nothing for a barcode
-  // result (source "off"), so the snapshot is built here instead.
+  // snapshot carries the food's favorites, portion presets and the meals logged
+  // with it, which the delete unlinks or cascades away; deleteFood stamps the
+  // food's name on those meals so history keeps its label.
   async function onDeleteCustom(food: Food) {
     if (!isEditableFood(food)) return;
-    const fresh = (await getFood(food.id)) ?? food;
-    const snap: DeletionSnapshot = {
-      foods: [fresh as unknown as Record<string, string | number | null>],
-    };
-    await deleteWithUndo(snap, () => deleteFood(food.id));
+    const name = foodName(food, lang);
+    const snap = await captureFoodDeletion(food.id, name);
+    await deleteWithUndo(snap, () => deleteFood(food.id, name));
   }
 
   // Long press on a custom food or a cached barcode result (source "off") =

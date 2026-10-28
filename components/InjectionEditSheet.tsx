@@ -319,7 +319,11 @@ export function InjectionEditSheet({
           const mealDose = insulinType === "bolus" && hasDose ? dose : 0;
           await inDbTransaction(async () => {
             await updateInjection(target.id, patch);
-            await updateMealLog(mealId, { insulin_dose_units: mealDose });
+            // A row that was already basal before this edit (converted by an
+            // older build, still linked) is not the meal's dose: the meal keeps its own.
+            if ((target.insulin_type ?? "bolus") === "bolus") {
+              await updateMealLog(mealId, { insulin_dose_units: mealDose });
+            }
           });
         } else {
           await updateInjection(target.id, patch);

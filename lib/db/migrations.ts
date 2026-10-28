@@ -76,6 +76,7 @@ import {
   findCgmRunIds,
 } from "./v29Sql";
 import { V30_CREATE } from "./v30Sql";
+import { V31_MEAL_COLUMNS } from "./v31Sql";
 
 /**
  * The schema migration bodies (R10 FAZ 4), extracted verbatim from
@@ -125,7 +126,8 @@ export type SchemaStamp =
   | 27
   | 28
   | 29
-  | 30;
+  | 30
+  | 31;
 
 /**
  * Records that the schema has reached `version`, from INSIDE the step's own
@@ -920,5 +922,20 @@ export async function migrateToV30(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(statement);
     }
     await stampSchemaVersion(db, 30);
+  });
+}
+
+/**
+ * The v30 → v31 migration: nullable created_sugar_log_id on meal_logs (see
+ * ./v31Sql). Guarded ADD COLUMN so a replay is a no-op, stamp in the same
+ * transaction.
+ */
+export async function migrateToV31(db: SQLite.SQLiteDatabase): Promise<void> {
+  const missing = await missingColumns(db, "meal_logs", V31_MEAL_COLUMNS);
+  await db.withTransactionAsync(async () => {
+    for (const col of missing) {
+      await db.execAsync(`ALTER TABLE meal_logs ADD COLUMN ${col.name} ${col.type};`);
+    }
+    await stampSchemaVersion(db, 31);
   });
 }

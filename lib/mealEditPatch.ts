@@ -45,6 +45,31 @@ export function prefillDose(mealDose: number, row: BolusRowSnapshot | null): num
   return bolus && bolus.dose_units != null ? bolus.dose_units : mealDose;
 }
 
+export interface LinkedReadingMoveInput {
+  /** The user moved the meal's time picker. */
+  loggedAtChanged: boolean;
+  /** meal_logs.sugar_log_id: the reading the meal is linked to now. */
+  linkedSugarLogId: string | null;
+  /** meal_logs.created_sugar_log_id: the reading this meal's own save created. */
+  createdSugarLogId: string | null;
+  /** Other meals that point at the same reading. */
+  otherMealsOnReading: number;
+}
+
+/**
+ * Whether a meal's time correction also moves the reading it is linked to.
+ * Only the reading this meal's own save created, and only while no other meal
+ * shares it, follows the picker. A reading that existed before the meal, or that
+ * another meal also uses, is a measurement of its own: moving it would corrupt
+ * the other meal's baseline. The creation relation is recorded explicitly
+ * (meal_logs.created_sugar_log_id), never inferred from timestamps. Meals saved
+ * before schema v31 carry none, so their reading stays where it is.
+ */
+export function shouldMoveLinkedReading(input: LinkedReadingMoveInput): boolean {
+  if (!input.loggedAtChanged || input.otherMealsOnReading > 0) return false;
+  return input.linkedSugarLogId != null && input.linkedSugarLogId === input.createdSugarLogId;
+}
+
 export function mealEditPlan(input: MealEditPlanInput): MealEditPlan {
   const { showsDose, dose, prefilledDose, mealStored, loggedAtIso, loggedAtChanged } = input;
   const bolus = ownBolusRow(input.bolus);

@@ -1,4 +1,5 @@
 import { getDb } from "./index";
+import { inDbTransaction } from "./meals";
 import { uuid } from "../uuid";
 import { foodName } from "./types";
 import { DEFAULT_FOOD_CATEGORY, type FoodCategory } from "./categories";
@@ -595,13 +596,29 @@ export async function updateFood(
 }
 
 /** Deletes a custom food or a cached barcode result; the seeded catalog
- *  (is_custom = 0, source not 'off') is never touched by this. */
-export async function deleteFood(id: string): Promise<void> {
+ *  (is_custom = 0, source not 'off') is never touched by this.
+ *
+ *  meal_logs.food_id is ON DELETE SET NULL, so a meal logged with the food would
+ *  lose its only name. Meals without a name of their own get `name` first, in the
+ *  same transaction, so the history keeps reading "Annemin keki". */
+export async function deleteFood(id: string, name: string): Promise<void> {
   const db = await getDb();
-  await db.runAsync(
-    "DELETE FROM foods WHERE id = ? AND (is_custom = 1 OR source = 'off');",
-    [id]
-  );
+  const label = name.trim();
+  // inDbTransaction, not withTransactionAsync: BEGIN IMMEDIATE and the shared
+  // write lock (see lib/db/meals.ts), so a concurrent import cannot make the
+  // lock upgrade fail.
+  await inDbTransaction(async () => {
+    if (label) {
+      await db.runAsync(
+        "UPDATE meal_logs SET custom_food_name = ? WHERE food_id = ? AND TRIM(COALESCE(custom_food_name, '')) = '' AND EXISTS (SELECT 1 FROM foods WHERE id = ? AND (is_custom = 1 OR source = 'off'));",
+        [label, id, id]
+      );
+    }
+    await db.runAsync(
+      "DELETE FROM foods WHERE id = ? AND (is_custom = 1 OR source = 'off');",
+      [id]
+    );
+  });
 }
 
 /* ── Portion presets (schema v23, ./types.ts FoodPortion) ──────────────────
