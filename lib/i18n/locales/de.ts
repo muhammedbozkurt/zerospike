@@ -846,6 +846,8 @@ const de: TranslationSchema = {
   cgmHome: {
     waiting: "Warten auf CGM",
     waitingBody: "Die Werte erscheinen hier, sobald sie eintreffen.",
+    manualBasis: "Manuell eingegeben",
+    manualBasisA11y: "Der heutige Durchschnitt stammt aus manuell eingegebenen Messungen",
     watching: "CGM zeichnet auf",
     offerTitle: "In den CGM-Modus wechseln?",
     offerBody: "In {{store}} wurden CGM-Werte gefunden. Möchten Sie in den CGM-Modus wechseln?",

@@ -9,11 +9,13 @@
  * table.
  */
 import { recentDayRanges } from "../cgm/curve";
+import { notSensorTwinSql } from "./cgmSql";
 
 /** Placeholders: profile_id, since (ISO), until (ISO). Sensor AND hand-entered
- *  readings, so the curve can mark the manual ones on the same axis. */
-export const CGM_WINDOW_SQL =
-  "SELECT logged_at, glucose_level_mgdl, is_cgm FROM sugar_logs WHERE profile_id = ? AND logged_at >= ? AND logged_at <= ? ORDER BY logged_at;";
+ *  readings, so the curve can mark the manual ones on the same axis. A
+ *  non-sensor row that only mirrors a sensor stream is left out (the journal's
+ *  "twins" rule), or it would be drawn as a hollow manual dot. */
+export const CGM_WINDOW_SQL = `SELECT s.logged_at, s.glucose_level_mgdl, s.is_cgm FROM sugar_logs s WHERE s.profile_id = ? AND s.logged_at >= ? AND s.logged_at <= ? AND (s.is_cgm = 1 OR ${notSensorTwinSql("s")}) ORDER BY s.logged_at;`;
 
 /** Placeholders: profile_id. The newest sensor reading. */
 export const CGM_LATEST_SQL =
@@ -22,6 +24,19 @@ export const CGM_LATEST_SQL =
 /** Placeholders: low, high, profile_id, since (ISO), until (ISO). */
 export const CGM_RANGE_STATS_SQL =
   "SELECT COUNT(*) AS c, AVG(glucose_level_mgdl) AS a, COALESCE(SUM(CASE WHEN glucose_level_mgdl BETWEEN ? AND ? THEN 1 ELSE 0 END), 0) AS r FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 AND logged_at >= ? AND logged_at < ?;";
+
+/**
+ * Hand-entered readings of the same span, with the journal's twin rule: a
+ * non-sensor row that only mirrors a sensor stream does not count. Same
+ * placeholders as CGM_RANGE_STATS_SQL. Read for the home card when today's
+ * sensor coverage is too thin to be the day (lib/cgm/homeBasis.ts).
+ */
+export const CGM_MANUAL_RANGE_STATS_SQL = `SELECT COUNT(*) AS c, AVG(s.glucose_level_mgdl) AS a, COALESCE(SUM(CASE WHEN s.glucose_level_mgdl BETWEEN ? AND ? THEN 1 ELSE 0 END), 0) AS r FROM sugar_logs s WHERE s.profile_id = ? AND s.is_cgm = 0 AND ${notSensorTwinSql("s")} AND s.logged_at >= ? AND s.logged_at < ?;`;
+
+/** Placeholders: profile_id, since (ISO), until (ISO). Sensor timestamps only,
+ *  for the coverage rule. Reads idx_sugar_cgm. */
+export const CGM_SENSOR_TIMES_SQL =
+  "SELECT logged_at FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 AND logged_at >= ? AND logged_at < ?;";
 
 /**
  * One row per local day that has sensor readings. The day bounds come from JS
@@ -153,6 +168,35 @@ export async function getCgmRangeStats(
     rangeStatsArgs(profileId, band, startMs, endMs)
   );
   return toRangeStats(row);
+}
+
+export async function getCgmManualRangeStats(
+  profileId: string,
+  band: { low: number; high: number },
+  startMs: number,
+  endMs: number
+): Promise<CgmRangeStats> {
+  const { getDb } = await import("./index");
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ c: number; a: number | null; r: number }>(
+    CGM_MANUAL_RANGE_STATS_SQL,
+    rangeStatsArgs(profileId, band, startMs, endMs)
+  );
+  return toRangeStats(row);
+}
+
+export async function getCgmSensorTimes(
+  profileId: string,
+  startMs: number,
+  endMs: number
+): Promise<number[]> {
+  const { getDb } = await import("./index");
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ logged_at: string }>(
+    CGM_SENSOR_TIMES_SQL,
+    windowArgs(profileId, startMs, endMs)
+  );
+  return rows.map((r) => Date.parse(r.logged_at)).filter((t) => Number.isFinite(t));
 }
 
 export async function getCgmDaySummaries(

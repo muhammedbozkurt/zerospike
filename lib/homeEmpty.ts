@@ -36,9 +36,10 @@ export function cgmHomeVisible(mode: string): boolean {
 export type CgmHomeState = "loading" | "waiting" | "gap" | "data";
 
 /**
- * "waiting": the sensor profile has never received a reading ("CGM bekleniyor").
- * "gap": readings exist but none in the chosen window. "data": the curve has
- * points to draw.
+ * "waiting": the sensor profile has never received a reading and nothing was
+ * typed in the window either ("CGM bekleniyor"). "gap": readings exist but none
+ * in the chosen window. "data": the curve has points to draw, sensor or
+ * hand-entered.
  */
 export function cgmHomeState(input: {
   loaded: boolean;
@@ -46,8 +47,8 @@ export function cgmHomeState(input: {
   windowPoints: number;
 }): CgmHomeState {
   if (!input.loaded) return "loading";
-  if (input.latestAtMs == null) return "waiting";
-  return input.windowPoints > 0 ? "data" : "gap";
+  if (input.windowPoints > 0) return "data";
+  return input.latestAtMs == null ? "waiting" : "gap";
 }
 
 /**

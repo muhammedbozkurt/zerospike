@@ -21,9 +21,10 @@ import {
 } from "../lib/glucose";
 import { formatTime, isolateLtr, pct } from "../lib/format";
 import { upper } from "../lib/upper";
-import { RICH_BY_STATUS, SPACE, THEME } from "../lib/theme/tokens";
+import { RADIUS, RICH_BY_STATUS, SPACE, THEME } from "../lib/theme/tokens";
 import { CgmCurve } from "./charts/CgmCurve";
 import { GlucoseChip, GlucoseRing } from "./rich";
+import { withAlpha } from "./rich/GlassCard";
 import { SourceBadge } from "./SourceBadge";
 import { Card, Segmented, Txt } from "./ui";
 
@@ -50,7 +51,8 @@ function CgmAge({ atMs }: { atMs: number }) {
 
 /**
  * The home hero for a profile that reads from a sensor: today's ring (the share
- * of today's sensor readings inside the target band), the curve with its 3 / 6
+ * of today's readings inside the target band: the sensor's, or the
+ * hand-entered ones when the sensor covers too little of today), the curve with its 3 / 6
  * / 12 hour choice, the last reading with its age, the source
  * badge, and the note that readings can arrive late. Rendered ONLY when the
  * profile's mode is not manual (see app/(tabs)/index.tsx); a manual profile's
@@ -90,20 +92,24 @@ export function CgmHomeCard({
   const share = todayRangeShare(win.today.count, win.today.inRange);
 
   const unitLabel = glucoseUnitLabel(unit);
+  // With no sensor points in the window the hand-entered ones are the curve.
+  const shown = model.cgm.length > 0 ? model.cgm : model.manual;
+  const shownLast = model.last ?? model.manual[model.manual.length - 1] ?? null;
   const summary =
-    model.cgm.length > 0 && model.minMgdl != null && model.maxMgdl != null && model.last
+    shown.length > 0 && model.minMgdl != null && model.maxMgdl != null && shownLast
       ? t("cgmCurve.windowSummary", {
           n: hours,
           summary: t("cgmCurve.summary", {
-            count: model.cgm.length,
+            count: shown.length,
             min: formatGlucose(model.minMgdl, unit),
             max: formatGlucose(model.maxMgdl, unit),
-            last: formatGlucose(model.last.mgdl, unit),
+            last: formatGlucose(shownLast.mgdl, unit),
             unit: unitLabel,
-            time: formatTime(new Date(model.last.t).toISOString()),
+            time: formatTime(new Date(shownLast.t).toISOString()),
           }),
         })
       : t("cgmCurve.noWindowData");
+  const manualBasis = win.todaySource === "manual" && !win.todayEmpty;
 
   // Holds the card's height while the first read lands, so the list below does
   // not jump.
@@ -148,6 +154,27 @@ export function CgmHomeCard({
           size={152}
         />
       </View>
+      {manualBasis ? (
+        <View
+          accessible
+          accessibilityRole="text"
+          accessibilityLabel={t("cgmHome.manualBasisA11y")}
+          style={{
+            alignSelf: "center",
+            marginTop: SPACE.sm,
+            paddingHorizontal: SPACE.sm,
+            paddingVertical: 2,
+            borderRadius: RADIUS.full,
+            borderWidth: 1,
+            borderColor: withAlpha(THEME.accent, 0.35),
+            backgroundColor: withAlpha(THEME.accent, 0.1),
+          }}
+        >
+          <Txt kind="micro" tone="muted">
+            {t("cgmHome.manualBasis")}
+          </Txt>
+        </View>
+      ) : null}
       {share != null ? (
         <Txt
           kind="caption"
@@ -199,6 +226,11 @@ export function CgmHomeCard({
           {model.manual.length > 0 ? (
             <Txt kind="micro" tone="muted" style={{ marginTop: SPACE.xs }}>
               {t("cgmCurve.manualLegend")}
+            </Txt>
+          ) : null}
+          {win.latest == null ? (
+            <Txt kind="micro" tone="muted" style={{ marginTop: SPACE.xs }}>
+              {t("cgmHome.waiting")}
             </Txt>
           ) : null}
         </View>
