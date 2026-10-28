@@ -43,7 +43,7 @@ export function ToastCard({
       accessibilityRole="button"
       accessibilityLabel={action.label}
       style={({ pressed }) => ({
-        marginStart: 8,
+        marginStart: two ? 0 : 8,
         minHeight: HIT_TARGET,
         minWidth: HIT_TARGET,
         justifyContent: "center",
@@ -70,7 +70,9 @@ export function ToastCard({
         justifyContent: "center",
         alignItems: "center",
         borderRadius: RADIUS.full,
-        paddingHorizontal: 12,
+        borderWidth: 1,
+        borderColor: THEME.borderStrong,
+        paddingHorizontal: 16,
         opacity: pressed ? 0.6 : 1,
       })}
     >
@@ -121,7 +123,7 @@ export function ToastCard({
     >
       {messageRow}
       {two ? (
-        <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
+        <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap", columnGap: 8, rowGap: 8 }}>
           {secondary}
           {primary}
         </View>

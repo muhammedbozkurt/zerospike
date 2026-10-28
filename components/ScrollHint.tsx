@@ -19,7 +19,17 @@ const BOB_PT = 5;
  * that edge. Decorative: hidden from screen readers and never takes a touch.
  * Reduce Motion: one static frame, no fade, no bob.
  */
-export function ScrollHint({ visible, bottomOffset }: { visible: boolean; bottomOffset: number }): React.ReactElement | null {
+export function ScrollHint({
+  visible,
+  bottomOffset,
+  inFlow = false,
+}: {
+  visible: boolean;
+  bottomOffset: number;
+  /** Reserve its own strip under the ScrollView instead of floating over the
+   *  last visible line, so the chevron never sits on text. */
+  inFlow?: boolean;
+}): React.ReactElement | null {
   const reduce = useReduceMotion();
   const fontScale = useFontScale();
   const opacity = useRef(new Animated.Value(0)).current;
@@ -68,6 +78,48 @@ export function ScrollHint({ visible, bottomOffset }: { visible: boolean; bottom
   // lines; content running off the screen edge already says "scroll".
   if (!mounted || !scrollHintAllowed(fontScale)) return null;
 
+  const chip = (
+    <Animated.View
+      style={{
+        opacity,
+        transform: [{ translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [0, BOB_PT] }) }],
+      }}
+    >
+      <View
+        style={{
+          width: SIZE,
+          height: SIZE,
+          borderRadius: SIZE / 2,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: THEME.surfaceRaised,
+          borderWidth: 1,
+          borderColor: THEME.border,
+          opacity: 0.92,
+        }}
+      >
+        <Ionicons name="chevron-down" size={18} color={THEME.text} />
+      </View>
+    </Animated.View>
+  );
+
+  if (inFlow) {
+    return (
+      <View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{
+          height: SIZE + BOB_PT + 4,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {chip}
+      </View>
+    );
+  }
+
   return (
     <View
       pointerEvents="none"
@@ -77,28 +129,7 @@ export function ScrollHint({ visible, bottomOffset }: { visible: boolean; bottom
       style={{ height: 0, zIndex: 5 }}
     >
       <View style={{ position: "absolute", left: 0, right: 0, bottom: bottomOffset, alignItems: "center" }}>
-        <Animated.View
-          style={{
-            opacity,
-            transform: [{ translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [0, BOB_PT] }) }],
-          }}
-        >
-          <View
-            style={{
-              width: SIZE,
-              height: SIZE,
-              borderRadius: SIZE / 2,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: THEME.surfaceRaised,
-              borderWidth: 1,
-              borderColor: THEME.border,
-              opacity: 0.92,
-            }}
-          >
-            <Ionicons name="chevron-down" size={18} color={THEME.text} />
-          </View>
-        </Animated.View>
+        {chip}
       </View>
     </View>
   );

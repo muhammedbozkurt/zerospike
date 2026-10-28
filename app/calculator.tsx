@@ -38,6 +38,7 @@ import {
   linkedReadingEditPatch,
   mealEditPlan,
   ownBolusRow,
+  mealEditNeedsBolusGuard,
   prefillDose,
   savedToastKey,
   writeBolusRow,
@@ -128,7 +129,6 @@ import {
   updateGlucoseInHealth,
   writeGlucoseToHealthIfEnabled,
   shouldAnnounceHealthWriteFailure,
-  HEALTH_NAME,
 } from "../lib/services/health";
 import { foodSourceLabel } from "../lib/services/openFoodFacts";
 import type {
@@ -154,6 +154,7 @@ import { Tooltip } from "../components/Tooltip";
 import { TagPicker } from "../components/TagPicker";
 import { FeedbackHost, useFeedback } from "../components/Feedback";
 import { useEntryGuardConfirm } from "../components/useEntryGuardConfirm";
+import { useHealthName } from "../lib/useHealthName";
 import { InlineDateTimePicker } from "../components/InlineDateTimePicker";
 import { Skeleton } from "../components/Skeleton";
 import { DirIcon } from "../components/DirIcon";
@@ -662,6 +663,7 @@ const inputStyle = () =>
 
 function CalculatorScreen() {
   const { t } = useTranslation();
+  const healthName = useHealthName();
   const choiceText = useCarbChoiceText();
   const insets = useSafeAreaInsets();
   const headerStyle = calcHeaderTitleStyle(useFontScale());
@@ -1453,39 +1455,37 @@ function CalculatorScreen() {
       const existingInjectionForEdit =
         isEdit && mealLogId ? ownBolusRow(await getCalculatorInjectionForMeal(mealLogId)) : null;
 
-      // Duplicate-entry check (lib/entryGuard.ts), before anything is written.
-      // Meal and bolus are each their own entry kind, so this is two sequential
-      // confirms at most - the second only runs once the first is accepted -
-      // never a stacked pair for the same save. A catalogue food's own id is
-      // the comparison key; a typed name or a template has no id (foodFromMeal
-      // / foodFromTemplate both leave it ""), so its own name stands in,
-      // normalized the same way listRecentMealLogs compares it. In EDIT mode
-      // each guard call excludes ITS OWN record only - the meal call excludes
-      // the meal row, the bolus call excludes the linked injection row - so
-      // correcting one type never gets flagged as a duplicate of itself, and
-      // never on the other type's behalf either.
-      const foodKeyForGuard = food.id || foodName(food, lang).trim().toLowerCase();
-      if (
-        !(await guardEntry({
-          entryKind: "meal",
-          entryAtIso: loggedIso,
-          foodKey: foodKeyForGuard,
-          foodName: foodName(food, lang),
-          excludeId: isEdit && mealLogId ? mealLogId : null,
-        }))
-      ) {
-        return;
-      }
-      if (
-        dose > 0 &&
-        !(await guardEntry({
-          entryKind: "injection",
-          insulinType: "bolus",
-          entryAtIso: loggedIso,
-          excludeId: existingInjectionForEdit?.id ?? null,
-        }))
-      ) {
-        return;
+      // Duplicate-entry check (lib/entryGuard.ts). A NEW entry runs both checks;
+      // an edit runs only the bolus one, and only when it adds insulin (see
+      // mealEditNeedsBolusGuard), excluding the meal's own bolus row, so a
+      // region, note or time correction is never compared against anything.
+      // Meal and bolus are
+      // each their own entry kind, so this is two sequential confirms at most.
+      // A catalogue food's own id is the comparison key; a typed name or a
+      // template has no id, so its own name stands in, normalized the same way
+      // listRecentMealLogs compares it.
+      if (!isEdit) {
+        const foodKeyForGuard = food.id || foodName(food, lang).trim().toLowerCase();
+        if (
+          !(await guardEntry({
+            entryKind: "meal",
+            entryAtIso: loggedIso,
+            foodKey: foodKeyForGuard,
+            foodName: foodName(food, lang),
+          }))
+        ) {
+          return;
+        }
+        if (
+          dose > 0 &&
+          !(await guardEntry({
+            entryKind: "injection",
+            insulinType: "bolus",
+            entryAtIso: loggedIso,
+          }))
+        ) {
+          return;
+        }
       }
 
       if (isEdit && mealLogId) {
@@ -1511,6 +1511,18 @@ function CalculatorScreen() {
           loggedAtChanged,
         });
         const step = plan.bolus;
+        if (
+          dose > 0 &&
+          mealEditNeedsBolusGuard(step, dose, originalDose ?? 0) &&
+          !(await guardEntry({
+            entryKind: "injection",
+            insulinType: "bolus",
+            entryAtIso: loggedIso,
+            excludeId: existingInjectionForEdit?.id ?? null,
+          }))
+        ) {
+          return;
+        }
         const tagsChanged = JSON.stringify(tags) !== prefillTagsRef.current;
         // One unit: a bolus write that fails takes the meal edit back with it,
         // so the record is never saved with a dose its history row lacks.
@@ -1598,7 +1610,7 @@ function CalculatorScreen() {
                 row.profile_id
               );
               if (res.failed && shouldAnnounceHealthWriteFailure()) {
-                toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+                toast(t("dashboard.healthWriteFailed", { health: healthName }), "info");
               }
             } catch {
               // the local edit must never fail because the mirror did
@@ -1628,7 +1640,7 @@ function CalculatorScreen() {
             });
             void writeGlucoseToHealthIfEnabled(sugar).then((ok) => {
               if (!ok && shouldAnnounceHealthWriteFailure()) {
-                toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+                toast(t("dashboard.healthWriteFailed", { health: healthName }), "info");
               }
             });
             newSugarLogId = sugar.id;
@@ -1683,7 +1695,7 @@ function CalculatorScreen() {
           // own manual-sync toast and the foreground/sync retry both key off).
           void writeGlucoseToHealthIfEnabled(sugar).then((ok) => {
             if (!ok && shouldAnnounceHealthWriteFailure()) {
-              toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+              toast(t("dashboard.healthWriteFailed", { health: healthName }), "info");
             }
           });
           sugarLogId = sugar.id;

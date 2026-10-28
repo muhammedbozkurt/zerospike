@@ -94,6 +94,27 @@ export function mealEditPlan(input: MealEditPlanInput): MealEditPlan {
   return { mealPatch, bolus: { kind: "none" } };
 }
 
+/**
+ * Whether saving an EDIT should ask the recent-bolus question: only when the
+ * edit adds insulin (a bolus row is created, or its dose goes up). A region,
+ * note or time change with the same or a lower dose never asks.
+ */
+export function mealEditNeedsBolusGuard(step: MealEditPlan["bolus"], dose: number, prefilledDose: number): boolean {
+  if (step.kind === "create") return true;
+  if (step.kind === "update") return dose > prefilledDose;
+  return false;
+}
+
+/** Same rule for the injection edit sheet: a row turned into a bolus, or a bolus whose dose goes up. */
+export function injectionEditNeedsBolusGuard(
+  prev: { type: "basal" | "bolus" | null; dose: number | null },
+  next: { type: "basal" | "bolus"; dose: number }
+): boolean {
+  if (next.type !== "bolus" || !(next.dose > 0)) return false;
+  if ((prev.type ?? "bolus") !== "bolus") return true;
+  return next.dose > (prev.dose ?? 0);
+}
+
 export type BolusWriteResult = { ok: true } | { ok: false; error: unknown };
 
 export async function writeBolusRow(write: () => Promise<unknown>): Promise<BolusWriteResult> {

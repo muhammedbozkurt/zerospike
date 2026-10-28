@@ -18,8 +18,8 @@ import {
   deleteGlucoseRowFromHealth,
   writeGlucoseToHealthIfEnabled,
   shouldAnnounceHealthWriteFailure,
-  HEALTH_NAME,
 } from "../lib/services/health";
+import { useHealthName } from "../lib/useHealthName";
 import { syncLiveData } from "../lib/services/liveData";
 import { mealIdsWithResponse } from "../lib/mealResponse";
 import { mealSlotForHour } from "../lib/insulin";
@@ -85,6 +85,7 @@ export function useJournalRows(input: {
   onEditGlucose: (entry: GlucoseEntry) => void;
 }): JournalRowsApi {
   const { t } = useTranslation();
+  const healthName = useHealthName();
   const router = useRouter();
   const { activeProfile, bumpData } = useApp();
   const { actionSheet, confirm, toast } = useFeedback();
@@ -132,7 +133,7 @@ export function useJournalRows(input: {
             healthkit_uuid: null,
           });
           if (!ok && shouldAnnounceHealthWriteFailure()) {
-            toast(t("dashboard.healthWriteFailed", { health: HEALTH_NAME }), "info");
+            toast(t("dashboard.healthWriteFailed", { health: healthName }), "info");
           }
         } catch {
           // best-effort re-mirror; the local restore already succeeded either way
@@ -253,7 +254,7 @@ export function useJournalRows(input: {
       const hasHealthNote = entry.kind === "glucose" && entry.healthkit_uuid != null;
       const ok = await confirm({
         message: hasHealthNote
-          ? `${t("journal.deleteEntry")}\n\n${t("journal.deleteHealthNote", { health: HEALTH_NAME })}`
+          ? `${t("journal.deleteEntry")}\n\n${t("journal.deleteHealthNote", { health: healthName })}`
           : t("journal.deleteEntry"),
         confirmLabel: t("common.delete"),
         cancelLabel: t("common.cancel"),

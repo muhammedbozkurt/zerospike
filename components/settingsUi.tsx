@@ -171,7 +171,7 @@ export function SettingsScaffold({
         >
           {children}
         </ScrollView>
-        <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({ insetBottom: insets.bottom })} />
+        <ScrollHint inFlow visible={scrollHint.visible} bottomOffset={hintBottomOffset({ insetBottom: insets.bottom })} />
         {overlay}
       </View>
     </AppBackground>

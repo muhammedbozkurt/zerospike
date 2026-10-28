@@ -679,7 +679,7 @@ export function CarbEstimateSheet({
             >
               {body}
             </ScrollView>
-            <ScrollHint visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
+            <ScrollHint inFlow visible={scrollHint.visible} bottomOffset={hintBottomOffset({})} />
             {footer}
           </Pressable>
         </Animated.View>
