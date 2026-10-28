@@ -171,7 +171,7 @@ async function main(): Promise<void> {
     const src = readFileSync("app/settings/data-sources.tsx", "utf8");
     ok(
       "data-sources reads the flag from sourceAvailability",
-      /import \{ nightscoutAvailable as nightscoutEnabled \} from "\.\.\/\.\.\/lib\/cgm\/sourceAvailability"/.test(src)
+      /import \{[^}]*nightscoutAvailable as nightscoutEnabled[^}]*\} from "\.\.\/\.\.\/lib\/cgm\/sourceAvailability"/.test(src)
     );
     ok("row visibility follows the flag only; the secure store is checked on tap", /nsEnabled = nightscoutEnabled\(\);/.test(src) && !/nsEnabled = [^;]*nightscoutAvailable/.test(src));
   }

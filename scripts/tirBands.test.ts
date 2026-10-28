@@ -68,6 +68,13 @@ ok("ceiling 260 and 300 give the same in-range share", at(260).inRangePct === at
 ok("readings from 250 up are never in range", at(300).inRangePct === 60 && at(300).veryHighPct === 40, `${at(300).inRangePct}/${at(300).veryHighPct}`);
 ok("a ceiling under 250 is unchanged", at(180).inRangePct === 50 && at(180).highPct === 10 && at(180).veryHighPct === 40, `${at(180).inRangePct}/${at(180).highPct}`);
 ok("inTargetBand: 249 in, 250 out under a 300 ceiling", inTargetBand(VERY_HIGH_MGDL - 1, { low: 70, high: 300 }) && !inTargetBand(VERY_HIGH_MGDL, { low: 70, high: 300 }));
+{
+  // Exactly 250 is the boundary: it is very high, never in target, whatever the ceiling.
+  const edge = (v: number) =>
+    computeInsights([manual(0, NOW - 3_600_000, v)] as never[], [], [], 7, { low: 70, high: 300 });
+  ok("a lone 250 is very high, not in range", edge(250).inRangePct === 0 && edge(250).veryHighPct === 100, `${edge(250).inRangePct}/${edge(250).veryHighPct}`);
+  ok("a lone 249 is in range", edge(249).inRangePct === 100 && edge(249).veryHighPct === 0, `${edge(249).inRangePct}/${edge(249).veryHighPct}`);
+}
 ok("hasReadings: shares are null without readings", computeInsights([], [], [], 7, { low: 70, high: 300 }).inRangePct === null);
 
 // ---- D-2: the GMI hint names the real condition and the selected window -----

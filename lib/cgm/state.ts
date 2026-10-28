@@ -46,9 +46,26 @@ export async function getCgmMode(profileId: string): Promise<CgmMode> {
 }
 
 /** Throws when the write fails, so the caller can say so instead of showing a
- *  mode that did not stick. Going back to 'manual' deletes no readings. */
-export async function setCgmMode(profileId: string, mode: CgmMode): Promise<void> {
+ *  mode that did not stick. Going back to 'manual' deletes no readings.
+ *
+ *  Leaving a sensor mode for manual is an answer to the "switch to CGM mode?"
+ *  question (the person just chose manual on purpose), so it is recorded as
+ *  declined and the card does not come straight back. `keepOffer` skips that for
+ *  a reset that is not a decision (onboarding rewriting an abandoned attempt). */
+export async function setCgmMode(
+  profileId: string,
+  mode: CgmMode,
+  opts: { keepOffer?: boolean } = {}
+): Promise<void> {
+  const before = mode === "manual" && !opts.keepOffer ? await getCgmMode(profileId) : "manual";
   await AsyncStorage.setItem(cgmModeKey(profileId), mode);
+  if (before !== "manual") {
+    try {
+      await AsyncStorage.setItem(cgmOfferKey(profileId), "declined");
+    } catch {
+      // The mode is saved; the question may be asked once more.
+    }
+  }
   emitCgmChanged({ kind: "mode", profileId });
 }
 

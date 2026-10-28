@@ -28,6 +28,22 @@ export function applyRowLimit<T>(
   return { rows: newestFirst.slice(0, max), truncated: true };
 }
 
+/**
+ * The CSV field separator. A spreadsheet splits on the DEVICE's list separator,
+ * which follows the device's decimal mark (a comma decimal means ";"), not on
+ * the language the app is set to: a German phone with the app in English must
+ * still get a file Excel opens in columns. `deviceDecimal` is the device's own
+ * mark (expo-localization); when it is unknown the app language decides.
+ */
+export function csvDelimiterFor(
+  deviceDecimal: string | null | undefined,
+  appLangHasCommaDecimal: boolean
+): ";" | "," {
+  if (deviceDecimal === ",") return ";";
+  if (deviceDecimal === ".") return ",";
+  return appLangHasCommaDecimal ? ";" : ",";
+}
+
 /** Blank separator, the optional cut note, then the disclaimer. */
 export function csvFooterRows(
   esc: (v: string) => string,

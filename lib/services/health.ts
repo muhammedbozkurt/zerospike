@@ -52,6 +52,7 @@ import {
 } from "./healthConnect";
 import { healthMock } from "./healthMock";
 import { createImportShare, settleWriteGrant } from "../healthConnectFlow";
+import { FREE_IMPORT_WINDOW_DAYS } from "../cgm/importPolicy";
 import {
   ANDROID_GLUCOSE_PAGE_SIZE,
   ANDROID_SYNC_ROUND_MAX_SAMPLES,
@@ -1934,22 +1935,30 @@ export async function clearHealthRecordRetryIds(
  */
 export async function importHealthGlucose(
   profileId: string,
-  source: HealthSyncSource = "manual"
+  source: HealthSyncSource = "manual",
+  opts: HealthImportOptions = {}
 ): Promise<SyncResult> {
   // Overlapping triggers (observer burst, task + foreground, double tap) share
   // the one running import for the profile instead of racing the dedup read.
   // A run that never settled (a system dialog iOS could not present) must not
   // be handed to every later caller: past IMPORT_STALE_MS a fresh one starts.
-  return importShare.share(profileId, () => runImportHealthGlucose(profileId, source));
+  return importShare.share(profileId, () => runImportHealthGlucose(profileId, source, opts));
+}
+
+export interface HealthImportOptions {
+  /** Free tier in CGM mode: read only the last FREE_IMPORT_WINDOW_DAYS and leave
+   *  the sync anchor alone, so the first Pro import still reads the full window. */
+  freeWindow?: boolean;
 }
 
 const importShare = createImportShare<SyncResult>(() => Date.now());
 
 async function runImportHealthGlucose(
   profileId: string,
-  source: HealthSyncSource
+  source: HealthSyncSource,
+  opts: HealthImportOptions
 ): Promise<SyncResult> {
-  const result = await importGlucoseOnce(profileId, source);
+  const result = await importGlucoseOnce(profileId, source, opts);
   await recordHealthLastSync(profileId, result, source);
   return result;
 }
@@ -1959,10 +1968,11 @@ async function runImportHealthGlucose(
  *  an unhandled promise rejection out of a fire-and-forget background run. */
 async function importGlucoseOnce(
   profileId: string,
-  source: HealthSyncSource
+  source: HealthSyncSource,
+  opts: HealthImportOptions
 ): Promise<SyncResult> {
   try {
-    return await importGlucoseSteps(profileId, source);
+    return await importGlucoseSteps(profileId, source, opts);
   } catch (err) {
     logCrash(err, { screen: "health", op: "importGlucoseOnce" });
     return { status: "error", inserted: 0, read: 0 };
@@ -1971,7 +1981,8 @@ async function importGlucoseOnce(
 
 async function importGlucoseSteps(
   profileId: string,
-  source: HealthSyncSource
+  source: HealthSyncSource,
+  opts: HealthImportOptions
 ): Promise<SyncResult> {
   // 1) Is there a health store at all?
   if (!(await isHealthAvailable())) {
@@ -1980,10 +1991,13 @@ async function importGlucoseSteps(
 
   // 2) Permission. iOS can't reveal read access, so we can only fail closed
   //    on Android, where the grant list is authoritative. A background run
-  //    only checks the grant: it must never open a system dialog.
+  //    only checks the grant: it must never open a system dialog. The silent
+  //    open-time run (foreground) does the same: a profile whose switch came
+  //    back without its grant (an Android restore) must not raise the system
+  //    sheet by itself. Only a tap (manual) asks.
   const provider = getProvider();
   const granted =
-    source === "background"
+    source !== "manual"
       ? await (provider?.isReadGranted() ?? Promise.resolve(false)).catch(() => false)
       : await requestHealthPermissions();
   if (!granted) {
@@ -1998,10 +2012,15 @@ async function importGlucoseSteps(
   //    after the page landed); Health Connect re-reads its 30 day window and the
   //    import dedupes by record id.
   const android = Platform.OS === "android";
-  const windowDays = android ? ANDROID_SYNC_WINDOW_DAYS : SYNC_WINDOW_DAYS;
+  const free = opts.freeWindow === true;
+  const windowDays = free
+    ? FREE_IMPORT_WINDOW_DAYS
+    : android
+      ? ANDROID_SYNC_WINDOW_DAYS
+      : SYNC_WINDOW_DAYS;
   const pageSize = android ? ANDROID_GLUCOSE_PAGE_SIZE : IOS_GLUCOSE_PAGE_SIZE;
   const roundMax = android ? ANDROID_SYNC_ROUND_MAX_SAMPLES : IOS_SYNC_ROUND_MAX_SAMPLES;
-  let cursor = android ? null : await readHealthAnchor(profileId);
+  let cursor = android || free ? null : await readHealthAnchor(profileId);
   let read = 0;
   let inserted = 0;
   // A sample dated ahead of the clock is refused by the import. The anchor must
@@ -2019,7 +2038,7 @@ async function importGlucoseSteps(
     const done = await importGlucosePage(profileId, page);
     inserted += done.inserted;
     if (done.retryLater) holdAnchor = true;
-    if (!android && page.cursor && !holdAnchor) await writeHealthAnchor(profileId, page.cursor);
+    if (!android && !free && page.cursor && !holdAnchor) await writeHealthAnchor(profileId, page.cursor);
     if (!page.hasMore || read >= roundMax) break;
     cursor = page.cursor;
   }

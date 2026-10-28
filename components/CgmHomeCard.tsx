@@ -62,10 +62,14 @@ export function CgmHomeCard({
   profile,
   mode,
   dataVersion,
+  isPro = true,
 }: {
   profile: UserProfile;
   mode: CgmMode;
   dataVersion: number;
+  /** A free profile in CGM mode imports the last 24 hours while the app is open
+   *  (lib/cgm/importPolicy); the waiting text says so instead of promising more. */
+  isPro?: boolean;
 }) {
   const { t } = useTranslation();
   const unit = profile.glucose_unit ?? "mgdl";
@@ -195,7 +199,7 @@ export function CgmHomeCard({
             tone="muted"
             style={{ textAlign: "center", marginTop: SPACE.xs }}
           >
-            {t("cgmHome.waitingBody")}
+            {t(mode === "cgm" && !isPro ? "cgmHome.waitingBodyFree" : "cgmHome.waitingBody")}
           </Txt>
         </View>
       ) : (

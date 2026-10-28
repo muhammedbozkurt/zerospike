@@ -1,5 +1,6 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import { getLocales } from "expo-localization";
 import i18n from "../i18n";
 import { getJournal } from "../db/journal";
 import { countSugarHourly, eachSugarHourlyPage } from "../db/sugarHourly";
@@ -12,6 +13,7 @@ import {
   CSV_MAX_ROWS,
   CSV_PAGE_ROWS,
   EXPORT_MAX_ROWS,
+  csvDelimiterFor,
   csvFooterRows,
   planFeedPages,
   truncationMessage,
@@ -144,14 +146,14 @@ export async function exportLogsCsv(
   // columns when this exact range holds injection rows from before the switch.
   const effectiveUsesInsulin = usesInsulin || sawInjection;
 
-  // Locales whose decimal mark is a comma (tr/de/es/fr/it/pt) get a ";"
-  // delimiter and a comma decimal, so Excel splits columns correctly
-  // instead of pasting every row into one cell. en/ja/ar write
-  // the dot, so they keep the "," format - and the list is lib/format's own, the
-  // same one the Intl-formatted glucose column is written from, so a file can
-  // never carry a dotted reading in a comma-decimal sheet.
+  // Numbers are written in the app language's decimal mark (tr/de/es/fr/it/pt
+  // comma; en/ja/ar dot), the list lib/format owns, the same one the
+  // Intl-formatted glucose column is written from. The field separator is a
+  // different question: the spreadsheet splits on the DEVICE's list separator,
+  // which follows the device's decimal mark, so it is chosen from that (a field
+  // holding the other mark is quoted by csvEscape either way).
   const decimalComma = COMMA_DECIMAL.includes(lang);
-  const delim = decimalComma ? ";" : ",";
+  const delim = csvDelimiterFor(getLocales()[0]?.decimalSeparator, decimalComma);
   const esc = (v: string | number | null | undefined) => csvEscape(v, delim);
   const cnum = (n: number) => csvNum(n, decimalComma);
 

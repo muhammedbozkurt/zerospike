@@ -30,7 +30,7 @@ import {
 } from "../lib/services/health";
 import type { Injection, Lang, MealLog, SugarLog } from "../lib/db/types";
 import { foodName } from "../lib/db/types";
-import { formatGlucose, glucoseUnitLabel, VERY_HIGH_MGDL } from "../lib/glucose";
+import { formatGlucose, glucoseUnitLabel, inTargetBand, VERY_HIGH_MGDL } from "../lib/glucose";
 import { targetBandFor } from "../lib/agpChart";
 import { AGP_MIN_READINGS, computeAgp } from "../lib/agp";
 import {
@@ -167,7 +167,7 @@ function pad2(n: number): string {
  */
 function heatColor(avg: number, band: { low: number; high: number }): string {
   if (avg < band.low) return GLUCOSE_RICH.low;
-  if (avg <= band.high) return GLUCOSE_RICH.target;
+  if (inTargetBand(avg, band)) return GLUCOSE_RICH.target;
   if (avg >= VERY_HIGH_MGDL) return GLUCOSE_RICH.veryHigh;
   if (avg <= band.high * 1.25) return GLUCOSE_RICH.high;
   return GLUCOSE_RICH.wellAbove;

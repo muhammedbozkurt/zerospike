@@ -1374,6 +1374,12 @@ async function cgmTests(): Promise<void> {
   put("p2", 400, at(1, 9), 1); // another profile
   const row = db.prepare(ctx.CGM_AGGREGATE_SQL).get(...ctx.cgmAggregateParams("p1", range, { low: 70, high: 180 }));
   same("count, mean and in-range count of the sensor rows in the window", { n: row.n, avg: row.avg, inr: row.inr }, { n: 5, avg: 122, inr: 3 });
+  // 250 and up is never "in range", even under a lenient ceiling (G253 FIX-A).
+  put("p3", 249, at(0, 8), 1);
+  put("p3", 250, at(1, 8), 1);
+  put("p3", 280, at(2, 8), 1);
+  const lenient = db.prepare(ctx.CGM_AGGREGATE_SQL).get(...ctx.cgmAggregateParams("p3", range, { low: 70, high: 300 }));
+  same("a ceiling of 300 still leaves 250 and 280 out of range", { n: lenient.n, inr: lenient.inr }, { n: 3, inr: 1 });
   const sqlText: string = ctx.CGM_AGGREGATE_SQL;
   ok("the query selects aggregates only", /^SELECT\s+COUNT\(\*\)/i.test(sqlText.trim()) && !/source_app|external_id/i.test(sqlText), sqlText);
   ok("and filters on is_cgm = 1", /is_cgm\s*=\s*1/.test(sqlText));

@@ -520,7 +520,7 @@ async function main() {
 
   await section("G. wiring", async () => {
     const dash = src("app/(tabs)/index.tsx");
-    ok("connect goes through runConnect", /runConnect\(healthFlow/.test(dash));
+    ok("connect goes through runConnect (via connectHealthSync)", /connectHealthSync\(healthFlow/.test(dash) && /runConnect</.test(src("lib/cgm/connectSync.ts")));
     ok("the connect passes the run's wanted() to the permission request", /requestHealthReadWriteAccess\(profileId, wanted\)/.test(dash));
     ok("sync goes through runGuardedImport", /runGuardedImport<SyncResult>\(\s*healthFlow/.test(dash));
     ok("off goes through switchOff", /switchOff\(healthFlow/.test(dash));

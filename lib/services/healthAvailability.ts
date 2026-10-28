@@ -26,7 +26,12 @@ import { getHealthConnectStatus, hasHealthProvider, type HealthConnectStatus } f
 let cachedStatus: { status: HealthConnectStatus; loaded: boolean } | null =
   Platform.OS === "android" ? null : { status: "available", loaded: true };
 
-export function useHealthAvailable(): boolean {
+/**
+ * The Health Connect status itself, for a screen that must tell "not installed"
+ * from "needs a Play update" (null off Android and until the first check has
+ * answered). Same cache and the same re-check on focus as useHealthAvailable.
+ */
+export function useHealthConnectStatus(): HealthConnectStatus | null {
   const [hcStatus, setHcStatus] = useState<HealthConnectStatus>(
     cachedStatus?.status ?? (Platform.OS === "android" ? "unavailable" : "available")
   );
@@ -48,8 +53,10 @@ export function useHealthAvailable(): boolean {
       };
     }, [])
   );
-  return (
-    hasHealthProvider() &&
-    (Platform.OS !== "android" || (hcStatusLoaded && hcStatus !== "unavailable"))
-  );
+  return Platform.OS === "android" && hcStatusLoaded ? hcStatus : null;
+}
+
+export function useHealthAvailable(): boolean {
+  const status = useHealthConnectStatus();
+  return hasHealthProvider() && (Platform.OS !== "android" || (status !== null && status !== "unavailable"));
 }

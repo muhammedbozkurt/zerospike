@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   BackHandler,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   Switch,
@@ -51,12 +52,16 @@ import type { GlucoseUnit, InsulinMode } from "../lib/db/types";
 import {
   BASE_STEPS,
   DEFAULT_MEASURE,
+  DEFAULT_LIBRE_CHOICE,
   DIABETES_OPTIONS,
   TREATMENT_OPTIONS,
   basalReminderOnAtFinish,
   buildOnboardingSteps,
   diabetesTypeOf,
+  effectiveMeasure,
+  libreAsksChoice,
   measureAfterPermission,
+  measureEnablesHealthImport,
   measureModeToWrite,
   measureNeedsPro,
   measureOptionsFor,
@@ -67,11 +72,14 @@ import {
   planSetupDecision,
   skipsMeasurementReminders,
   type DiabetesOption,
+  type LibreChoice,
   type MeasureOption,
   type OnboardingStepId,
   type TreatmentOption,
 } from "../lib/onboardingSteps";
-import { setCgmBrand, type CgmBrand } from "../lib/cgm/brand";
+import { clearCgmBrand, setCgmBrand, type CgmBrand } from "../lib/cgm/brand";
+import { HEALTH_IMPORT_FLAG, writeProfileFlag } from "../lib/profileFlag";
+import { useHealthConnectStatus } from "../lib/services/healthAvailability";
 import { setCgmMode } from "../lib/cgm/state";
 import { healthStoreLabelKey } from "../lib/cgm/sourceLabel";
 import { hasHealthProvider, requestHealthPermissions } from "../lib/services/health";
@@ -82,7 +90,7 @@ import {
   type HealthFlow,
 } from "../lib/healthConnectFlow";
 import { nightscoutAllowed } from "../lib/cgm/pro";
-import { nightscoutAvailable } from "../lib/cgm/sourceAvailability";
+import { cgmChoiceGate, HEALTH_CONNECT_PLAY_URL, nightscoutAvailable } from "../lib/cgm/sourceAvailability";
 import { secureStoreAvailable } from "../lib/secureStore";
 import {
   clampHypoThreshold,
@@ -547,6 +555,13 @@ export default function OnboardingScreen() {
   const [pillsOnly, setPillsOnly] = useState<boolean | null>(null);
   const [measure, setMeasure] = useState<MeasureOption>(DEFAULT_MEASURE);
   const [cgmBrand, setCgmBrandChoice] = useState<CgmBrand | null>(null);
+  // What to do after "FreeStyle Libre": its note says there is no verified way
+  // in, so the default is to carry on by hand (mode manual, reminder plan back).
+  const [libreChoice, setLibreChoice] = useState<LibreChoice>(DEFAULT_LIBRE_CHOICE);
+  // Android: Health Connect missing or waiting for a Play update.
+  const hcGate = cgmChoiceGate({ os: Platform.OS, status: useHealthConnectStatus() });
+  // The answer everything after the measure step acts on.
+  const effMeasure = effectiveMeasure(measure, cgmBrand, libreChoice);
   const [askingHealth, setAskingHealth] = useState(false);
   const healthFlowRef = useRef<HealthFlow | null>(null);
   useEffect(() => () => healthFlowRef.current?.cancel(), []);
@@ -615,12 +630,12 @@ export default function OnboardingScreen() {
   const [savingPlan, setSavingPlan] = useState(false);
   const planRows = useMemo<ReminderPreset[]>(
     () =>
-      skipsMeasurementReminders(measure)
+      skipsMeasurementReminders(effMeasure)
         ? []
         : presetFor(diabetesTypeOf(diabetes)).filter(
             (r) => !removedPlanTimes.includes(r.time)
           ),
-    [diabetes, removedPlanTimes, measure]
+    [diabetes, removedPlanTimes, effMeasure]
   );
   // The basal reminder lives inside the plan step: picked there, timed there,
   // and written only by "Set up this plan". `basalSelected` is what the row
@@ -654,8 +669,8 @@ export default function OnboardingScreen() {
   const flags = onboardingFlags({ diabetes, treatment, pillsOnly });
   const { isTwoWayTreatment, hasInsulin, hasOralMeds } = flags;
   const steps = useMemo<StepId[]>(
-    () => buildOnboardingSteps({ isTwoWayTreatment, hasInsulin, hasOralMeds, measure }),
-    [isTwoWayTreatment, hasInsulin, hasOralMeds, measure]
+    () => buildOnboardingSteps({ isTwoWayTreatment, hasInsulin, hasOralMeds, measure: effMeasure }),
+    [isTwoWayTreatment, hasInsulin, hasOralMeds, effMeasure]
   );
 
   const stepIdxClamped = Math.min(stepIdx, steps.length - 1);
@@ -739,6 +754,12 @@ export default function OnboardingScreen() {
     }
     if (picked !== "cgm") {
       setMeasure(picked);
+      return;
+    }
+    // Health Connect is missing or needs its Play update: no sheet can open, so
+    // the press leads to the listing instead of a refusal the person never made.
+    if (hcGate !== "ready") {
+      void Linking.openURL(HEALTH_CONNECT_PLAY_URL).catch(() => {});
       return;
     }
     setAskingHealth(true);
@@ -891,21 +912,23 @@ export default function OnboardingScreen() {
       }
       await updateProfile(activeProfile.id, patch);
 
-      // The finger prick is the profile's default and writes nothing; a sensor
-      // choice is stored for the profile and reported once, with the same
-      // event Settings > Data sources uses.
-      const cgmMode = measureModeToWrite(measure);
-      if (cgmMode !== null) {
-        await setCgmMode(activeProfile.id, cgmMode);
-        logEvent("cgm_mode_set", { mode: cgmMode });
-        if (cgmMode === "cgm" && cgmBrand !== null) {
-          try {
-            await setCgmBrand(activeProfile.id, cgmBrand);
-          } catch (err) {
-            logCrash(err, { screen: "onboarding", op: "setBrand" });
-          }
-        }
+      // The last answer always wins, the finger prick included: an earlier,
+      // abandoned attempt (the app closed on the reveal) may have left a sensor
+      // mode, its brand and the Health switch on this profile. A sensor choice
+      // is reported once, with the same event Settings > Data sources uses.
+      const cgmMode = measureModeToWrite(effMeasure);
+      await setCgmMode(activeProfile.id, cgmMode, { keepOffer: true });
+      if (cgmMode !== "manual") logEvent("cgm_mode_set", { mode: cgmMode });
+      try {
+        if (cgmMode === "cgm" && cgmBrand !== null) await setCgmBrand(activeProfile.id, cgmBrand);
+        else if (cgmMode !== "cgm") await clearCgmBrand(activeProfile.id);
+      } catch (err) {
+        logCrash(err, { screen: "onboarding", op: "setBrand" });
       }
+      // The permission was granted when CGM was picked (a refusal already fell
+      // back to the finger prick), so this is the moment the import switches
+      // on; the dashboard's first open then reads the first readings.
+      await writeProfileFlag(HEALTH_IMPORT_FLAG, activeProfile.id, measureEnablesHealthImport(effMeasure));
 
       // The basal reminder exists only if the user picked it in the plan step
       // and "Set up this plan" wrote it (see basalReminderOnAtFinish); post-meal
@@ -950,7 +973,7 @@ export default function OnboardingScreen() {
             alarmKitAvailable: alarmKit,
             alarmAuthorized:
               alarmKit && getAlarmAuthorizationStatus() === "authorized",
-            cgmMode: cgmMode ?? "manual",
+            cgmMode,
           })
         );
       } catch {
@@ -1693,9 +1716,14 @@ export default function OnboardingScreen() {
                 <OptionCard
                   icon={MEASURE_ICONS[opt]}
                   label={t(`onboarding.measure_${opt}`, { store })}
-                  description={t(`onboarding.measure${MEASURE_HINT_SUFFIX[opt]}Hint`, { store })}
+                  description={
+                    opt === "cgm" && hcGate !== "ready"
+                      ? t(hcGate === "update" ? "onboarding.measureCgmNeedsHcUpdate" : "onboarding.measureCgmNeedsHc")
+                      : t(`onboarding.measure${MEASURE_HINT_SUFFIX[opt]}Hint`, { store })
+                  }
                   spacing={14}
                   selected={measure === opt}
+                  dimmed={opt === "cgm" && hcGate !== "ready"}
                   onPress={() => void pickMeasure(opt)}
                 />
               </FadeSlideIn>
@@ -1712,6 +1740,28 @@ export default function OnboardingScreen() {
                 store={store}
                 nightscout={nightscoutAvailable() && secureStoreAvailable()}
               />
+            ) : null}
+            {libreAsksChoice(measure, cgmBrand) ? (
+              <View style={{ marginTop: SPACE.md }}>
+                <OptionCard
+                  label={t("onboarding.libreManual")}
+                  selected={libreChoice === "manual"}
+                  spacing={SPACE.sm}
+                  onPress={() => {
+                    hapticSelect();
+                    setLibreChoice("manual");
+                  }}
+                />
+                <OptionCard
+                  label={t("onboarding.libreCgm")}
+                  selected={libreChoice === "cgm"}
+                  spacing={SPACE.sm}
+                  onPress={() => {
+                    hapticSelect();
+                    setLibreChoice("cgm");
+                  }}
+                />
+              </View>
             ) : null}
             {nightscoutHandoff(measure) ? (
               <Txt kind="caption" tone="muted" style={{ marginTop: SPACE.xs }}>

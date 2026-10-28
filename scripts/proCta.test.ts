@@ -236,9 +236,16 @@ async function main(): Promise<void> {
   const fs = require("fs");
   const root = process.cwd();
   const read = (p: string): string => fs.readFileSync(`${root}/${p}`, "utf8");
-  for (const f of ["app/insights.tsx", "app/(tabs)/settings.tsx", "app/settings/app.tsx", "app/(tabs)/injection.tsx", "app/add-food.tsx", "app/(tabs)/index.tsx"]) {
+  for (const f of ["app/insights.tsx", "app/(tabs)/settings.tsx", "app/settings/app.tsx", "app/(tabs)/injection.tsx", "app/add-food.tsx"]) {
     ok(`${f} gates useProCta on !isProUser`, read(f).includes("useProCta(!isProUser"));
   }
+  // The Health card is a Pro upsell only where a free profile may not import: a
+  // free profile in CGM mode gets the 24 hour import (lib/cgm/importPolicy).
+  const home = read("app/(tabs)/index.tsx");
+  ok(
+    "app/(tabs)/index.tsx gates useProCta on the import gate, which is derived from isProUser",
+    home.includes("useProCta(!importAllowed") && home.includes("healthImportAllowed({ isPro: isProUser")
+  );
   const layout = read("app/_layout.tsx");
   ok("_layout clears on Pro and refreshes otherwise", /if \(isProUser\) clearPaywallTrial\(\);\s*else void refreshPaywallTrialOnce\(\);/.test(layout));
   const paywall = read("app/paywall.tsx");

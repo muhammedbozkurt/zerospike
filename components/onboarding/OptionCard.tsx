@@ -41,6 +41,7 @@ export function OptionCard({
   icon,
   description,
   spacing = 12,
+  dimmed = false,
 }: {
   label: string;
   selected: boolean;
@@ -51,6 +52,9 @@ export function OptionCard({
   /** Gap to the next card. The steps differ (the six-option diabetes list is
    *  tighter than the two-option unit list), so the caller owns it. */
   spacing?: number;
+  /** An answer this device cannot honour right now (Health Connect missing):
+   *  drawn quieter, still tappable so the press can point at the fix. */
+  dimmed?: boolean;
 }) {
   const rich = !!icon && !!description;
   const plate = rich ? 44 : 40;
@@ -119,6 +123,7 @@ export function OptionCard({
           borderWidth: 1.5,
           borderColor: selected ? THEME.accent : THEME.border,
           backgroundColor: selected ? withAlpha(THEME.accent, 0.1) : THEME.surface,
+          opacity: dimmed ? 0.6 : 1,
         },
         selected ? glow(THEME.accent, 26, 0.35) : undefined,
         pressStyle,

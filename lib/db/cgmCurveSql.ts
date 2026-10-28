@@ -9,6 +9,7 @@
  * table.
  */
 import { recentDayRanges } from "../cgm/curve";
+import { VERY_HIGH_MGDL } from "../glucose";
 import { notSensorTwinSql } from "./cgmSql";
 
 /** Placeholders: profile_id, since (ISO), until (ISO). Sensor AND hand-entered
@@ -23,7 +24,7 @@ export const CGM_LATEST_SQL =
 
 /** Placeholders: low, high, profile_id, since (ISO), until (ISO). */
 export const CGM_RANGE_STATS_SQL =
-  "SELECT COUNT(*) AS c, AVG(glucose_level_mgdl) AS a, COALESCE(SUM(CASE WHEN glucose_level_mgdl BETWEEN ? AND ? THEN 1 ELSE 0 END), 0) AS r FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 AND logged_at >= ? AND logged_at < ?;";
+  `SELECT COUNT(*) AS c, AVG(glucose_level_mgdl) AS a, COALESCE(SUM(CASE WHEN glucose_level_mgdl BETWEEN ? AND ? AND glucose_level_mgdl < ${VERY_HIGH_MGDL} THEN 1 ELSE 0 END), 0) AS r FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 AND logged_at >= ? AND logged_at < ?;`;
 
 /**
  * Hand-entered readings of the same span, with the journal's twin rule: a
@@ -31,7 +32,7 @@ export const CGM_RANGE_STATS_SQL =
  * placeholders as CGM_RANGE_STATS_SQL. Read for the home card when today's
  * sensor coverage is too thin to be the day (lib/cgm/homeBasis.ts).
  */
-export const CGM_MANUAL_RANGE_STATS_SQL = `SELECT COUNT(*) AS c, AVG(s.glucose_level_mgdl) AS a, COALESCE(SUM(CASE WHEN s.glucose_level_mgdl BETWEEN ? AND ? THEN 1 ELSE 0 END), 0) AS r FROM sugar_logs s WHERE s.profile_id = ? AND s.is_cgm = 0 AND ${notSensorTwinSql("s")} AND s.logged_at >= ? AND s.logged_at < ?;`;
+export const CGM_MANUAL_RANGE_STATS_SQL = `SELECT COUNT(*) AS c, AVG(s.glucose_level_mgdl) AS a, COALESCE(SUM(CASE WHEN s.glucose_level_mgdl BETWEEN ? AND ? AND s.glucose_level_mgdl < ${VERY_HIGH_MGDL} THEN 1 ELSE 0 END), 0) AS r FROM sugar_logs s WHERE s.profile_id = ? AND s.is_cgm = 0 AND ${notSensorTwinSql("s")} AND s.logged_at >= ? AND s.logged_at < ?;`;
 
 /** Placeholders: profile_id, since (ISO), until (ISO). Sensor timestamps only,
  *  for the coverage rule. Reads idx_sugar_cgm. */
@@ -48,7 +49,7 @@ export function cgmDaySummariesSql(dayCount: number): string {
   const values = Array.from({ length: dayCount }, () => "(?, ?, ?)").join(", ");
   return `WITH days(day, lo, hi) AS (VALUES ${values})
 SELECT d.day AS day, COUNT(s.id) AS c, AVG(s.glucose_level_mgdl) AS a,
-       COALESCE(SUM(CASE WHEN s.glucose_level_mgdl BETWEEN ? AND ? THEN 1 ELSE 0 END), 0) AS r,
+       COALESCE(SUM(CASE WHEN s.glucose_level_mgdl BETWEEN ? AND ? AND s.glucose_level_mgdl < ${VERY_HIGH_MGDL} THEN 1 ELSE 0 END), 0) AS r,
        MAX(s.logged_at) AS last_at
   FROM days d
   JOIN sugar_logs s ON s.profile_id = ? AND s.is_cgm = 1 AND s.logged_at >= d.lo AND s.logged_at < d.hi

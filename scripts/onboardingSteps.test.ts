@@ -900,7 +900,7 @@ section("O. how the person measures: step order, default, reminders skipped, den
   }
   eq("finger: reminders are not skipped", skipsMeasurementReminders("finger"), false);
 
-  eq("finger writes no mode", measureModeToWrite("finger"), null);
+  eq("finger writes manual (the last answer wins over an abandoned attempt)", measureModeToWrite("finger"), "manual");
   eq("cgm writes cgm", measureModeToWrite("cgm"), "cgm");
   eq("nightscout writes nightscout", measureModeToWrite("nightscout"), "nightscout");
 
@@ -937,7 +937,7 @@ section("O. how the person measures: step order, default, reminders skipped, den
   const finish = code(between(onb, "async function finishToReveal", "async function goToDashboard"));
   ok("finish writes the mode through setCgmMode", finish.includes("setCgmMode(") && finish.includes("measureModeToWrite("));
   ok("and reports it as cgm_mode_set", /logEvent\("cgm_mode_set",\s*\{\s*mode/.test(finish));
-  ok("the mode is written only for a non-manual choice", /if \(cgmMode\b/.test(finish) || /cgmMode !== null/.test(finish) || /if \(mode\)/.test(finish));
+  ok("the sensor event is sent only for a non-manual choice", /if \(cgmMode !== "manual"\) logEvent\("cgm_mode_set"/.test(finish));
   ok("the step list is built with the measure answer", /buildOnboardingSteps\(\{[^}]*measure/.test(onb));
   const pick = code(between(onb, "async function pickMeasure", "async function goToDashboard"));
   ok("the pick handler exists", pick.length > 0);
@@ -952,11 +952,11 @@ section("O. how the person measures: step order, default, reminders skipped, den
     pick.includes("setMeasureDenied(true)") && onb.includes('t("onboarding.measureDenied"')
   );
   ok("no plan rows are written for a sensor mode", /skipsMeasurementReminders\(/.test(onb));
-  ok("the reveal is told the mode", /measure:\s*cgmMode|cgmMode:/.test(finish) || /measure:\s*measureMode/.test(finish));
+  ok("the reveal is told the mode", /measure:\s*cgmMode|cgmMode:|cgmMode,/.test(finish) || /measure:\s*measureMode/.test(finish));
   ok("the Nightscout hand-off note is shown", onb.includes("measureNightscoutNote"));
   ok("the store name comes from the platform label key", onb.includes("healthStoreLabelKey("));
   ok("the CGM option is hidden where there is no Health provider", onb.includes("hasHealthProvider()"));
-  ok("no manual-mode flow was touched: nothing is written for the finger prick", !/setCgmMode\(activeProfile\.id,\s*"manual"/.test(onb));
+  ok("the finger prick is written as manual too, so an abandoned CGM attempt cannot linger", /setCgmMode\(activeProfile\.id, cgmMode, \{ keepOffer: true \}\)/.test(onb) && measureModeToWrite("finger") === "manual");
 
   const langs = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
   const keys = [

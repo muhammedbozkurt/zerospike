@@ -1,3 +1,4 @@
+import type { CgmBrand } from "./cgm/brand";
 import type { CgmMode } from "./cgm/state";
 import type { DiabetesType } from "./db/types";
 
@@ -53,10 +54,37 @@ export function measureNeedsPro(m: MeasureOption): boolean {
   return m === "nightscout";
 }
 
-/** The mode to store for an answer; null for the finger prick, which is the
- *  profile's default and writes nothing. */
-export function measureModeToWrite(m: MeasureOption): CgmMode | null {
-  return m === "finger" ? null : m;
+/** The mode to store for an answer. The finger prick is written too ("manual"):
+ *  an earlier, abandoned attempt may have left a sensor mode on the profile, and
+ *  the last answer is the one that counts. */
+export function measureModeToWrite(m: MeasureOption): CgmMode {
+  return m === "finger" ? "manual" : m;
+}
+
+/** After "FreeStyle Libre" the note says there is no verified way to bring its
+ *  readings in, so the person is asked what to do instead of being left in a
+ *  sensor mode with no readings: keep logging by hand (the default) or stay. */
+export type LibreChoice = "manual" | "cgm";
+export const DEFAULT_LIBRE_CHOICE: LibreChoice = "manual";
+
+export function libreAsksChoice(m: MeasureOption, brand: CgmBrand | null): boolean {
+  return m === "cgm" && brand === "libre";
+}
+
+/** The answer the rest of onboarding acts on: Libre with the default choice is
+ *  the finger prick (mode manual, the measurement reminder plan comes back). */
+export function effectiveMeasure(
+  m: MeasureOption,
+  brand: CgmBrand | null,
+  libre: LibreChoice
+): MeasureOption {
+  return libreAsksChoice(m, brand) && libre === "manual" ? "finger" : m;
+}
+
+/** Whether finishing onboarding switches the Health import on for the profile
+ *  (the permission was asked when the option was picked). */
+export function measureEnablesHealthImport(m: MeasureOption): boolean {
+  return m === "cgm";
 }
 
 /** Sensor modes bring their own readings, so the measurement reminder plan is
