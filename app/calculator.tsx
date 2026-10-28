@@ -38,6 +38,7 @@ import {
   linkedReadingEditPatch,
   mealEditPlan,
   ownBolusRow,
+  mealEditNeedsBolusGuard,
   prefillDose,
   savedToastKey,
   writeBolusRow,
@@ -1454,9 +1455,11 @@ function CalculatorScreen() {
       const existingInjectionForEdit =
         isEdit && mealLogId ? ownBolusRow(await getCalculatorInjectionForMeal(mealLogId)) : null;
 
-      // Duplicate-entry check (lib/entryGuard.ts), NEW entries only: correcting
-      // an existing meal (region, note, time) must never be compared against
-      // another record, so an edit skips the guard entirely. Meal and bolus are
+      // Duplicate-entry check (lib/entryGuard.ts). A NEW entry runs both checks;
+      // an edit runs only the bolus one, and only when it adds insulin (see
+      // mealEditNeedsBolusGuard), excluding the meal's own bolus row, so a
+      // region, note or time correction is never compared against anything.
+      // Meal and bolus are
       // each their own entry kind, so this is two sequential confirms at most.
       // A catalogue food's own id is the comparison key; a typed name or a
       // template has no id, so its own name stands in, normalized the same way
@@ -1508,6 +1511,18 @@ function CalculatorScreen() {
           loggedAtChanged,
         });
         const step = plan.bolus;
+        if (
+          dose > 0 &&
+          mealEditNeedsBolusGuard(step, dose, originalDose ?? 0) &&
+          !(await guardEntry({
+            entryKind: "injection",
+            insulinType: "bolus",
+            entryAtIso: loggedIso,
+            excludeId: existingInjectionForEdit?.id ?? null,
+          }))
+        ) {
+          return;
+        }
         const tagsChanged = JSON.stringify(tags) !== prefillTagsRef.current;
         // One unit: a bolus write that fails takes the meal edit back with it,
         // so the record is never saved with a dose its history row lacks.

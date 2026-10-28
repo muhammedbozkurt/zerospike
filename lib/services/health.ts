@@ -90,12 +90,6 @@ export type {
 } from "./healthTypes";
 export type { HealthWriteStatusRecord } from "../healthWriteRetry";
 
-/** Shared brand name for the on-device health store, plugged into i18n
- *  strings via the {{health}} placeholder. Single source of truth so it is
- *  never redefined per screen (see settings.healthSection / healthSectionAndroid
- *  for the alternate, per-locale-translated pick used by settings/paywall). */
-export const HEALTH_NAME = Platform.OS === "ios" ? "Apple Health" : "Health Connect";
-
 /** Base of the "mirror manual readings to Apple Health" preference (default
  *  OFF). Stored PER PROFILE at "<base>.<profileId>": one Health account serves
  *  the whole device, so on a family/caregiver install a device-wide flag pushed

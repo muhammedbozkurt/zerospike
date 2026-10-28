@@ -18,6 +18,7 @@ import Animated from "react-native-reanimated";
 import type { BolusKind, InjectionSite, InsulinType, SitePoint } from "../lib/db/types";
 import { BOLUS_KINDS, SELECTABLE_SITES } from "../lib/db/types";
 import {
+  findRecentCalculatorBolus,
   getInjection,
   getSiteUsageHistory,
   updateInjection,
@@ -40,6 +41,7 @@ import { useStepperValidity } from "./Stepper";
 import { NumericField } from "./NumericField";
 import { INJECTION_DOSE_BOUNDS, editableMax } from "../lib/numericField";
 import { InlineDateTimePicker } from "./InlineDateTimePicker";
+import { injectionEditNeedsBolusGuard } from "../lib/mealEditPatch";
 import { formatTime, num, relativeDay } from "../lib/format";
 import { HIT_TARGET, RADIUS, SPACE, THEME, TYPE, glow } from "../lib/theme/tokens";
 import { Button, Chip, Txt } from "./ui";
@@ -249,6 +251,25 @@ export function InjectionEditSheet({
     });
   }
 
+  /** Same gentle double-bolus nudge as the injection tab's own form (R10 1.4),
+   *  runs before the dose-threshold checks, and only when the edit adds insulin
+   *  (injectionEditNeedsBolusGuard). Excludes the row being edited so a
+   *  calculator-written bolus never flags against its own value. */
+  async function confirmDoubleBolus(): Promise<boolean> {
+    if (!activeProfile || !injection) return true;
+    const existing = await findRecentCalculatorBolus(activeProfile.id, loggedAt, injection.id);
+    if (!existing) return true;
+    return confirm({
+      title: t("injection.doubleBolusTitle", {
+        n: num(existing.dose_units ?? 0),
+        time: formatTime(existing.logged_at),
+      }),
+      message: t("injection.doubleBolusBody"),
+      confirmLabel: t("injection.doubleBolusConfirm"),
+      icon: "help-circle-outline",
+    });
+  }
+
   async function save() {
     if (!injection || !stepperFields.allValid || !injectionDoseOk(dose, injection?.dose_units ?? null)) return;
     const target = injection;
@@ -257,6 +278,16 @@ export function InjectionEditSheet({
       lock: savingRef,
       setBusy: setSaving,
       confirm: async () => {
+        if (insulinType === "bolus" && hasDose && !(await confirmDoubleBolus())) return false;
+        if (
+          injectionEditNeedsBolusGuard(
+            { type: target.insulin_type, dose: target.dose_units },
+            { type: insulinType, dose: hasDose ? dose : 0 }
+          ) &&
+          !(await confirmDoubleBolus())
+        ) {
+          return false;
+        }
         if (hasDose && !(await confirmDose(dose))) return false;
         return true;
       },

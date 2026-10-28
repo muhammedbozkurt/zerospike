@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { SCROLL_HINT_GAP_PT, scrollHintMotion } from "../lib/scrollHint";
+import { scrollHintMotion } from "../lib/scrollHint";
 import { useReduceMotion } from "../lib/useScrollHint";
 import { useFontScale } from "../lib/useFontScale";
 import { scrollHintAllowed } from "../lib/layoutForFontScale";
@@ -111,7 +111,6 @@ export function ScrollHint({
         importantForAccessibility="no-hide-descendants"
         style={{
           height: SIZE + BOB_PT + 4,
-          marginBottom: Math.max(0, bottomOffset - SCROLL_HINT_GAP_PT),
           alignItems: "center",
           justifyContent: "center",
         }}
