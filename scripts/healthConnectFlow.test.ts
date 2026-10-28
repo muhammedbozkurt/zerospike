@@ -416,7 +416,7 @@ async function main() {
     const dash = src("app/(tabs)/index.tsx");
     ok("the dashboard queues with the profile id", /retryQueue\.queue\("sync", profileId\)/.test(dash) && /retryQueue\.queue\("connect", profileId\)/.test(dash));
     ok("the profile effect clears the queue", /setCgmOn\(null\);\s*retryQueue\.clear\(\)/.test(dash));
-    ok("a retried sync re-checks the profile's own switch", /readProfileFlag\(CGM_KEY, profileId\)\.then\(\(on\) =>\s*\{\s*if \(on && activeProfileIdRef/.test(dash));
+    ok("a retried sync re-checks the profile's own switch", /readProfileFlag\(CGM_KEY, profileId\)\s*\.then\(\(on\) =>\s*\{\s*if \(on && activeProfileIdRef/.test(dash));
   });
 
   await section("D. import runs: gate before the import, never bypassed", async () => {
