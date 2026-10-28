@@ -1,4 +1,5 @@
 import type { LogTag, PeriodTag } from "./db/types";
+import { mealContextFor } from "./healthMeta";
 
 export interface CorrectionPrevious {
   glucose_level_mgdl: number;
@@ -35,4 +36,16 @@ export function glucoseCorrectionPatch(
     patch.logged_at = loggedAt.toISOString();
   }
   return patch;
+}
+
+/**
+ * Whether the Health mirror of a corrected reading has to be rewritten: the
+ * sample carries the value, the time and the meal relation of the period.
+ */
+export function correctionNeedsMirror(previous: CorrectionPrevious, patch: CorrectionPatch): boolean {
+  if (patch.glucose_level_mgdl !== undefined || patch.logged_at !== undefined) return true;
+  return (
+    patch.period_tag !== undefined &&
+    mealContextFor(patch.period_tag) !== mealContextFor(previous.period_tag)
+  );
 }

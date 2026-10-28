@@ -1,7 +1,7 @@
 import { getSugarLog, updateSugarLog } from "../db/logs";
 import { getHealthWriteEnabled, hasHealthProvider, updateGlucoseInHealth } from "./health";
 import type { GlucoseEntry } from "../db/journal";
-import { glucoseCorrectionPatch } from "../glucoseCorrectionPatch";
+import { correctionNeedsMirror, glucoseCorrectionPatch } from "../glucoseCorrectionPatch";
 import type { LogTag, PeriodTag } from "../db/types";
 
 /**
@@ -26,8 +26,8 @@ export async function applyGlucoseCorrection(
   const patch = glucoseCorrectionPatch(previous, value, period, tags, loggedAt);
   if (Object.keys(patch).length === 0) return;
   await updateSugarLog(previous.id, patch);
-  // The mirrored sample carries only value and time.
-  if (patch.glucose_level_mgdl === undefined && patch.logged_at === undefined) return;
+  // The mirrored sample carries value, time and the meal relation of the period.
+  if (!correctionNeedsMirror(previous, patch)) return;
   // Keeps the health-store mirror honest. A corrected reading whose mirrored
   // sample still carried the old value made the two disagree, and neither
   // store has an "update", so the helper revokes and rewrites. Fire-and-forget:

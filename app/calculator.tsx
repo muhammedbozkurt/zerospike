@@ -35,12 +35,11 @@ import type { RatioWriter } from "../lib/ratioWriter";
 import { DOSE_BOUNDS, editableMax } from "../lib/numericField";
 import { glucoseSheetBounds } from "../lib/glucoseSheetInput";
 import {
-  linkedReadingPatch,
+  linkedReadingEditPatch,
   mealEditPlan,
   ownBolusRow,
   prefillDose,
   savedToastKey,
-  shouldMoveLinkedReading,
   writeBolusRow,
 } from "../lib/mealEditPatch";
 import { calculatorIob } from "../lib/calcIob";
@@ -1039,8 +1038,10 @@ function CalculatorScreen() {
   async function readFreshIob(): Promise<number> {
     if (!activeProfile) return 0;
     const injections = await getInjections(activeProfile.id, 100);
+    const editedBolus =
+      isEdit && mealLogId ? ownBolusRow(await getCalculatorInjectionForMeal(mealLogId)) : null;
     const breakdown = calculatorIob(injections, {
-      mealLogId: isEdit ? mealLogId : null,
+      excludeInjectionId: editedBolus?.id ?? null,
       at: loggedAt,
       bolusProfile: bolusProfileFor(activeProfile.bolus_insulin_id),
       basalProfile: basalProfileFor(activeProfile.basal_insulin_id),
@@ -1567,16 +1568,14 @@ function CalculatorScreen() {
         // and overwrote it to match the meal every time.
         if (linkedSugarLogId && glucoseMgdl != null) {
           const storedMeal = await getMealLog(mealLogId);
-          const moveReading = shouldMoveLinkedReading({
+          const readingPatch = linkedReadingEditPatch({
             loggedAtChanged,
             linkedSugarLogId,
             createdSugarLogId: storedMeal?.created_sugar_log_id ?? null,
             otherMealsOnReading: await countOtherMealsOnSugarLog(linkedSugarLogId, mealLogId),
-          });
-          const readingPatch = linkedReadingPatch({
             storedMgdl: storedReadingMgdl,
             valueMgdl: glucoseMgdl,
-            moveToIso: moveReading ? (loggedIso ?? null) : null,
+            loggedIso: loggedIso ?? null,
           });
           const readingChanged = Object.keys(readingPatch).length > 0;
           if (readingChanged) await updateSugarLog(linkedSugarLogId, readingPatch);

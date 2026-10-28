@@ -414,7 +414,7 @@ section("11. the offer attaches to its stored row; it expires; it hides on a bac
   eq("an unreadable stamp has no time left", offerExpiresInMs("nope", now), 0);
   const calc = src("app/calculator.tsx");
   ok("a save attaches to the tapped row instead of writing it again", calc.includes("boundOffer?.id") && /boundId\s*\?\s*\{ id: boundId \}\s*:\s*await findMatchingSugarLog/.test(calc) && /!\(await getSugarLog\(boundId\)\)\) boundId = null/.test(calc));
-  ok("the tapped mg/dL value, not the rounded one, drives the estimate", /return boundOffer \? boundOffer\.mgdl : glucoseFromDisplay\(glucoseTyped, unit\)/.test(calc));
+  ok("the tapped mg/dL value, not the rounded one, drives the estimate", /if \(boundOffer\) return boundOffer\.mgdl;\s*return glucoseFieldToMgdl\(glucoseTyped, unit,/.test(calc));
   ok("the binding needs the field to still show the offer and a record logged now", /offerBinding &&\s*loggedAt == null &&\s*fieldIsOffer\(glucoseTyped, glucoseToDisplay\(offerBinding\.mgdl, unit\)\)/.test(calc));
   ok("the offer hides on a back-dated meal", /!isEdit && glucose === "" && loggedAt == null/.test(calc));
   ok("the offer clears itself when its reading expires", calc.includes("offerExpiresInMs(s.loggedAt, now)") && calc.includes("setOfferTick"));

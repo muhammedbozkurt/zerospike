@@ -143,3 +143,22 @@ export function linkedReadingPatch(input: {
   if (input.moveToIso != null) patch.logged_at = input.moveToIso;
   return patch;
 }
+
+/**
+ * The whole decision of what a meal edit writes onto its linked reading: the
+ * move (only a reading this meal created, shared with no other meal) and the
+ * changed glucose, as one patch. Empty means the reading is not written.
+ */
+export function linkedReadingEditPatch(
+  input: LinkedReadingMoveInput & {
+    storedMgdl: number | null;
+    valueMgdl: number | null;
+    loggedIso: string | null;
+  }
+): { glucose_level_mgdl?: number; logged_at?: string } {
+  return linkedReadingPatch({
+    storedMgdl: input.storedMgdl,
+    valueMgdl: input.valueMgdl,
+    moveToIso: shouldMoveLinkedReading(input) ? input.loggedIso : null,
+  });
+}

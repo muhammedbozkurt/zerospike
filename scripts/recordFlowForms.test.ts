@@ -151,7 +151,7 @@ async function main() {
   } else ok("linkedReadingPatch exists", false);
   const calc = src("app", "calculator.tsx");
   ok("calculator reads the glucose field through the stored value", /glucoseFieldToMgdl\(glucoseTyped, unit, isEdit \? storedReadingMgdl : null\)/.test(calc));
-  ok("calculator edit writes the reading through linkedReadingPatch", /linkedReadingPatch\(\{/.test(calc) && /storedMgdl: storedReadingMgdl/.test(calc));
+  ok("calculator edit writes the reading through linkedReadingPatch", /linkedReadingEditPatch\(\{/.test(calc) && /storedMgdl: storedReadingMgdl/.test(calc));
   ok("the sheet saves through glucoseFieldToMgdl", /glucoseFieldToMgdl\(typed, unit, edit\?\.glucose_level_mgdl\)/.test(src("components", "GlucoseInputSheet.tsx")));
   ok("applyGlucoseCorrection writes the patch only", /glucoseCorrectionPatch\(previous, value, period, tags, loggedAt\)/.test(src("lib", "services", "glucoseEdit.ts")));
 
@@ -159,13 +159,16 @@ async function main() {
   console.log("C-4 reading follows the meal time only when it is the meal's own");
   async function editTime(mealId: string, readingId: string, newTime: string) {
     const stored = await logs.getMealLog(mealId);
-    const move = shouldMoveLinkedReading({
-      loggedAtChanged: true,
-      linkedSugarLogId: readingId,
-      createdSugarLogId: stored?.created_sugar_log_id ?? null,
-      otherMealsOnReading: await logs.countOtherMealsOnSugarLog(readingId, mealId),
-    });
-    const patch = mep?.linkedReadingPatch?.({ storedMgdl: 140, valueMgdl: 140, moveToIso: move ? newTime : null }) ?? {};
+    const patch =
+      mep?.linkedReadingEditPatch?.({
+        loggedAtChanged: true,
+        linkedSugarLogId: readingId,
+        createdSugarLogId: stored?.created_sugar_log_id ?? null,
+        otherMealsOnReading: await logs.countOtherMealsOnSugarLog(readingId, mealId),
+        storedMgdl: 140,
+        valueMgdl: 140,
+        loggedIso: newTime,
+      }) ?? {};
     if (Object.keys(patch).length) await logs.updateSugarLog(readingId, patch);
     return one("SELECT logged_at t FROM sugar_logs WHERE id = ?", readingId).t as string;
   }
@@ -183,29 +186,60 @@ async function main() {
   ok("a reading that existed before the meal stays", (await editTime(mPre.id, rPre.id, t20)) === t18);
   ok("save passes the created reading id to addMealLog", /created_sugar_log_id: createdSugarLogId,/.test(calc));
   ok("edit records the reading it creates", /sugar_log_id: newSugarLogId,\s*\.\.\.\(createdNewReading \? \{ created_sugar_log_id: newSugarLogId \} : \{\}\)/.test(calc));
-  ok("edit decides the move with shouldMoveLinkedReading", /shouldMoveLinkedReading\(\{[\s\S]{0,200}createdSugarLogId: storedMeal\?\.created_sugar_log_id[\s\S]{0,160}countOtherMealsOnSugarLog\(linkedSugarLogId, mealLogId\)/.test(calc));
+  ok("edit feeds the decision function the stored relation and the other-meal count", /linkedReadingEditPatch\(\{[\s\S]{0,200}createdSugarLogId: storedMeal\?\.created_sugar_log_id[\s\S]{0,160}countOtherMealsOnSugarLog\(linkedSugarLogId, mealLogId\)/.test(calc));
   ok("the old unconditional move is gone", !/loggedAtChanged \? \{ logged_at: loggedIso \}/.test(calc));
 
   // ---- C-5: calculator active insulin ----
   console.log("C-5 calculator active insulin");
   const ci = await load<typeof import("../lib/calcIob")>("../lib/calcIob");
+  const { estimateInsulin } = await import("../lib/insulin");
   if (ci) {
-    const own = { insulin_type: "bolus" as const, dose_units: 6, logged_at: "2026-10-27T12:00:00.000Z", meal_log_id: "M1" };
+    const row = (id: string, dose: number, at: string, type: "bolus" | "basal" = "bolus") => ({ id, insulin_type: type, dose_units: dose, logged_at: at });
+    const own = row("B1", 6, "2026-10-27T12:00:00.000Z");
     const now = new Date("2026-10-27T12:10:00.000Z");
     ok("control: without exclusion the meal's own bolus counts", activeInsulinBreakdown([own], { now }).bolus > 5);
-    ok("editing the meal leaves its own bolus out", ci.calculatorIob([own], { mealLogId: "M1", now }).bolus === 0);
-    ok("another meal's bolus still counts in an edit", ci.calculatorIob([{ ...own, meal_log_id: "M2" }], { mealLogId: "M1", now }).bolus > 5);
+    ok("editing leaves out the edited bolus row", ci.calculatorIob([own], { excludeInjectionId: "B1", now }).bolus === 0);
+    ok("another row of the same meal still counts", ci.calculatorIob([own, row("B2", 2, "2026-10-27T12:05:00.000Z")], { excludeInjectionId: "B1", now }).bolus > 1.5);
+    ok("a row turned into basal is not excluded (still counted as basal)", ci.calculatorIob([row("B1", 20, "2026-10-27T12:00:00.000Z", "basal")], { excludeInjectionId: null, now }).basal > 15);
     ok("a new record keeps every bolus", ci.calculatorIob([own], { now }).bolus > 5);
-    const early = { insulin_type: "bolus" as const, dose_units: 4, logged_at: "2026-10-27T08:00:00.000Z", meal_log_id: null };
-    const later = { insulin_type: "bolus" as const, dose_units: 4, logged_at: "2026-10-27T10:00:00.000Z", meal_log_id: null };
-    const at = new Date("2026-10-27T09:00:00.000Z");
+
+    // OPUS-26 scenario: 3 u at 12:00, at 12:10 the record is back-dated to 11:50.
+    const three = row("X", 3, "2026-10-27T12:00:00.000Z");
+    const at1150 = new Date("2026-10-27T11:50:00.000Z");
+    const old = activeInsulinBreakdown([three], { now: at1150 }).bolus;
+    const fixed = ci.calculatorIob([three], { at: at1150, now }).bolus;
+    ok("back-dated before a just-logged bolus: it is not dropped", old === 0 && fixed > 2.9, `old ${old} fixed ${fixed}`);
+    const profile = { carb_ratio_breakfast: 10, carb_ratio_lunch: 10, carb_ratio_dinner: 10, insulin_sensitivity_factor: 50, target_postmeal_min: 100, target_postmeal_max: 140 } as any;
+    const total = (iob: number) => estimateInsulin({ carb_100g: 50 } as any, 100, profile, { slot: "lunch", currentGlucose: 220, currentIOB: iob }).totalDose;
+    console.log(`  OPUS-26: IOB old ${old} -> new ${fixed} u; dose figure old ${total(old)} -> new ${total(fixed)} u`);
+    ok("the dose figure does not rise because of the back-date", total(fixed) < total(old));
+    // a dose logged before the record time is still measured at the record time
+    const early = row("E", 4, "2026-10-27T08:00:00.000Z");
+    const at9 = new Date("2026-10-27T09:00:00.000Z");
     const nowLate = new Date("2026-10-27T12:00:00.000Z");
-    const atRecord = ci.calculatorIob([early, later], { at, now: nowLate }).bolus;
-    ok("backdated: measured at the record's time", atRecord === activeInsulinBreakdown([early], { now: at }).bolus && atRecord > 0, String(atRecord));
-    ok("backdated: a dose logged after the record time counts for nothing", ci.calculatorIob([later], { at, now: nowLate }).bolus === 0);
+    ok("a dose before the record time is measured at the record time", ci.calculatorIob([early], { at: at9, now: nowLate }).bolus === activeInsulinBreakdown([early], { now: at9 }).bolus);
+    const later = row("L", 4, "2026-10-27T10:00:00.000Z");
+    ok("a dose logged after the record time is measured now", ci.calculatorIob([later], { at: at9, now: nowLate }).bolus === activeInsulinBreakdown([later], { now: nowLate }).bolus);
+    ok("both together add up", Math.abs(ci.calculatorIob([early, later], { at: at9, now: nowLate }).bolus - (ci.calculatorIob([early], { at: at9, now: nowLate }).bolus + ci.calculatorIob([later], { at: at9, now: nowLate }).bolus)) < 0.011);
+    ok("a future record time is treated as now", ci.calculatorIob([three], { at: new Date("2026-10-27T13:00:00.000Z"), now }).bolus === activeInsulinBreakdown([three], { now }).bolus);
   }
-  ok("readFreshIob passes the meal and the record time", /calculatorIob\(injections, \{\s*mealLogId: isEdit \? mealLogId : null,\s*at: loggedAt,/.test(calc));
+  ok("readFreshIob excludes only the edited bolus row and passes the record time", /excludeInjectionId: editedBolus\?\.id \?\? null,\s*at: loggedAt,/.test(calc));
   ok("the IOB effect follows the record time", /\[activeProfile, dataVersion, loggedAt\?\.getTime\(\)\]/.test(calc));
+
+  // ---- Health mirror follows a period change that changes the meal relation ----
+  const cp = await load<typeof import("../lib/glucoseCorrectionPatch")>("../lib/glucoseCorrectionPatch");
+  if (cp) {
+    const prev = { glucose_level_mgdl: 100, period_tag: "fasting" as const, logged_at: "2026-10-28T08:00:00.000Z", tags: [] };
+    const same = new Date("2026-10-28T08:00:00.000Z");
+    const needs = (period: any) => cp.correctionNeedsMirror(prev, cp.glucoseCorrectionPatch(prev, 100, period, [], same));
+    ok("fasting -> post_meal_2h rewrites the mirror (meal relation changed)", needs("post_meal_2h") === true);
+    ok("fasting -> pre_meal rewrites the mirror", needs("pre_meal") === true);
+    ok("fasting -> bedtime rewrites the mirror (relation dropped)", needs("bedtime") === true);
+    ok("bedtime -> manual: no relation either way, no rewrite", cp.correctionNeedsMirror({ ...prev, period_tag: "bedtime" }, cp.glucoseCorrectionPatch({ ...prev, period_tag: "bedtime" }, 100, "manual", [], same)) === false);
+    ok("a tags-only edit does not rewrite the mirror", cp.correctionNeedsMirror(prev, cp.glucoseCorrectionPatch(prev, 100, "fasting", ["x" as any], same)) === false);
+    ok("a value edit rewrites the mirror", cp.correctionNeedsMirror(prev, cp.glucoseCorrectionPatch(prev, 101, "fasting", [], same)) === true);
+  }
+  ok("applyGlucoseCorrection gates the mirror on correctionNeedsMirror", /if \(!correctionNeedsMirror\(previous, patch\)\) return;/.test(src("lib", "services", "glucoseEdit.ts")));
 
   // ---- C-6: dashboard clock ----
   console.log("C-6 dashboard minute clock");
