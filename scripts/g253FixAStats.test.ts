@@ -143,7 +143,7 @@ console.log("CSV separator follows the device");
 }
 
 console.log("French colon, Arabic day count");
-{
+void (async () => {
   const t = (key: string) => key;
   setActiveLang("fr");
   ok("fr: a no-break space before the colon", coverageLine(t, 1, 80).startsWith("cgmInsights.coverage : "));
@@ -151,8 +151,19 @@ console.log("French colon, Arabic day count");
   ok("en: no space before the colon", coverageLine(t, 1, 80).startsWith("cgmInsights.coverage: "));
   const ar = read("lib/i18n/locales/ar.ts");
   const need = /gmiNeedCoverage: "([^"]+)"/.exec(ar)?.[1] ?? "";
-  ok("ar gmiNeedCoverage has no accusative day word that breaks at 100+", need.includes("{{days}} يوم.") && !need.includes("يومًا"));
-}
-
-console.log(failed ? `${failed} failed, ${passed} passed` : `${passed} passed`);
-if (failed) process.exit(1);
+  ok("ar gmiNeedCoverage base form has no accusative day word that breaks at 100+", need.includes("{{days}} يوم.") && !need.includes("يومًا"));
+  // The real resolver, with the app's settings (i18next v3 plural suffixes).
+  const i18next = require("i18next") as typeof import("i18next");
+  const arMod = require("../lib/i18n/locales/ar") as { default: { cgmInsights: Record<string, string> } };
+  await i18next.init({ lng: "ar", compatibilityJSON: "v3", resources: { ar: { translation: { cgmInsights: arMod.default.cgmInsights } } } });
+  const need2 = (n: number) => i18next.t("cgmInsights.gmiNeedCoverage", { days: n, count: n, pct: "70%" });
+  ok("ar 14 days: accusative singular", need2(14).includes("14 يومًا"));
+  ok("ar 30 and 90 days: the same", need2(30).includes("30 يومًا") && need2(90).includes("90 يومًا"));
+  ok("ar 7 days: plural noun", need2(7).includes("7 أيام"));
+  ok("ar 100 days: genitive singular, no accusative", need2(100).includes("100 يوم.") && !need2(100).includes("يومًا"));
+  ok("ar 365 days: accusative (65 is in 11-99)", need2(365).includes("365 يومًا"));
+  const cov = (n: number) => i18next.t("cgmInsights.coverageLine", { days: n, count: n, pct: "92%" });
+  ok("ar coverage line follows the same forms", cov(14).includes("14 يومًا") && cov(7).includes("7 أيام") && cov(100).includes("100 يوم:"));
+  console.log(failed ? `${failed} failed, ${passed} passed` : `${passed} passed`);
+  if (failed) process.exit(1);
+})();

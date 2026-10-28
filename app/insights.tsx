@@ -1443,6 +1443,7 @@ export default function InsightsScreen() {
                           : gmiReason === "coverage"
                             ? t("cgmInsights.gmiNeedCoverage", {
                                 days: selWindowDays,
+                                count: selWindowDays,
                                 pct: pct(GMI_MIN_COVERAGE * 100),
                               })
                             : t("insights.gmiNeedMore", {

@@ -51,5 +51,5 @@ export function coverageLine(t: T, days: number, coveragePct: number): string {
   // French sets a (non-breaking) space before a colon.
   const colon = getActiveLang() === "fr" ? "\u00A0:" : ":";
   if (days <= 1) return `${t("cgmInsights.coverage")}${colon} ${pct(coveragePct)}`;
-  return t("cgmInsights.coverageLine", { days, pct: pct(coveragePct) });
+  return t("cgmInsights.coverageLine", { days, count: days, pct: pct(coveragePct) });
 }

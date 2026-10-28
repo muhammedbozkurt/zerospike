@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { useFocusEffect } from "expo-router";
 
 import { getHealthConnectStatus, hasHealthProvider, type HealthConnectStatus } from "./health";
@@ -42,14 +42,23 @@ export function useHealthConnectStatus(): HealthConnectStatus | null {
     useCallback(() => {
       if (Platform.OS !== "android") return;
       let alive = true;
-      void getHealthConnectStatus().then((status) => {
-        cachedStatus = { status, loaded: true };
-        if (!alive) return;
-        setHcStatus(status);
-        setHcStatusLoaded(true);
+      const check = () =>
+        void getHealthConnectStatus().then((status) => {
+          cachedStatus = { status, loaded: true };
+          if (!alive) return;
+          setHcStatus(status);
+          setHcStatusLoaded(true);
+        });
+      check();
+      // The Play install or update happens outside the app and brings the person
+      // back to the SAME screen, so a navigation focus never fires: ask again
+      // whenever the app comes to the foreground.
+      const sub = AppState.addEventListener("change", (s) => {
+        if (s === "active") check();
       });
       return () => {
         alive = false;
+        sub.remove();
       };
     }, [])
   );

@@ -28,6 +28,19 @@ export function cgmChoiceGate(input: {
   return "ready";
 }
 
+/**
+ * The gate right now, asked of the platform instead of a cached screen state:
+ * the person may have installed or updated Health Connect a moment ago and come
+ * back, and a tap must not send them to Play again for something already done.
+ */
+export async function cgmChoiceGateNow(
+  os: string,
+  getStatus: () => Promise<"available" | "unavailable" | "update_required">
+): Promise<CgmChoiceGate> {
+  if (os !== "android") return "ready";
+  return cgmChoiceGate({ os, status: await getStatus() });
+}
+
 /** Health Connect's own Play Store listing (the same deep link the data settings use). */
 export const HEALTH_CONNECT_PLAY_URL =
   "market://details?id=com.google.android.apps.healthdata&url=healthconnect%3A%2F%2Fonboarding";

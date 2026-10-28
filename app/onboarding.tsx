@@ -82,7 +82,7 @@ import { HEALTH_IMPORT_FLAG, writeProfileFlag } from "../lib/profileFlag";
 import { useHealthConnectStatus } from "../lib/services/healthAvailability";
 import { setCgmMode } from "../lib/cgm/state";
 import { healthStoreLabelKey } from "../lib/cgm/sourceLabel";
-import { hasHealthProvider, requestHealthPermissions } from "../lib/services/health";
+import { getHealthConnectStatus, hasHealthProvider, requestHealthPermissions } from "../lib/services/health";
 import {
   PERMISSION_TIMEOUT_MS,
   createHealthFlow,
@@ -90,7 +90,12 @@ import {
   type HealthFlow,
 } from "../lib/healthConnectFlow";
 import { nightscoutAllowed } from "../lib/cgm/pro";
-import { cgmChoiceGate, HEALTH_CONNECT_PLAY_URL, nightscoutAvailable } from "../lib/cgm/sourceAvailability";
+import {
+  cgmChoiceGate,
+  cgmChoiceGateNow,
+  HEALTH_CONNECT_PLAY_URL,
+  nightscoutAvailable,
+} from "../lib/cgm/sourceAvailability";
 import { secureStoreAvailable } from "../lib/secureStore";
 import {
   clampHypoThreshold,
@@ -758,7 +763,9 @@ export default function OnboardingScreen() {
     }
     // Health Connect is missing or needs its Play update: no sheet can open, so
     // the press leads to the listing instead of a refusal the person never made.
-    if (hcGate !== "ready") {
+    // The cached gate may be older than the install the person just made, so a
+    // tap asks again; only a gate that is still closed leads to Play.
+    if (hcGate !== "ready" && (await cgmChoiceGateNow(Platform.OS, getHealthConnectStatus)) !== "ready") {
       void Linking.openURL(HEALTH_CONNECT_PLAY_URL).catch(() => {});
       return;
     }

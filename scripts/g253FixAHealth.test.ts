@@ -24,6 +24,12 @@ async function main(): Promise<void> {
   const S = await import("../lib/services/health");
   const policy = await import("../lib/cgm/importPolicy");
   const { connectHealthSync } = await import("../lib/cgm/connectSync");
+  const { decideFlagRefresh } = await import("../lib/cgm/flagRefresh");
+  const { HEALTH_IMPORT_FLAG, readProfileFlag, writeProfileFlag } = await import("../lib/profileFlag");
+  const { cgmChoiceGateNow } = await import("../lib/cgm/sourceAvailability");
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const read = (rel: string) => readFileSync(join(__dirname, "..", rel), "utf8");
   const { createHealthFlow, realClock } = await import("../lib/healthConnectFlow");
   console.log("zerospike G253 fix A health test");
 
@@ -118,6 +124,80 @@ async function main(): Promise<void> {
   release({ read: true });
   await pending;
   eq("a cancelled run writes nothing", flagLog.length, 0);
+
+  section("A-1 (low). a free run in flight is not handed to the full import");
+  resetAll("ios");
+  fake.glucose = [sample(0, 120, "s1"), sample(5, 125, "s2")];
+  fake.readDelayMs = 40;
+  asked.length = 0;
+  const [freeRun, fullRun] = await Promise.all([
+    S.importHealthGlucose("P", "foreground", { freeWindow: true }),
+    S.importHealthGlucose("P", "manual"),
+  ]);
+  eq("both finished ok", `${freeRun.status}/${fullRun.status}`, "ok/ok");
+  eq("two separate native reads", fake.readCalls, 2);
+  eq("one asked for 1 day, one for 90", asked.map((a) => a.windowDays).sort((a, b) => a - b).join(","), "1,90");
+  fake.readDelayMs = 0;
+
+  section("A-2 (mid). back on the dashboard, the switch set elsewhere is picked up");
+  eq("stale off, stored on: follow it", decideFlagRefresh({ allowed: true, cgmOn: false, syncing: false, saved: true }), "on");
+  eq("stale on, stored off: follow it", decideFlagRefresh({ allowed: true, cgmOn: true, syncing: false, saved: false }), "off");
+  eq("equal: nothing", decideFlagRefresh({ allowed: true, cgmOn: true, syncing: false, saved: true }), "none");
+  eq("a run in flight owns the switch", decideFlagRefresh({ allowed: true, cgmOn: true, syncing: true, saved: false }), "none");
+  eq("first read not landed: its own effect settles it", decideFlagRefresh({ allowed: true, cgmOn: null, syncing: false, saved: true }), "none");
+  eq("a Pro card for a free manual profile ignores it", decideFlagRefresh({ allowed: false, cgmOn: false, syncing: false, saved: true }), "none");
+  {
+    // The whole trip: the dashboard holds cgmOn=false; Data sources connects (permission, then switch);
+    // coming back, the dashboard reads the store, turns the card on and runs the free import.
+    resetAll("ios");
+    fake.glucose = [sample(0, 120, "t1"), sample(5, 125, "t2")];
+    let dashboardCgmOn: boolean | null = false;
+    const done = await connectHealthSync(flow(), {
+      setBusy: () => {},
+      request: async () => ({ read: true }),
+      writeFlag: (on) => writeProfileFlag(HEALTH_IMPORT_FLAG, "P", on),
+      importNow: async () => null,
+      onDenied: async () => {},
+      onDone: async () => {},
+    });
+    eq("data sources: connected", done, "done");
+    const saved = await readProfileFlag(HEALTH_IMPORT_FLAG, "P");
+    const next = decideFlagRefresh({ allowed: true, cgmOn: dashboardCgmOn, syncing: false, saved });
+    eq("back on the dashboard the card turns on", next, "on");
+    if (next === "on") dashboardCgmOn = true;
+    const first = await S.importHealthGlucose("P", "foreground", { freeWindow: true });
+    eq("and the free import runs", JSON.stringify([dashboardCgmOn, first.status, rows.sugar.length]), JSON.stringify([true, "ok", 2]));
+  }
+  {
+    const dash = read("app/(tabs)/index.tsx");
+    ok("the focus effect re-reads the switch", /flushRetry\(\);[\s\S]{0,260}latestRef\.current\.refreshHealthFlag\(\)/.test(dash));
+    ok("resumeFreeSync reads the stored switch", /function resumeFreeSync\(\) \{[\s\S]{0,400}readProfileFlag\(CGM_KEY, profileId\)/.test(dash));
+    const at = dash.indexOf("async function toggleCgm");
+    const between = dash.slice(dash.indexOf("setCgmOn(true);", at), dash.indexOf("connectHealthSync(", at));
+    ok("toggleCgm writes no switch before the grant", between.length > 0 && !/writeProfileFlag\(CGM_KEY/.test(between));
+    ok("the only on-write in toggleCgm sits inside the connect flow", /connectHealthSync\([\s\S]*writeFlag: \(on\) => writeProfileFlag\(CGM_KEY, profileId, on\)/.test(dash.slice(at)));
+    ok("Today and This week share one base (no twins feed left)", !/cgm: "twins"/.test(dash) && /getJournal\(activeProfile\.id, lang, loadLimit, undefined, \{ cgm: "exclude" \}\)/.test(dash));
+  }
+
+  section("Health Connect status is re-asked");
+  {
+    let calls = 0;
+    const status = (s: "available" | "unavailable" | "update_required") => async () => (calls++, s);
+    eq("android, installed meanwhile: ready", await cgmChoiceGateNow("android", status("available")), "ready");
+    eq("android, still missing: install", await cgmChoiceGateNow("android", status("unavailable")), "install");
+    eq("android, outdated: update", await cgmChoiceGateNow("android", status("update_required")), "update");
+    calls = 0;
+    eq("ios never asks", await cgmChoiceGateNow("ios", status("unavailable")), "ready");
+    eq("and made no call", calls, 0);
+    ok("the hook listens for the app coming back", /AppState\.addEventListener\("change"[\s\S]{0,80}check\(\)/.test(read("lib/services/healthAvailability.ts")));
+    const onb = read("app/onboarding.tsx");
+    ok("a tap on the dimmed card asks again before opening Play", onb.includes("(await cgmChoiceGateNow(Platform.OS, getHealthConnectStatus)) !== \"ready\""));
+    const ds = read("app/settings/data-sources.tsx");
+    ok("data sources asks again too", ds.includes("async function gateReady()") && ds.includes("cgmChoiceGateNow(Platform.OS, getHealthConnectStatus)"));
+    const choose = ds.slice(ds.indexOf("async function choose"));
+    ok("the gate is checked before the Nightscout exit", choose.indexOf("gateReady()") > 0 && choose.indexOf("gateReady()") < choose.indexOf("leaveNightscout(next)"));
+    ok("a free profile leaving CGM drops its switch", /else if \(!isProUser\) \{\s*try \{\s*await writeProfileFlag\(HEALTH_IMPORT_FLAG, profileId, false\)/.test(ds));
+  }
 
   finish();
 }

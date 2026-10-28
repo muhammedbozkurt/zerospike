@@ -141,7 +141,7 @@ async function main(): Promise<void> {
     ok("the Play link is Health Connect's listing", avail.HEALTH_CONNECT_PLAY_URL.includes("com.google.android.apps.healthdata"));
     const onb = read("app/onboarding.tsx");
     ok("onboarding dims the CGM card and explains", onb.includes("dimmed={opt === \"cgm\" && hcGate !== \"ready\"}") && onb.includes("onboarding.measureCgmNeedsHcUpdate"));
-    ok("picking it opens the listing instead of asking", /hcGate !== "ready"\) \{\s*void Linking\.openURL\(HEALTH_CONNECT_PLAY_URL\)/.test(onb));
+    ok("picking it opens the listing instead of asking", /hcGate !== "ready" && \(await cgmChoiceGateNow\([^)]*\)\) !== "ready"\) \{\s*void Linking\.openURL\(HEALTH_CONNECT_PLAY_URL\)/.test(onb));
     const ds = read("app/settings/data-sources.tsx");
     ok("data sources dims it too", ds.includes('dimmed: hcGate !== "ready"'));
     const dash = read("app/(tabs)/index.tsx");

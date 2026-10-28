@@ -1,6 +1,9 @@
 import type { TranslationSchema } from "./tr";
 
-const ar: TranslationSchema = {
+// The cgmInsights day counts carry Arabic's own plural forms (i18next v3 suffixes
+// _3 for 3-10, _4 for 11-99, _5 for 100 and up): "7 أيام", "14 يومًا", "100 يوم".
+// The other languages have one form, so these keys exist here only.
+const ar: TranslationSchema & { cgmInsights: Record<string, string> } = {
   common: {
     saveFailed: "تعذّر الحفظ. يرجى المحاولة مرة أخرى.",
     showMore: "عرض المزيد",
@@ -1230,7 +1233,13 @@ const ar: TranslationSchema = {
     basisAll: "البيانات: جميع القراءات من المستشعر والمدخلة يدويًا · تغطية CGM {{pct}}",
     coverage: "تغطية CGM",
     coverageLine: "خلال آخر {{days}} يوم: تغطية CGM {{pct}}",
+    coverageLine_3: "خلال آخر {{days}} أيام: تغطية CGM {{pct}}",
+    coverageLine_4: "خلال آخر {{days}} يومًا: تغطية CGM {{pct}}",
+    coverageLine_5: "خلال آخر {{days}} يوم: تغطية CGM {{pct}}",
     gmiNeedCoverage: "يتطلب GMI تغطية CGM لا تقل عن {{pct}} خلال الفترة المحددة البالغة {{days}} يوم.",
+    gmiNeedCoverage_3: "يتطلب GMI تغطية CGM لا تقل عن {{pct}} خلال الفترة المحددة البالغة {{days}} أيام.",
+    gmiNeedCoverage_4: "يتطلب GMI تغطية CGM لا تقل عن {{pct}} خلال الفترة المحددة البالغة {{days}} يومًا.",
+    gmiNeedCoverage_5: "يتطلب GMI تغطية CGM لا تقل عن {{pct}} خلال الفترة المحددة البالغة {{days}} يوم.",
     legendHourly: "الوسيط الساعي لـ CGM",
     reportBelowPeriods: "الفترات تحت النطاق المستهدف",
     reportDuration: "المدة",

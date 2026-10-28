@@ -515,7 +515,7 @@ async function main() {
     eq("a finished import is not reused", again, 1);
 
     const wired = src("lib/services/health.ts");
-    ok("health.ts shares imports through the tested helper", /importShare\.share\(profileId/.test(wired));
+    ok("health.ts shares imports through the tested helper", /importShare\.share\((profileId|key),/.test(wired));
   });
 
   await section("G. wiring", async () => {

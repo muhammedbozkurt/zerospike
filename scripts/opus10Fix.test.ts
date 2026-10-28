@@ -308,7 +308,7 @@ async function main() {
     const ids = new Set(rows.map((r) => r.id));
     ok("twins mode drops the twin, keeps sensor and typed rows", !ids.has("tw") && ids.has("s") && ids.has("ty"));
     const index = readFileSync(join(import.meta.dirname, "..", "app/(tabs)/index.tsx"), "utf8");
-    ok("dashboard stats feed asks for twins out in manual mode", /cgmActive \? \{ cgm: "exclude" \} : \{ cgm: "twins" \}/.test(index));
+    ok("dashboard stats feed leaves sensor rows out in every mode (G253 FIX-A-2: Today and This week on one base)", /getJournal\(activeProfile\.id, lang, loadLimit, undefined, \{ cgm: "exclude" \}\)/.test(index));
   }
 
   console.log("Perf: 26k sensor + 26k twins, no full scan");

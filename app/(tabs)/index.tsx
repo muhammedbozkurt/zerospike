@@ -123,6 +123,7 @@ import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
 import { useHealthAvailable, useHealthConnectStatus } from "../../lib/services/healthAvailability";
 import { connectHealthSync } from "../../lib/cgm/connectSync";
 import { healthImportAllowed } from "../../lib/cgm/importPolicy";
+import { decideFlagRefresh } from "../../lib/cgm/flagRefresh";
 import { cgmChoiceGate, HEALTH_CONNECT_PLAY_URL } from "../../lib/cgm/sourceAvailability";
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLog, maybeRequestReview, noteStreakAndMaybeReview, crossedStreak7 } from "../../lib/services/review";
@@ -470,8 +471,8 @@ export default function DashboardScreen() {
     });
   }
   const healthFlow = flowRef.current;
-  const latestRef = useRef({ runSync, toggleCgm, resumeFreeSync });
-  latestRef.current = { runSync, toggleCgm, resumeFreeSync };
+  const latestRef = useRef({ runSync, toggleCgm, resumeFreeSync, refreshHealthFlag });
+  latestRef.current = { runSync, toggleCgm, resumeFreeSync, refreshHealthFlag };
   // A run that found the screen covered for too long asks again once it
   // clears, but only for the profile that asked and only while that profile's
   // Health switch is on (a profile switch in between drops it).
@@ -500,6 +501,9 @@ export default function DashboardScreen() {
       focusedRef.current = true;
       healthFlow.touch();
       flushRetry();
+      // Settings > Data sources may have turned the Health switch on while this
+      // screen sat underneath.
+      void latestRef.current.refreshHealthFlag();
       return () => {
         focusedRef.current = false;
         healthFlow.touch();
@@ -672,17 +676,13 @@ export default function DashboardScreen() {
       // opens on, and awaiting them one after the other doubled its first paint.
       const weekEnd = Date.now();
       const [feed, visible, ofKind, week] = await Promise.all([
-        // A sensor profile's stats feed leaves the sensor rows out: 300 of them
-        // would be a day and a half of readings and push every meal, dose and
-        // hand-entered reading out of the window. Its ring and curve read the
-        // sensor data through their own queries (components/CgmHomeCard.tsx).
-        getJournal(
-          activeProfile.id,
-          lang,
-          loadLimit,
-          undefined,
-          cgmActive ? { cgm: "exclude" } : { cgm: "twins" }
-        ),
+        // The stats feed leaves the sensor rows out for every profile: 300 of
+        // them would be a day and a half of readings and push every meal, dose
+        // and hand-entered reading out of the window, and "Today" and "This
+        // week" must stand on the same base (hand-entered readings only). A
+        // sensor profile's ring and curve read the sensor data through their own
+        // queries (components/CgmHomeCard.tsx).
+        getJournal(activeProfile.id, lang, loadLimit, undefined, { cgm: "exclude" }),
         getJournal(activeProfile.id, lang, loadLimit, undefined, {
           excludeCalculatorInjections: true,
           cgm: "exclude",
@@ -712,7 +712,7 @@ export default function DashboardScreen() {
       // screen falls back to its empty state instead.
       setLoaded(true);
     }
-  }, [activeProfile, lang, loadLimit, filter, cgmActive]);
+  }, [activeProfile, lang, loadLimit, filter]);
 
   useEffect(() => {
     load();
@@ -1134,10 +1134,37 @@ export default function DashboardScreen() {
     );
   }
 
-  /** A free profile has no background sync: coming back to the app is its refresh. */
+  /** A free profile has no background sync: coming back to the app is its refresh.
+   *  The stored switch decides, not this screen's copy of it (it may be older). */
   function resumeFreeSync() {
-    if (isProUser || !importAllowed || cgmOn !== true || syncing) return;
-    void runSync(false);
+    if (isProUser || !importAllowed || !activeProfile || syncing) return;
+    const profileId = activeProfile.id;
+    void readProfileFlag(CGM_KEY, profileId)
+      .then((on) => {
+        if (!on || activeProfileIdRef.current !== profileId) return;
+        setCgmOn(true);
+        void runSync(false);
+      })
+      .catch((err) => logCrash(err, { screen: "dashboard", load: "resumeSync" }));
+  }
+
+  /** Re-reads the stored Health switch when the screen is focused again and
+   *  follows it (turning the import on runs the first pull). */
+  async function refreshHealthFlag() {
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
+    let saved: boolean;
+    try {
+      saved = await readProfileFlag(CGM_KEY, profileId);
+    } catch (err) {
+      logCrash(err, { screen: "dashboard", load: "cgmPrefFocus" });
+      return;
+    }
+    if (activeProfileIdRef.current !== profileId) return;
+    const next = decideFlagRefresh({ allowed: importAllowed, cgmOn, syncing, saved });
+    if (next === "none") return;
+    setCgmOn(next === "on");
+    if (next === "on") void runSync(false);
   }
 
   async function finishSync(res: SyncResult, announce: boolean, manualBefore: number | null) {

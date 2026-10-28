@@ -1942,7 +1942,10 @@ export async function importHealthGlucose(
   // the one running import for the profile instead of racing the dedup read.
   // A run that never settled (a system dialog iOS could not present) must not
   // be handed to every later caller: past IMPORT_STALE_MS a fresh one starts.
-  return importShare.share(profileId, () => runImportHealthGlucose(profileId, source, opts));
+  // The window is part of the key: a 24 hour free run in flight must not be
+  // handed to a caller that asked for the full import (and the reverse).
+  const key = opts.freeWindow === true ? `${profileId}#free` : profileId;
+  return importShare.share(key, () => runImportHealthGlucose(profileId, source, opts));
 }
 
 export interface HealthImportOptions {

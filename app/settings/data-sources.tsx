@@ -21,6 +21,7 @@ import {
 import { cgmDetected, countCgmReadingsLast24h } from "../../lib/db/cgmSql";
 import {
   cgmChoiceGate,
+  cgmChoiceGateNow,
   HEALTH_CONNECT_PLAY_URL,
   nightscoutAvailable as nightscoutEnabled,
 } from "../../lib/cgm/sourceAvailability";
@@ -34,7 +35,12 @@ import { countNightscoutReadings } from "../../lib/nightscout/localData";
 import { safeNightscoutError } from "../../lib/nightscout/safeError";
 import type { NsState, NsTestDetail } from "../../lib/nightscout/sync";
 import { parseNightscoutUrl } from "../../lib/nightscout/url";
-import { hasHealthProvider, importHealthGlucose, requestHealthPermissions } from "../../lib/services/health";
+import {
+  getHealthConnectStatus,
+  hasHealthProvider,
+  importHealthGlucose,
+  requestHealthPermissions,
+} from "../../lib/services/health";
 import { registerHealthBackground } from "../../lib/services/healthBackground";
 import {
   connectNightscoutFor,
@@ -468,6 +474,15 @@ export default function DataSourcesScreen() {
     }
   }
 
+  // Health Connect usable right now? A stale "not installed" (the person just came
+  // back from Play) is re-asked first; a gate that stays closed opens the listing.
+  async function gateReady(): Promise<boolean> {
+    if (hcGate === "ready") return true;
+    if ((await cgmChoiceGateNow(Platform.OS, getHealthConnectStatus)) === "ready") return true;
+    void Linking.openURL(HEALTH_CONNECT_PLAY_URL).catch(() => {});
+    return false;
+  }
+
   async function switchTo(next: CgmMode) {
     if (!profileId) return;
     try {
@@ -482,6 +497,17 @@ export default function DataSourcesScreen() {
     // Choosing CGM is also asking for the readings: the permission sheet, then
     // the import switch, then a first pull (lib/cgm/connectSync).
     if (next === "cgm") void enableSync();
+    // A free profile only imports in CGM mode. Leaving it turns its switch off,
+    // so the dashboard has no "auto-sync is now Pro" notice to show for a switch
+    // the person set themselves a moment ago.
+    else if (!isProUser) {
+      try {
+        await writeProfileFlag(HEALTH_IMPORT_FLAG, profileId, false);
+        setSyncOn(false);
+      } catch (err) {
+        logCrash(err, { screen: "dataSources", op: "clearSync" });
+      }
+    }
   }
 
   // Health import on, through the same permission flow as the dashboard card.
@@ -489,10 +515,7 @@ export default function DataSourcesScreen() {
   // button stays for another try.
   async function enableSync() {
     if (!profileId || connecting) return;
-    if (hcGate !== "ready") {
-      void Linking.openURL(HEALTH_CONNECT_PLAY_URL).catch(() => {});
-      return;
-    }
+    if (!(await gateReady())) return;
     const flow = (flowRef.current ??= createHealthFlow({ isBlocked: () => false, clock: realClock }));
     try {
       await connectHealthSync(flow, {
@@ -581,18 +604,16 @@ export default function DataSourcesScreen() {
       if (mode !== "nightscout" || !nsConnected) setNsFormOpen(true);
       return;
     }
+    // Health Connect missing or waiting for its Play update: the mode would only
+    // wait for readings that cannot come, so the tap leads to the listing. Checked
+    // before anything else, the Nightscout exit included (it ends in this mode too).
+    if (next === "cgm" && next !== mode && !(await gateReady())) return;
     setNsFormOpen(false);
     if (mode === "nightscout") {
       await leaveNightscout(next);
       return;
     }
     if (next === mode) return;
-    // Health Connect missing or waiting for its Play update: the mode would only
-    // wait for readings that cannot come, so the tap leads to the listing.
-    if (next === "cgm" && hcGate !== "ready") {
-      void Linking.openURL(HEALTH_CONNECT_PLAY_URL).catch(() => {});
-      return;
-    }
     await switchTo(next);
   }
 
