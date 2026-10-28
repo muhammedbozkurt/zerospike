@@ -31,7 +31,6 @@ import {
   showConnectData,
   showReminderStep,
   sparkSpecs,
-  welcomeExitTarget,
   welcomeFeatures,
   welcomeLinksOpen,
   incompleteSteps,
@@ -43,6 +42,7 @@ import {
   withHealthMirror,
   type ProWelcomeState,
 } from "../lib/proWelcome";
+import { welcomeExitTarget } from "../lib/onboardingGate";
 // Type-only: makes tsc compile the service next to this file; it is loaded
 // further down, once its storage and analytics have been stubbed.
 import type * as ServiceApi from "../lib/services/proWelcome";
@@ -327,9 +327,9 @@ section("O. the welcome never opens on its own at launch");
   };
   for (const d of ["app", "lib", "components"]) walk(d);
   eq(
-    "only purchase results and explicit taps reach /pro-welcome",
+    "only purchase results (incl. the approval host, once per approval) and explicit taps reach /pro-welcome",
     sites.sort(),
-    ["app/downsell.tsx", "app/paywall.tsx", "app/pro-welcome.tsx", "app/settings/app.tsx", "app/winback.tsx", "components/TrialCard.tsx"].sort()
+    ["app/downsell.tsx", "app/paywall.tsx", "app/pro-welcome.tsx", "app/settings/app.tsx", "app/winback.tsx", "components/ProApprovalHost.tsx", "components/TrialCard.tsx"].sort()
   );
   ok("the launch layout never navigates to it", !/pro-welcome["']\)|pathname: "\/pro-welcome"/.test(src("app/_layout.tsx")));
   ok("Settings and the dashboard card are plain presses", /onPress=\{\(\) => router\.push\("\/pro-welcome"\)\}/.test(src("app/settings/app.tsx")) && /onPress=\{\(\) => router\.push\("\/pro-welcome"\)\}/.test(src("components/TrialCard.tsx")));

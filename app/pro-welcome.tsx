@@ -33,13 +33,13 @@ import {
   shouldReturnToWelcome,
   showConnectData,
   showReminderStep,
-  welcomeExitTarget,
   welcomeFeatures,
   welcomeLinksOpen,
   withHealthMirror,
   type ProWelcomeState,
   type WelcomeFeatureId,
 } from "../lib/proWelcome";
+import { welcomeExitTarget } from "../lib/onboardingGate";
 
 const FEATURE_ICON: Record<WelcomeFeatureId, keyof typeof Ionicons.glyphMap> = {
   insights: "analytics-outline",

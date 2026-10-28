@@ -208,16 +208,6 @@ export function sparkSpecs(count: number = SPARK_COUNT): SparkSpec[] {
 }
 
 /**
- * Where the welcome goes when it closes with nothing under it. A person who
- * bought Pro from inside onboarding (Nightscout needs it) has not finished it:
- * the route gate would throw them from the tab stack to the first quiz step, so
- * they return to /onboarding, which is still in the stack at the step they left.
- */
-export function welcomeExitTarget(onboardingDone: boolean): "/(tabs)" | "/onboarding" {
-  return onboardingDone ? "/(tabs)" : "/onboarding";
-}
-
-/**
  * Insights, reminders and the Health connect all live behind the onboarding
  * gate. Until onboarding is finished the welcome only celebrates and closes;
  * those shortcuts stay out of it (they are still in Settings afterwards).
