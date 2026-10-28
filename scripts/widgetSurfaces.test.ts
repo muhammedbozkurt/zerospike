@@ -105,6 +105,11 @@ const MIN = 60_000;
   assert.ok(/AppState\.addEventListener\("change"/.test(live), "liveData listens to AppState");
   assert.ok(/state === "background" \|\| state === "inactive"/.test(live));
   assert.ok(live.includes("coalescer.flush()"));
+  const sync = live.slice(live.indexOf("export async function syncLiveData("));
+  assert.ok(
+    /lastSynced = \{ profileId, unit \};[\s\S]*?ensureBackgroundFlush\(\);[\s\S]*?computeLiveData\(/.test(sync),
+    "syncLiveData arms the background flush before it publishes"
+  );
 }
 
 // ---------------------------------------------------------------- D-17

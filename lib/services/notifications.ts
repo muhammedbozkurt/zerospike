@@ -1865,7 +1865,9 @@ function ensurePostMealMigrated(): Promise<void> {
     // under its owner's ids here, after the move is visible to every reader.
     void run.then((outcome) => {
       if (typeof outcome === "object" && outcome != null) {
-        void rearmRunningPostMealForMode(outcome.owner);
+        void rearmRunningPostMealForMode(outcome.owner).catch((err) =>
+          logCrash(err, { service: "notifications", op: "migrateRearmPostMeal" })
+        );
       }
     });
   }
@@ -1885,6 +1887,12 @@ async function migrateLegacyPostMealTimer(): Promise<"none" | "defer" | { owner:
     if (plan.kind === "none") return "none";
     if (plan.kind === "defer") return "defer";
     if (plan.kind === "drop") {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
+      } catch (err) {
+        logCrash(err, { service: "notifications", op: "migrateCancelLegacyNotification" });
+      }
+      await cancelAlarm(POSTMEAL_ALARM_ID);
       await AsyncStorage.multiRemove(POSTMEAL_LEGACY_KEYS);
       return "none";
     }
@@ -1896,13 +1904,15 @@ async function migrateLegacyPostMealTimer(): Promise<"none" | "defer" | { owner:
         [keys.start, String(plan.startedAt)],
       ]);
     }
-    await AsyncStorage.multiRemove(POSTMEAL_LEGACY_KEYS);
+    // Cancel first: if a cancel throws, the legacy keys stay and the next
+    // process retries the whole move instead of orphaning a delivery.
     try {
       await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
     } catch (err) {
       logCrash(err, { service: "notifications", op: "migrateCancelLegacyNotification" });
     }
     await cancelAlarm(POSTMEAL_ALARM_ID);
+    await AsyncStorage.multiRemove(POSTMEAL_LEGACY_KEYS);
     return { owner: plan.ownerId };
   } catch (err) {
     // Unreadable storage: nothing moved, nothing lost; the next process retries.
@@ -2027,7 +2037,14 @@ export async function completePostMealTimer(profileId?: string): Promise<void> {
 }
 
 async function endPostMealActivityFor(owner: string): Promise<void> {
-  if (!(await postMealOwnerIsActive(owner))) return;
+  // A deleted owner can no longer be "the profile in use" (the active-profile
+  // read falls through to another one), and a card last drawn for this owner is
+  // theirs to take down; only a different, living profile's card is left alone.
+  const ownerGone =
+    owner !== POSTMEAL_DEVICE_OWNER && (await getProfile(owner).catch(() => undefined)) === null;
+  if (!ownerGone && postMealActivityOwner !== owner && !(await postMealOwnerIsActive(owner))) {
+    return;
+  }
   postMealActivityOwner = null;
   endPostMealActivity();
 }
@@ -2460,7 +2477,9 @@ async function syncPostMealActivityToActiveProfile(): Promise<void> {
       }
       return;
     }
-    if (postMealActivityOwner != null && postMealActivityOwner !== active.id) {
+    // null = the card's owner is unknown (fresh process): redraw rather than
+    // leave whichever profile's card the previous process put up.
+    if (postMealActivityOwner !== active.id) {
       await mirrorPostMealActivity(mine.endsAt, mine.startedAt, active.id);
     }
   } catch (err) {

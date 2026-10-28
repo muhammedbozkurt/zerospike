@@ -115,7 +115,7 @@ async function main(): Promise<void> {
     ok("a timed-out wait does not return", !/if \(!\(await sheetGate\.whenClear\(\)\)\) return/.test(src));
     ok("gate marked open", open > 0);
     ok("gate waited on", wait > open);
-    ok("wait precedes the low follow-up sheet", wait < at("await maybeOfferLowFollowup(value)"));
+    ok("wait precedes the low follow-up sheet", wait < at("await maybeOfferLowFollowup(value, addedSugar.id)"));
     ok("wait precedes the Health question", wait < at("await maybeAskHealthWrite(addedSugar)"));
     ok("wait precedes the review request", wait < at('maybeRequestReview("log_saved")'));
     ok("close reported by the sheet's onClose", /onClose=\{\(\) => \{\s*sheetGate\.markClosed\(\)/.test(src));

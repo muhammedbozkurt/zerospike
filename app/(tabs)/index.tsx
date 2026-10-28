@@ -774,18 +774,6 @@ export default function DashboardScreen() {
         setQuickAddMedDirect(true);
         setQuickAddOpen(true);
       } else if (s === "post_meal_2h") {
-        // Profile lock (B): a post-meal reminder tap only opens the 2h sheet
-        // when the running timer is actually this profile's own - a legacy
-        // timer with no recorded owner still opens it (see the card below).
-        const timer = await getPostMealTimerState(activeProfile.id);
-        if (timer && timer.profileId != null && timer.profileId !== activeProfile.id) {
-          // Say so rather than dying silently: the notification, the widget or
-          // the alarm that led here is real, it just belongs to whoever was
-          // using the app when the meal happened.
-          toast(t("dashboard.postMealOtherProfile"), "info");
-          router.setParams({ sheet: "" });
-          return;
-        }
         setEditGlucose(null);
         setInitialPeriod("post_meal_2h");
         setSheetOpen(true);
