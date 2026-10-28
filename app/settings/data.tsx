@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Platform, Pressable, Share, Switch, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../../lib/store/AppContext";
 import { deleteProfile, listProfiles } from "../../lib/db/profiles";
 import { clearAllLogs } from "../../lib/db/index";
+import { logCrash } from "../../lib/analytics";
 import { exportLogsCsv } from "../../lib/services/export";
 import { exportLogsPdf, type ReportMode } from "../../lib/services/report";
 import { maybeRequestReview } from "../../lib/services/review";
@@ -84,6 +85,8 @@ import { getDeviceId, isInstallId } from "../../lib/identity/deviceId";
 import { switchProps } from "../../lib/a11y";
 
 const PDF_MODE_KEY = "zerospike.pdfMode";
+// Longer than an iOS Modal slide-out; only matters if onDismiss never arrives.
+const PICKER_DISMISS_FALLBACK_MS = 1200;
 
 /** Row's sub line is fixed at one line, and long translations (German at large
  *  font sizes) were cut off; this is the Row layout with a two-line sub. */
@@ -204,28 +207,63 @@ export default function DataSettings() {
     return t(p.stage === "analyzing" ? "export.progressAnalyzing" : "export.progressRendering");
   }
 
+  // One export at a time, CSV or PDF: a second tap while the first is writing
+  // used to append a second copy into the same file. A ref, not the state: two
+  // taps in one frame both see the state still false.
+  const busyRef = useRef(false);
+  const runIdRef = useRef(0);
+
+  function beginExport(kind: "csv" | "pdf"): number | null {
+    if (busyRef.current) return null;
+    busyRef.current = true;
+    const id = ++runIdRef.current;
+    if (kind === "csv") setExporting(true);
+    else setExportingPdf(true);
+    setExportProgress({ stage: "reading", done: 0, total: 0 });
+    return id;
+  }
+
+  function endExport(id: number) {
+    if (runIdRef.current !== id) return;
+    busyRef.current = false;
+    setExporting(false);
+    setExportingPdf(false);
+    setExportProgress(null);
+  }
+
+  // The share sheet ends the busy state: its promise settles only after the sheet
+  // is dismissed, and never when iOS fails to present it.
+  function progressFor(id: number) {
+    return (p: ExportProgress) => {
+      if (runIdRef.current !== id) return;
+      if (p.stage === "sharing") endExport(id);
+      else setExportProgress(p);
+    };
+  }
+
   async function runCsv(range?: PickedRange) {
     if (!activeProfile) return;
-    setExporting(true);
-    setExportProgress({ stage: "reading", done: 0, total: 0 });
-    let res: Awaited<ReturnType<typeof exportLogsCsv>>;
+    const id = beginExport("csv");
+    if (id == null) return;
     try {
-      res = await exportLogsCsv(
+      const res = await exportLogsCsv(
         activeProfile.id,
         displayProfileName(activeProfile, t),
         unit,
         range,
         insulinModeUsesInsulin(insulinModeOf(activeProfile)),
-        setExportProgress
+        progressFor(id)
       );
+      if (!res.ok) {
+        toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");
+      } else if (res.truncated) {
+        toast(cutNote(res.truncated), "info");
+      }
+    } catch (err) {
+      logCrash(err, { screen: "settings.data", op: "exportCsv" });
+      toast(t("export.failed"), "error");
     } finally {
-      setExporting(false);
-      setExportProgress(null);
-    }
-    if (!res.ok) {
-      toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");
-    } else if (res.truncated) {
-      toast(cutNote(res.truncated), "info");
+      endExport(id);
     }
   }
 
@@ -238,8 +276,17 @@ export default function DataSettings() {
     );
   }
 
+  const pendingRangeRef = useRef<{ mode: "pdf" | "csv"; range: PickedRange } | null>(null);
+  function startPendingRange() {
+    const pending = pendingRangeRef.current;
+    pendingRangeRef.current = null;
+    if (!pending) return;
+    if (pending.mode === "pdf") void runPdf(30, pending.range);
+    else void runCsv(pending.range);
+  }
+
   function onExport() {
-    if (!activeProfile) return;
+    if (!activeProfile || busyRef.current) return;
     if (!isProUser) {
       router.push({ pathname: "/paywall", params: { reason: "export" } });
       return;
@@ -255,28 +302,29 @@ export default function DataSettings() {
 
   async function runPdf(days: number, range?: PickedRange) {
     if (!activeProfile) return;
-    setExportingPdf(true);
-    setExportProgress({ stage: "reading", done: 0, total: 0 });
-    let res: Awaited<ReturnType<typeof exportLogsPdf>>;
+    const id = beginExport("pdf");
+    if (id == null) return;
     try {
-      res = await exportLogsPdf(activeProfile, days, range, {
+      const res = await exportLogsPdf(activeProfile, days, range, {
         mode: pdfMode,
-        onProgress: setExportProgress,
+        onProgress: progressFor(id),
       });
+      if (res.ok) {
+        toast(res.truncated ? `${t("report.created")} ${cutNote(res.truncated)}` : t("report.created"), "success");
+        void maybeRequestReview("pdf_export_success");
+      } else {
+        toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");
+      }
+    } catch (err) {
+      logCrash(err, { screen: "settings.data", op: "exportPdf" });
+      toast(t("export.failed"), "error");
     } finally {
-      setExportingPdf(false);
-      setExportProgress(null);
-    }
-    if (res.ok) {
-      toast(res.truncated ? `${t("report.created")} ${cutNote(res.truncated)}` : t("report.created"), "success");
-      void maybeRequestReview("pdf_export_success");
-    } else {
-      toast(res.reason === "noData" ? t("export.noData") : t("export.sharingUnavailable"), "error");
+      endExport(id);
     }
   }
 
   function onExportPdf() {
-    if (!activeProfile) return;
+    if (!activeProfile || busyRef.current) return;
     if (!isProUser) {
       router.push({ pathname: "/paywall", params: { reason: "export" } });
       return;
@@ -720,11 +768,21 @@ export default function DataSettings() {
           initialEnd={new Date()}
           locale={formatLocale()}
           onCancel={() => setRangePicker(null)}
+          onDismissed={startPendingRange}
           onConfirm={(range: PickedRange) => {
             const mode = rangePicker;
             setRangePicker(null);
-            if (mode === "pdf") void runPdf(30, range);
-            else if (mode === "csv") void runCsv(range);
+            if (mode == null) return;
+            // iOS cannot present the share sheet while this Modal is still
+            // animating out: the share call then never settles. The export waits
+            // for the Modal's onDismiss (with a timer in case it never fires);
+            // Android has no such callback and no such problem.
+            if (Platform.OS !== "ios") {
+              void (mode === "pdf" ? runPdf(30, range) : runCsv(range));
+              return;
+            }
+            pendingRangeRef.current = { mode, range };
+            setTimeout(startPendingRange, PICKER_DISMISS_FALLBACK_MS);
           }}
         />
       }

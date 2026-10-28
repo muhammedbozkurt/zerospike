@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   I18nManager,
   Platform,
@@ -20,7 +20,7 @@ import { useApp } from "../lib/store/AppContext";
 import { listMealLogs } from "../lib/db/logs";
 import { listInsightsSugar } from "../lib/db/sugarRange";
 import { GMI_MIN_COVERAGE, GMI_MIN_WINDOW_DAYS, timeOf } from "../lib/cgm/metrics";
-import { basisLine, coverageLine } from "../lib/cgm/basisText";
+import { basisLine, coverageLine, windowDaysText } from "../lib/cgm/basisText";
 import { getInjections } from "../lib/db/injections";
 import { getFood } from "../lib/db/foods";
 import {
@@ -88,7 +88,7 @@ import { Skeleton } from "../components/Skeleton";
 import { EmptyExample, EmptyState } from "../components/EmptyState";
 import { insightsNeedsData } from "../lib/emptyStates";
 import { useFeedback } from "../components/Feedback";
-import { logEvent } from "../lib/analytics";
+import { logCrash, logEvent } from "../lib/analytics";
 import { formatLocale, num, pct, pctParts } from "../lib/format";
 import { useProCta } from "../lib/proCta";
 import {
@@ -395,7 +395,7 @@ export default function InsightsScreen() {
   const proCta = useProCta(!isProUser);
   const { isWide } = useLayout();
   const narrowWeekly = isWide && windowWidth < 700;
-  const { actionSheet } = useFeedback();
+  const { actionSheet, toast } = useFeedback();
   const rtl = I18nManager.isRTL;
   // Tablet: the report is centred and capped instead of stretching edge to edge.
   const bodyColumn: ViewStyle | undefined = isWide
@@ -495,6 +495,9 @@ export default function InsightsScreen() {
     return { start, end };
   }, [customRange]);
 
+  // The profile whose rows are in state: another profile's rows must not be
+  // drawn against this profile's band while its own load is still running.
+  const loadedProfileRef = useRef<string | null>(null);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -502,16 +505,29 @@ export default function InsightsScreen() {
         setLoading(false);
         return;
       }
-      const [s, m, inj] = await Promise.all([
-        // Hand-entered rows (newest 2000) plus every sensor reading as lean rows.
-        listInsightsSugar(activeProfile.id, fetchRange),
-        listMealLogs(activeProfile.id, 2000, fetchRange),
-        getInjections(activeProfile.id, 2000, fetchRange),
-      ]);
-      if (!alive) return;
-      setSugar(s);
-      setMeals(m);
-      setInjections(inj);
+      if (loadedProfileRef.current !== activeProfile.id) {
+        setSugar([]);
+        setMeals([]);
+        setInjections([]);
+        setLoading(true);
+      }
+      try {
+        const [s, m, inj] = await Promise.all([
+          // Hand-entered rows (newest 2000) plus every sensor reading as lean rows.
+          listInsightsSugar(activeProfile.id, fetchRange),
+          listMealLogs(activeProfile.id, 2000, fetchRange),
+          getInjections(activeProfile.id, 2000, fetchRange),
+        ]);
+        if (!alive) return;
+        loadedProfileRef.current = activeProfile.id;
+        setSugar(s);
+        setMeals(m);
+        setInjections(inj);
+      } catch (err) {
+        if (!alive) return;
+        logCrash(err, { screen: "insights", op: "load" });
+        toast(t("insights.loadFailed"), "error");
+      }
       setLoading(false);
     })();
     return () => {
@@ -577,6 +593,9 @@ export default function InsightsScreen() {
   // Free users see only the 7-day basic summary fully; 30/90 render as a blurred
   // preview behind a lock (curiosity gap, not an empty screen).
   const locked = !isProUser && (windowDays !== FREE_INSIGHTS_WINDOW || customRange != null);
+  // The window the user picked, in days: what the GMI and coverage hints quote.
+  const selWindowDays = customRange ? rangeWindowDays(customRange) : windowDays;
+  const gmiReason = data.gmi == null ? gmiWithheldReason(data, selWindowDays) : null;
   // Enough blurred report to create the curiosity gap, never more than fits on
   // screen (the unlock card is centred inside it).
   const lockedPreviewHeight = Math.max(360, windowHeight - insets.top - insets.bottom - 120);
@@ -1371,11 +1390,11 @@ export default function InsightsScreen() {
                         <StatCard
                           glass
                           label={t("cgmInsights.coverage")}
-                          a11yLabel={coverageLine(t, data.days, data.cgmCoverage)}
+                          a11yLabel={coverageLine(t, selWindowDays, data.cgmCoverage)}
                           display={pctNum(data.cgmCoverage)}
                           suffix={PCT_SIGN.sign}
                           suffixFirst={PCT_SIGN.signFirst}
-                          footnote={t("insights.windowDays", { n: data.days })}
+                          footnote={windowDaysText(t, data.days)}
                           style={{ flex: 1 }}
                         />
                       ) : (
@@ -1383,7 +1402,7 @@ export default function InsightsScreen() {
                           glass
                           label={t("insights.readings")}
                           display={String(data.readings)}
-                          footnote={t("insights.windowDays", { n: data.days })}
+                          footnote={windowDaysText(t, data.days)}
                           style={{ flex: 1 }}
                         />
                       )}
@@ -1416,16 +1435,46 @@ export default function InsightsScreen() {
                     >
                       {data.gmi != null
                         ? t("insights.gmiExplain")
-                        : gmiWithheldReason(data) === "coverage"
-                          ? t("cgmInsights.gmiNeedCoverage", {
+                        : gmiReason === "window"
+                          ? t("insights.gmiNeedWindow", {
                               days: GMI_MIN_WINDOW_DAYS,
-                              pct: pct(GMI_MIN_COVERAGE * 100),
+                              window: windowDaysText(t, selWindowDays),
                             })
-                          : t("insights.gmiNeedMore", {
-                              n: GMI_MIN_READINGS,
-                              days: GMI_MIN_SPAN_DAYS,
-                            })}
+                          : gmiReason === "coverage"
+                            ? t("cgmInsights.gmiNeedCoverage", {
+                                days: selWindowDays,
+                                pct: pct(GMI_MIN_COVERAGE * 100),
+                              })
+                            : t("insights.gmiNeedMore", {
+                                n: GMI_MIN_READINGS,
+                                days: GMI_MIN_SPAN_DAYS,
+                              })}
                     </Text>
+                    {gmiReason === "window" && !isProUser ? (
+                      <Pressable
+                        onPress={() =>
+                          router.push({ pathname: "/paywall", params: { reason: "insights" } })
+                        }
+                        android_ripple={{ color: withAlpha(THEME.accent, RIPPLE_ALPHA), foreground: true }}
+                        accessibilityRole="button"
+                        className="flex-row items-center active:opacity-80"
+                        style={{ minHeight: 44, paddingHorizontal: 6, marginTop: 2 }}
+                      >
+                        <Ionicons name="lock-closed-outline" size={14} color={THEME.accent} />
+                        <Text
+                          style={{
+                            color: THEME.accent,
+                            fontSize: 12,
+                            fontWeight: "600",
+                            flex: 1,
+                            marginLeft: 6,
+                          }}
+                        >
+                          {t("insights.gmiProWindow")}
+                        </Text>
+                        <DirIcon name="chevron-forward" size={14} color={THEME.accent} />
+                      </Pressable>
+                    ) : null}
                     </React.Fragment>
                   ) : null}
 
@@ -2291,7 +2340,13 @@ export default function InsightsScreen() {
                 <BlurView
                   intensity={24}
                   tint="dark"
-                  style={StyleSheet.absoluteFill}
+                  // Android's BlurView draws no blur, only a ~16 % dark wash, which
+                  // left the real 30/90 day figures readable behind the lock. There
+                  // the layer is fully opaque: the unlock card alone shows.
+                  style={[
+                    StyleSheet.absoluteFill,
+                    Platform.OS === "android" ? { backgroundColor: THEME.bg.base } : null,
+                  ]}
                   className="items-center justify-center overflow-hidden rounded-2xl"
                   accessibilityViewIsModal
                 >

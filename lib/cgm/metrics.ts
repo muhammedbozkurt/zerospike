@@ -39,6 +39,11 @@ const DAY_MS = 86_400_000;
 /** A 14-day pick that ends at 23:59 on its last day is a hair under 14 days. */
 const GMI_MIN_WINDOW_MS = (GMI_MIN_WINDOW_DAYS - 0.5) * DAY_MS;
 
+/** Whether a window of this many days can ever carry a GMI. */
+export function windowFitsGmi(windowDays: number): boolean {
+  return windowDays * DAY_MS >= GMI_MIN_WINDOW_MS;
+}
+
 export function isCgmPoint(p: GlucosePoint): boolean {
   return p.is_cgm === 1 || p.is_cgm === true;
 }

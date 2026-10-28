@@ -26,10 +26,17 @@ export type ExportResult =
 
 export { EXPORT_MAX_ROWS };
 
-/** Quotes a field when it contains the active delimiter, a quote or a newline. */
-function csvEscape(value: string | number | null | undefined, delim: string): string {
+/** A plain number as this file writes them (optional minus, dot or comma decimal). */
+const PLAIN_NUMBER = /^-?\d+(?:[.,]\d+)?$/;
+/** A spreadsheet reads a cell opening with one of these as a formula (OWASP CSV injection). */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
+/** Quotes a field when it contains the active delimiter, a quote or a newline. Text
+ *  that would open as a formula gets a leading apostrophe; real numbers stay numbers. */
+export function csvEscape(value: string | number | null | undefined, delim: string): string {
   if (value == null) return "";
-  const s = String(value);
+  let s = String(value);
+  if (typeof value === "string" && FORMULA_LEAD.test(s) && !PLAIN_NUMBER.test(s)) s = `'${s}`;
   if (s.includes('"') || s.includes("\n") || s.includes("\r") || s.includes(delim)) {
     return `"${s.replace(/"/g, '""')}"`;
   }
@@ -138,8 +145,8 @@ export async function exportLogsCsv(
   const effectiveUsesInsulin = usesInsulin || sawInjection;
 
   // Locales whose decimal mark is a comma (tr/de/es/fr/it/pt) get a ";"
-  // delimiter, a comma decimal, and a leading `sep=;` hint so Excel splits
-  // columns correctly instead of pasting every row into one cell. en/ja/ar write
+  // delimiter and a comma decimal, so Excel splits columns correctly
+  // instead of pasting every row into one cell. en/ja/ar write
   // the dot, so they keep the "," format - and the list is lib/format's own, the
   // same one the Intl-formatted glucose column is written from, so a file can
   // never carry a dotted reading in a comma-decimal sheet.
@@ -257,10 +264,11 @@ export async function exportLogsCsv(
   const fileUri = `${FileSystem.cacheDirectory}zerospike_${safeName}_${stamp}.csv`;
   await FileSystem.deleteAsync(fileUri, { idempotent: true });
 
-  // UTF-8 BOM so Excel renders Turkish characters correctly, plus a `sep=` hint
-  // for the comma-decimal locales so Excel picks the right delimiter.
-  const sepLine = decimalComma ? `sep=${delim}\r\n` : "";
-  const header = "﻿" + sepLine + line(headers);
+  // UTF-8 BOM so Excel renders Turkish characters correctly. No `sep=` line:
+  // Excel then ignores the BOM and reads the file as ANSI, which garbles every
+  // non-ASCII header and note in the tr/de/fr/es/it/pt files. Those locales use
+  // ";" as Excel's own list separator, so the delimiter alone splits the columns.
+  const header = "﻿" + line(headers);
 
   // Trailing medical disclaimer so the doctor-facing export is never read as
   // prescriptive (blank separator row keeps it clear of the data table).
@@ -342,6 +350,7 @@ export async function exportLogsCsv(
     return { ok: false, reason: "sharingUnavailable" };
   }
 
+  onProgress?.({ stage: "sharing" });
   await Sharing.shareAsync(fileUri, {
     mimeType: "text/csv",
     dialogTitle: i18n.t("export.title"),

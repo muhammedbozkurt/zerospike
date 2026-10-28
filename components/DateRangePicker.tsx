@@ -47,6 +47,7 @@ export function DateRangePicker({
   locale,
   onCancel,
   onConfirm,
+  onDismissed,
 }: {
   visible: boolean;
   minDate: Date;
@@ -56,6 +57,8 @@ export function DateRangePicker({
   locale?: string;
   onCancel: () => void;
   onConfirm: (range: PickedRange) => void;
+  /** iOS only: the Modal has finished closing (RN never calls it on Android). */
+  onDismissed?: () => void;
 }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -104,7 +107,7 @@ export function DateRangePicker({
       minimumDate={minDate}
       maximumDate={maxDate}
       locale={locale}
-      themeVariant="dark"
+      themeVariant={THEME.scheme}
       onChange={(e: DateTimePickerEvent, date?: Date) => {
         if (Platform.OS === "android") setOpen(null);
         if (e.type === "dismissed" || !date) return;
@@ -120,7 +123,7 @@ export function DateRangePicker({
   );
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel} onDismiss={onDismissed}>
       <Pressable
         style={{ flex: 1, justifyContent: "flex-end", backgroundColor: SCRIM }}
         onPress={onCancel}

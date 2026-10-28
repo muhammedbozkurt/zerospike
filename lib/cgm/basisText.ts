@@ -22,8 +22,11 @@ export function sourceNames(t: T, os: string, sources: CgmSourceKind[]): string 
 
 /**
  * "Data: CGM (Apple Health, Nightscout) · coverage 86 % · 42 manual readings" or
- * "Data: manual readings · CGM coverage 12 %"; null when no sensor reading
- * exists, so a profile that never had a sensor sees no such line.
+ * "Data: all readings, sensor and manual · CGM coverage 12 %"; null when no sensor
+ * reading exists, so a profile that never had a sensor sees no such line. Below
+ * half coverage the figures come from the WHOLE set (sensor and hand-entered
+ * together, see selectGlucoseBasis), so the label names that set, not the
+ * hand-entered readings alone.
  */
 export function basisLine(t: T, os: string, b: BasisSummary): string | null {
   if (b.cgmCoverage == null) return null;
@@ -34,10 +37,16 @@ export function basisLine(t: T, os: string, b: BasisSummary): string | null {
       ? t("cgmInsights.basisCgmManual", { sources, pct: coverage, n: b.manualReadings })
       : t("cgmInsights.basisCgm", { sources, pct: coverage });
   }
-  return t("cgmInsights.basisManual", { pct: coverage });
+  return t("cgmInsights.basisAll", { pct: coverage });
+}
+
+/** "7 days", or "1 day" for a single day. */
+export function windowDaysText(t: T, n: number): string {
+  return n === 1 ? t("insights.windowOneDay") : t("insights.windowDays", { n });
 }
 
 /** "In the last 14 days, 92 % CGM coverage". */
 export function coverageLine(t: T, days: number, coveragePct: number): string {
+  if (days <= 1) return `${t("cgmInsights.coverage")}: ${pct(coveragePct)}`;
   return t("cgmInsights.coverageLine", { days, pct: pct(coveragePct) });
 }

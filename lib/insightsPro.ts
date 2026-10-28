@@ -12,6 +12,7 @@ import {
   computeMealResponse,
 } from "./mealResponse";
 import { selectGlucoseBasis, timeOf, type MetricsWindow } from "./cgm/metrics";
+import { inTargetBand } from "./glucose";
 
 /**
  * Pro "Insights", wave 2: pure calculation layer (docs/plan-2.2.0.md D10).
@@ -58,7 +59,7 @@ function cvOf(vals: number[]): number | null {
 
 function tirOf(vals: number[], band: TirBand): number | null {
   if (vals.length === 0) return null;
-  return (vals.filter((v) => v >= band.low && v <= band.high).length / vals.length) * 100;
+  return (vals.filter((v) => inTargetBand(v, band)).length / vals.length) * 100;
 }
 
 function pad2(n: number): string {
