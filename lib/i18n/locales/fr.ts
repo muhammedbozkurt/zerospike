@@ -115,7 +115,7 @@ const fr: TranslationSchema = {
     qTargets: "Vos plages cibles",
     qTargetsHintTracking: "Ce sont des plages de référence générales. Vous pouvez aussi définir votre plage cible avec votre médecin.",
     qPostmealHint: "Votre objectif environ 2 heures après avoir mangé.",
-    qCarbRatio: "Votre ratio glucidique",
+    qCarbRatio: "Votre ratio glucidique (g pour 1 unité)",
     qCarbRatioHint: "Grammes de glucides couverts par 1 unité (défini par votre équipe soignante).",
     qIsf: "Votre facteur de correction (ISF)",
     qIsfHint: "De combien 1 unité baisse votre glycémie (défini par votre équipe soignante).",
@@ -329,7 +329,15 @@ const fr: TranslationSchema = {
   ratio: {
     line: "Votre ratio ({{slot}}) : {{ratio}}",
     enter: "Saisissez vos ratios",
-    confirm: "Confirmez vos ratios",
+  },
+  ratioConfirm: {
+    until: "Le calcul ne s'affiche pas tant que vous n'avez pas donné cette confirmation.",
+    enterTitle: "Le calcul a besoin de vos ratios",
+    enterBody: "Saisissez votre ratio glucidique et votre ISF, tels que définis avec votre équipe diabète. Le calcul s'affiche après votre confirmation.",
+    confirmTitle: "Le calcul a besoin de votre confirmation",
+    confirmBody: "Si vous avez défini vos ratios avec votre équipe diabète, confirmez-les. Le calcul s'affiche ensuite.",
+    confirmAction: "Confirmer les ratios",
+    savedReminder: "Ratios enregistrés. Le calcul ne s'affiche qu'après votre confirmation.",
   },
   food: {
     category: "Catégorie",
@@ -407,7 +415,6 @@ const fr: TranslationSchema = {
     manualDose: "Dose appliquée (unités)",
     currentGlucose: "Glycémie actuelle (facultatif)",
     glucoseOffer: "Dernière mesure {{value}} {{unit}}, touchez pour l'utiliser",
-    pending: "En attente de confirmation",
     addPhoto: "Ajouter une photo",
     takePhoto: "Prendre une photo",
     choosePhoto: "Choisir dans la galerie",
@@ -455,7 +462,7 @@ const fr: TranslationSchema = {
     setup: {
       title: "Vos ratios",
       body: "Cet écran calcule à partir de deux valeurs que votre équipe soignante vous a données. Saisissez-les une seule fois. Elles restent dans votre profil et vous pouvez les modifier à tout moment dans les Réglages.",
-      carbLabel: "Votre ratio glucidique",
+      carbLabel: "Votre ratio glucidique (g pour 1 unité)",
       carbHint: "Grammes de glucides couverts par 1 unité (défini par votre équipe soignante).",
       isfLabel: "Votre facteur de correction (ISF)",
       isfHint: "De combien 1 unité baisse votre glycémie (défini par votre équipe soignante).",
@@ -463,7 +470,6 @@ const fr: TranslationSchema = {
       bodyFilled: "Vos valeurs sont enregistrées. Il vous suffit de les confirmer.",
       teamNote: "Définissez vos ratios avec votre équipe diabète.",
       confirm: "J'ai défini ces ratios avec mon équipe diabète",
-      hint: "Le total calculé s'affiche dès que vous cochez la case",
     },
   },
   iob: {

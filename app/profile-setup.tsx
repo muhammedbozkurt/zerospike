@@ -30,7 +30,7 @@ import type { DiabetesType, GlucoseUnit, InsulinMode } from "../lib/db/types";
 import { FormCard, InputRow, ActionRow } from "../components/form";
 import { RangeInput } from "../components/RangeInput";
 import { CarbRatioInput, IsfInput } from "../components/RatioInput";
-import { ConfirmCheckbox } from "../components/ConfirmCheckbox";
+import { RatioConfirmCard } from "../components/RatioConfirmCard";
 import {
   RATIOS_ENTERED,
   ratioFieldsInitial,
@@ -714,14 +714,16 @@ function ProfileSetupScreen() {
                   unit={unit}
                   accessibilityLabel={t("settings.isf")}
                 />
-                <Text className="text-mut text-xs mt-3">{t("calculator.setup.teamNote")}</Text>
-                <ConfirmCheckbox
-                  checked={ratiosTick}
-                  onToggle={setRatiosTick}
-                  label={t("calculator.setup.confirm")}
-                  hint={t("calculator.setup.hint")}
-                  disabled={!ratioSetComplete}
-                />
+                <View className="mt-3">
+                  <RatioConfirmCard
+                    checked={ratiosTick}
+                    onToggle={setRatiosTick}
+                    complete={ratioSetComplete}
+                    fields={ratios}
+                    unit={unit}
+                    disabled={!ratioSetComplete}
+                  />
+                </View>
               </View>
             ) : null}
             {showsBasal ? (

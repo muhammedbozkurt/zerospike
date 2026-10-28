@@ -113,7 +113,7 @@ const tr = {
     qTargets: "Hedef aralıklarınız",
     qTargetsHintTracking: "Bunlar genel referans aralıklarıdır. Hedef aralığınızı hekiminizle birlikte de belirleyebilirsiniz.",
     qPostmealHint: "Yemekten yaklaşık 2 saat sonraki hedefiniz.",
-    qCarbRatio: "Karbonhidrat oranınız",
+    qCarbRatio: "Karbonhidrat oranınız (1 ünite için g)",
     qCarbRatioHint: "1 ünitenin karşıladığı karbonhidrat gramı (sağlık ekibiniz belirler).",
     qIsf: "Düzeltme faktörünüz (ISF)",
     qIsfHint: "1 ünitenin glukozu ne kadar düşürdüğü (sağlık ekibiniz belirler).",
@@ -327,7 +327,15 @@ const tr = {
   ratio: {
     line: "Oranınız ({{slot}}): {{ratio}}",
     enter: "Oranlarınızı girin",
-    confirm: "Oranlarınızı onaylayın",
+  },
+  ratioConfirm: {
+    until: "Hesaplama, bu onayı verene kadar gösterilmez.",
+    enterTitle: "Hesaplama için oranlarınız gerekiyor",
+    enterBody: "Karbonhidrat oranınızı ve ISF değerinizi, diyabet ekibinizin belirlediği şekilde girin. Hesaplama, onayınızdan sonra görünür.",
+    confirmTitle: "Hesaplama için onayınız gerekiyor",
+    confirmBody: "Oranlarınızı diyabet ekibinizle belirlediyseniz onaylayın; hesaplama ondan sonra görünür.",
+    confirmAction: "Oranları onaylayın",
+    savedReminder: "Oranlar kaydedildi. Hesaplama, onayınızı verene kadar gösterilmez.",
   },
   food: {
     category: "Kategori",
@@ -405,7 +413,6 @@ const tr = {
     manualDose: "Uygulanan doz (ünite)",
     currentGlucose: "Mevcut kan şekeri (opsiyonel)",
     glucoseOffer: "Son ölçüm {{value}} {{unit}}, kullanmak için dokunun",
-    pending: "Onay bekliyor",
     addPhoto: "Fotoğraf ekle",
     takePhoto: "Fotoğraf çek",
     choosePhoto: "Galeriden seç",
@@ -453,7 +460,7 @@ const tr = {
     setup: {
       title: "Oranlarınız",
       body: "Bu ekran, sağlık ekibinizin verdiği iki değerden hesap yapar. Bir kez girmeniz yeterli; profilinizde saklanır ve Ayarlar'dan istediğiniz zaman değiştirebilirsiniz.",
-      carbLabel: "Karbonhidrat oranınız",
+      carbLabel: "Karbonhidrat oranınız (1 ünite için g)",
       carbHint: "1 ünitenin karşıladığı karbonhidrat gramı (sağlık ekibiniz belirler).",
       isfLabel: "Düzeltme faktörünüz (ISF)",
       isfHint: "1 ünitenin glukozu ne kadar düşürdüğü (sağlık ekibiniz belirler).",
@@ -461,7 +468,6 @@ const tr = {
       bodyFilled: "Değerleriniz kayıtlı, yalnızca onaylamanız yeterli.",
       teamNote: "Oranlarınızı diyabet ekibinizle belirleyin.",
       confirm: "Bu oranları diyabet ekibimle belirledim",
-      hint: "İşaretleyince hesaplanan toplam görünür",
     },
   },
   iob: {

@@ -115,7 +115,7 @@ const pt: TranslationSchema = {
     qTargets: "Suas faixas-alvo",
     qTargetsHintTracking: "Estas são faixas de referência gerais. Você também pode definir sua faixa-alvo junto com seu médico.",
     qPostmealHint: "Seu alvo cerca de 2 horas depois de comer.",
-    qCarbRatio: "Sua razão de carboidratos",
+    qCarbRatio: "Sua razão de carboidratos (g por 1 unidade)",
     qCarbRatioHint: "Gramas de carboidrato cobertas por 1 unidade (definida pela sua equipe de saúde).",
     qIsf: "Seu fator de correção (FSI)",
     qIsfHint: "Quanto 1 unidade baixa sua glicemia (definido pela sua equipe de saúde).",
@@ -329,7 +329,15 @@ const pt: TranslationSchema = {
   ratio: {
     line: "Sua razão ({{slot}}): {{ratio}}",
     enter: "Informe suas razões",
-    confirm: "Confirme suas razões",
+  },
+  ratioConfirm: {
+    until: "O cálculo não é exibido até você dar esta confirmação.",
+    enterTitle: "O cálculo precisa das suas razões",
+    enterBody: "Informe sua razão de carboidratos e seu FSI, definidos com sua equipe de diabetes. O cálculo aparece depois da sua confirmação.",
+    confirmTitle: "O cálculo precisa da sua confirmação",
+    confirmBody: "Se você definiu suas razões com sua equipe de diabetes, confirme. O cálculo aparece em seguida.",
+    confirmAction: "Confirmar razões",
+    savedReminder: "Razões salvas. O cálculo só é exibido depois da sua confirmação.",
   },
   food: {
     category: "Categoria",
@@ -407,7 +415,6 @@ const pt: TranslationSchema = {
     manualDose: "Dose aplicada (unidades)",
     currentGlucose: "Glicemia atual (opcional)",
     glucoseOffer: "Última medição {{value}} {{unit}}, toque para usar",
-    pending: "Aguardando confirmação",
     addPhoto: "Adicionar foto",
     takePhoto: "Tirar foto",
     choosePhoto: "Escolher da galeria",
@@ -455,7 +462,7 @@ const pt: TranslationSchema = {
     setup: {
       title: "Suas razões",
       body: "Esta tela calcula a partir de dois valores que a sua equipe de saúde informou. Informe-os uma só vez. Eles ficam no seu perfil e você pode mudá-los quando quiser em Configurações.",
-      carbLabel: "Sua razão de carboidratos",
+      carbLabel: "Sua razão de carboidratos (g por 1 unidade)",
       carbHint: "Gramas de carboidrato cobertas por 1 unidade (definida pela sua equipe de saúde).",
       isfLabel: "Seu fator de correção (FSI)",
       isfHint: "Quanto 1 unidade baixa sua glicemia (definido pela sua equipe de saúde).",
@@ -463,7 +470,6 @@ const pt: TranslationSchema = {
       bodyFilled: "Seus valores estão salvos. Basta confirmá-los.",
       teamNote: "Defina suas razões com sua equipe de diabetes.",
       confirm: "Defini estes valores com minha equipe de diabetes",
-      hint: "O total calculado aparece quando você marca a caixa",
     },
   },
   iob: {

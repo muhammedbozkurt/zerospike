@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Animated,
   InputAccessoryView,
@@ -23,6 +23,7 @@ import { isDialogSheet, sheetBoxStyle } from "../lib/tabletLayout";
 import { useScrollHint } from "../lib/useScrollHint";
 import { hintBottomOffset } from "../lib/scrollHint";
 import { ScrollHint } from "./ScrollHint";
+import { useScrollToTarget } from "./useScrollToTarget";
 
 export const SCRIM = "rgba(0,0,0,0.72)"; // theme-ok
 
@@ -65,6 +66,9 @@ export interface SheetShellProps {
   onShown?: () => void;
   /** Key for the once-per-screen scroll hint (lib/scrollHint); defaults to testID. */
   scrollHintId?: string;
+  /** A child to scroll to once, while `scrollToActive` is true. */
+  scrollTargetRef?: React.RefObject<View | null>;
+  scrollToActive?: boolean;
 }
 
 export function SheetShell({
@@ -79,6 +83,8 @@ export function SheetShell({
   testID,
   onShown,
   scrollHintId,
+  scrollTargetRef,
+  scrollToActive = false,
 }: SheetShellProps): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -147,6 +153,8 @@ export function SheetShell({
       : closedLayout.paddingBottom;
 
   const hint = useScrollHint(`sheet.${scrollHintId ?? testID ?? "generic"}`, visible);
+  const scrollRef = useRef(null as ScrollView | null);
+  useScrollToTarget(scrollRef, scrollTargetRef, visible && scrollToActive);
   const hintContentSize = hint.onContentSizeChange;
   const onContentSizeChange = useCallback(
     (w: number, h: number) => {
@@ -226,6 +234,7 @@ export function SheetShell({
           ) : null}
 
           <ScrollView
+            ref={scrollRef}
             {...keyboardAwareScrollProps}
             // This shell measures and drives the keyboard itself; letting
             // iOS also auto-inset/scroll the responder would compensate

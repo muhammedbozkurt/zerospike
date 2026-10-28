@@ -115,7 +115,7 @@ const en: TranslationSchema = {
     qTargets: "Your target ranges",
     qTargetsHintTracking: "These are general reference ranges. You can also set your target range together with your doctor.",
     qPostmealHint: "Your target about 2 hours after eating.",
-    qCarbRatio: "Your carb ratio",
+    qCarbRatio: "Your carb ratio (g per 1 unit)",
     qCarbRatioHint: "Grams of carbs covered by 1 unit (set by your care team).",
     qIsf: "Your correction factor (ISF)",
     qIsfHint: "How much 1 unit lowers your glucose (set by your care team).",
@@ -329,7 +329,15 @@ const en: TranslationSchema = {
   ratio: {
     line: "Your ratio ({{slot}}): {{ratio}}",
     enter: "Enter your ratios",
-    confirm: "Confirm your ratios",
+  },
+  ratioConfirm: {
+    until: "The calculation is not shown until you give this confirmation.",
+    enterTitle: "The calculation needs your ratios",
+    enterBody: "Enter your carb ratio and ISF as set by your diabetes team. The calculation appears after you confirm them.",
+    confirmTitle: "The calculation needs your confirmation",
+    confirmBody: "If you set your ratios with your diabetes team, confirm them. The calculation appears after that.",
+    confirmAction: "Confirm ratios",
+    savedReminder: "Ratios saved. The calculation is not shown until you confirm them.",
   },
   food: {
     category: "Category",
@@ -407,7 +415,6 @@ const en: TranslationSchema = {
     manualDose: "Applied dose (units)",
     currentGlucose: "Current glucose (optional)",
     glucoseOffer: "Last reading {{value}} {{unit}}, tap to use",
-    pending: "Awaiting confirmation",
     addPhoto: "Add photo",
     takePhoto: "Take photo",
     choosePhoto: "Choose from gallery",
@@ -455,7 +462,7 @@ const en: TranslationSchema = {
     setup: {
       title: "Your ratios",
       body: "This screen works from two numbers your care team gave you. Enter them once. They stay in your profile and you can change them anytime in Settings.",
-      carbLabel: "Your carb ratio",
+      carbLabel: "Your carb ratio (g per 1 unit)",
       carbHint: "Grams of carbs covered by 1 unit (set by your care team).",
       isfLabel: "Your correction factor (ISF)",
       isfHint: "How much 1 unit lowers your glucose (set by your care team).",
@@ -463,7 +470,6 @@ const en: TranslationSchema = {
       bodyFilled: "Your values are saved. Just confirm them.",
       teamNote: "Set your ratios with your diabetes team.",
       confirm: "I set these ratios with my diabetes team",
-      hint: "The calculated total appears once you tick this",
     },
   },
   iob: {

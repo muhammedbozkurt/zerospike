@@ -115,7 +115,7 @@ const ja: TranslationSchema = {
     qTargets: "目標範囲",
     qTargetsHintTracking: "これは一般的な参考範囲です。目標範囲は主治医と一緒に決めることもできます。",
     qPostmealHint: "食事から約2時間後の目標です。",
-    qCarbRatio: "炭水化物比",
+    qCarbRatio: "炭水化物比(1単位あたりg)",
     qCarbRatioHint: "1単位でカバーする炭水化物のグラム数です(医療チームが設定します)。",
     qIsf: "インスリン効果値(ISF)",
     qIsfHint: "1単位で血糖値がどれくらい下がるかです(医療チームが設定します)。",
@@ -329,7 +329,15 @@ const ja: TranslationSchema = {
   ratio: {
     line: "比率（{{slot}}）：{{ratio}}",
     enter: "比率を入力してください",
-    confirm: "比率を確認してください",
+  },
+  ratioConfirm: {
+    until: "この確認を行うまで、計算は表示されません。",
+    enterTitle: "計算には比率の入力が必要です",
+    enterBody: "炭水化物比とインスリン効果値(ISF)を、糖尿病の医療チームと決めた値で入力してください。確認後に計算が表示されます。",
+    confirmTitle: "計算にはご確認が必要です",
+    confirmBody: "比率を糖尿病の医療チームと決めた場合は、確認してください。その後に計算が表示されます。",
+    confirmAction: "比率を確認する",
+    savedReminder: "比率を保存しました。確認いただくまで計算は表示されません。",
   },
   food: {
     category: "カテゴリ",
@@ -407,7 +415,6 @@ const ja: TranslationSchema = {
     manualDose: "実際に使った量(単位)",
     currentGlucose: "現在の血糖値(任意)",
     glucoseOffer: "直近の測定値 {{value}} {{unit}}。タップして使用",
-    pending: "確認待ち",
     addPhoto: "写真を追加",
     takePhoto: "写真を撮る",
     choosePhoto: "ライブラリから選ぶ",
@@ -455,7 +462,7 @@ const ja: TranslationSchema = {
     setup: {
       title: "数値の設定",
       body: "この画面は、医療チームから伝えられた2つの数値をもとに計算します。一度入力すると、プロフィールに保存され、設定でいつでも変更できます。",
-      carbLabel: "炭水化物比",
+      carbLabel: "炭水化物比(1単位あたりg)",
       carbHint: "1単位でカバーする炭水化物のグラム数です(医療チームが設定します)。",
       isfLabel: "インスリン効果値(ISF)",
       isfHint: "1単位で血糖値がどれくらい下がるかです(医療チームが設定します)。",
@@ -463,7 +470,6 @@ const ja: TranslationSchema = {
       bodyFilled: "値は保存されています。確認するだけです。",
       teamNote: "比率は糖尿病の医療チームと相談して決めてください。",
       confirm: "これらの比率は糖尿病の医療チームと決めました",
-      hint: "チェックすると計算された合計が表示されます",
     },
   },
   iob: {
