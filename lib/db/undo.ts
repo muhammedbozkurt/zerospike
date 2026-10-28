@@ -51,6 +51,18 @@ async function insertRow(
   );
 }
 
+/** A food goes back with an UPSERT, not INSERT OR REPLACE: REPLACE deletes the
+ *  existing row first, which would run ON DELETE SET NULL / CASCADE on the meals,
+ *  favorites and portions a first restore already put back (a retried snapshot). */
+async function upsertFood(db: Awaited<ReturnType<typeof getDb>>, row: Row): Promise<void> {
+  const cols = Object.keys(row).filter((c) => c !== "id");
+  await db.runAsync(
+    `INSERT INTO foods (id, ${cols.join(", ")}) VALUES (?, ${cols.map(() => "?").join(", ")})
+     ON CONFLICT (id) DO UPDATE SET ${cols.map((c) => `${c} = excluded.${c}`).join(", ")};`,
+    [row.id, ...cols.map((c) => row[c])]
+  );
+}
+
 /** Captures the rows a delete of this journal entry will remove. */
 export async function captureDeletion(
   kind: "glucose" | "meal" | "injection" | "med",
@@ -97,7 +109,7 @@ export async function captureDeletion(
 export async function captureFoodDeletion(id: string, name: string): Promise<DeletionSnapshot> {
   const db = await getDb();
   const label = name.trim();
-  const [foods, portions, favorites, meals] = await Promise.all([
+  const [foods, portions, favorites, meals, templateItems] = await Promise.all([
     db.getAllAsync<Row>("SELECT * FROM foods WHERE id = ? AND (is_custom = 1 OR source = 'off');", [id]),
     db.getAllAsync<Row>("SELECT * FROM food_portions WHERE food_id = ?;", [id]),
     db.getAllAsync<Row>("SELECT * FROM favorites WHERE food_id = ?;", [id]),
@@ -105,12 +117,14 @@ export async function captureFoodDeletion(id: string, name: string): Promise<Del
       "SELECT id, custom_food_name FROM meal_logs WHERE food_id = ?;",
       [id]
     ),
+    db.getAllAsync<{ id: string }>("SELECT id FROM meal_template_items WHERE food_id = ?;", [id]),
   ]);
   if (foods.length === 0) return { foods };
   return {
     foods,
     portions,
     favorites,
+    templateItemIds: templateItems.map((t) => t.id),
     foodMeals: meals.map((m) => ({
       mealId: m.id,
       original: m.custom_food_name,
@@ -125,7 +139,10 @@ export async function restoreDeletion(snap: DeletionSnapshot): Promise<void> {
   const db = await getDb();
   for (const step of planRestoreSteps(snap)) {
     if (step.op === "insert") {
-      for (const row of step.rows) await insertRow(db, step.table, row);
+      for (const row of step.rows) {
+        if (step.table === "foods") await upsertFood(db, row);
+        else await insertRow(db, step.table, row);
+      }
     } else if (step.op === "restoreMealDoses") {
       // `AND insulin_dose_units = 0`: a dose typed on the meal in the meantime
       // is the user's own and is not overwritten by the restore.
@@ -146,6 +163,13 @@ export async function restoreDeletion(snap: DeletionSnapshot): Promise<void> {
         await db.runAsync(
           "UPDATE meal_logs SET food_id = ?, custom_food_name = ? WHERE id = ? AND food_id IS NULL AND custom_food_name IS ?;",
           [step.foodId, item.original, item.mealId, item.current]
+        );
+      }
+    } else if (step.op === "relinkTemplateItems") {
+      for (const itemId of step.itemIds) {
+        await db.runAsync(
+          "UPDATE meal_template_items SET food_id = ? WHERE id = ? AND food_id IS NULL;",
+          [step.foodId, itemId]
         );
       }
     } else {

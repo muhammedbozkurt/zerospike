@@ -39,6 +39,9 @@ M._load = function (request: string, parent?: { filename?: string }, ...rest: un
   if (request === "./index" && from.endsWith("/lib/db/foods.ts")) {
     return { getDb: async () => db };
   }
+  if (request === "./meals" && from.endsWith("/lib/db/foods.ts")) {
+    return { inDbTransaction: async (fn: () => Promise<void>) => fn() };
+  }
   if (request === "../uuid") return { uuid: () => `id-${Math.random().toString(36).slice(2)}-${Date.now()}` };
   if (request === "../services/openFoodFacts") return { OFF_SOURCE: "off" };
   return realLoad.call(this, request, parent, ...rest);

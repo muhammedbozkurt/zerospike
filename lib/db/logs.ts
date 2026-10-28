@@ -528,6 +528,10 @@ export interface NewMealLogInput {
   /** The meal template this row was logged from (schema v13). Provenance only:
    *  see lib/db/mealTemplates.ts and MealLog.meal_template_id. */
   meal_template_id?: string | null;
+  /** The reading THIS save created (schema v31), not one it merely linked to:
+   *  what lets a later time correction move the reading only when it is the
+   *  meal's own. Leave unset for a linked, pre-existing reading. */
+  created_sugar_log_id?: string | null;
 }
 
 export async function addMealLog(input: NewMealLogInput): Promise<MealLog> {
@@ -538,8 +542,8 @@ export async function addMealLog(input: NewMealLogInput): Promise<MealLog> {
     `INSERT INTO meal_logs
        (id, profile_id, sugar_log_id, food_id, custom_food_name, portion_g,
         calculated_carbs_g, insulin_dose_units, photo_uri_local, personal_note, logged_at, tags,
-        meal_template_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        meal_template_id, created_sugar_log_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       id,
       input.profile_id,
@@ -554,6 +558,7 @@ export async function addMealLog(input: NewMealLogInput): Promise<MealLog> {
       loggedAt,
       serializeTags(input.tags),
       input.meal_template_id ?? null,
+      input.created_sugar_log_id ?? null,
     ]
   );
   const meal = mapMeal(
@@ -714,6 +719,7 @@ export type MealLogUpdate = Partial<
     MealLog,
     | "food_id"
     | "sugar_log_id"
+    | "created_sugar_log_id"
     | "custom_food_name"
     | "portion_g"
     | "calculated_carbs_g"

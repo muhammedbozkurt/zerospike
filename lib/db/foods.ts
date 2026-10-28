@@ -1,4 +1,5 @@
 import { getDb } from "./index";
+import { inDbTransaction } from "./meals";
 import { uuid } from "../uuid";
 import { foodName } from "./types";
 import { DEFAULT_FOOD_CATEGORY, type FoodCategory } from "./categories";
@@ -603,7 +604,10 @@ export async function updateFood(
 export async function deleteFood(id: string, name: string): Promise<void> {
   const db = await getDb();
   const label = name.trim();
-  await db.withTransactionAsync(async () => {
+  // inDbTransaction, not withTransactionAsync: BEGIN IMMEDIATE and the shared
+  // write lock (see lib/db/meals.ts), so a concurrent import cannot make the
+  // lock upgrade fail.
+  await inDbTransaction(async () => {
     if (label) {
       await db.runAsync(
         "UPDATE meal_logs SET custom_food_name = ? WHERE food_id = ? AND TRIM(COALESCE(custom_food_name, '')) = '' AND EXISTS (SELECT 1 FROM foods WHERE id = ? AND (is_custom = 1 OR source = 'off'));",

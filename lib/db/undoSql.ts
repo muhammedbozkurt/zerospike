@@ -23,6 +23,8 @@ export interface DeletionSnapshot {
   favorites?: Row[];
   portions?: Row[];
   foodMeals?: FoodMealLink[];
+  /** meal_template_items ids whose food_id the delete set to NULL. */
+  templateItemIds?: string[];
 }
 
 /** One meal that pointed at a deleted food. `original` is its custom_food_name
@@ -47,6 +49,7 @@ export type RestoreStep =
     }
   | { op: "clearHealthTombstones"; items: { profileId: string; loggedAt: string; mgdl: number }[] }
   | { op: "relinkMealsToFood"; foodId: string; items: FoodMealLink[] }
+  | { op: "relinkTemplateItems"; foodId: string; itemIds: string[] }
   | { op: "relinkMealsToSugar"; sugarLogId: string; mealIds: string[] }
   | { op: "restoreMealDoses"; items: { mealId: string; dose: number }[] };
 
@@ -87,6 +90,9 @@ export function planRestoreSteps(snap: DeletionSnapshot): RestoreStep[] {
   const foodId = snap.foods?.[0]?.id;
   if (snap.foodMeals && snap.foodMeals.length > 0 && foodId != null) {
     steps.push({ op: "relinkMealsToFood", foodId: String(foodId), items: snap.foodMeals });
+  }
+  if (snap.templateItemIds && snap.templateItemIds.length > 0 && foodId != null) {
+    steps.push({ op: "relinkTemplateItems", foodId: String(foodId), itemIds: snap.templateItemIds });
   }
   if (snap.meals && snap.meals.length > 0) steps.push({ op: "insert", table: "meal_logs", rows: snap.meals.map(stripRecordUuid) });
   if (snap.sugar && snap.sugar.length > 0) {

@@ -19,6 +19,9 @@ import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { V28_CREATE } from "../lib/db/v28Sql";
 import { journalFeedSql } from "../lib/db/journalSql";
+import { readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { shouldMoveLinkedReading } from "../lib/mealEditPatch";
 
 let passed = 0;
@@ -52,7 +55,7 @@ d.exec(`
     id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, sugar_log_id TEXT, food_id TEXT,
     custom_food_name TEXT, portion_g REAL NOT NULL DEFAULT 0, calculated_carbs_g REAL NOT NULL DEFAULT 0,
     insulin_dose_units REAL NOT NULL DEFAULT 0, photo_uri_local TEXT, personal_note TEXT,
-    logged_at TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]', meal_template_id TEXT, health_uuid TEXT,
+    logged_at TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]', meal_template_id TEXT, health_uuid TEXT, created_sugar_log_id TEXT,
     FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
     FOREIGN KEY (sugar_log_id) REFERENCES sugar_logs (id) ON DELETE SET NULL,
     FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE SET NULL);
@@ -70,6 +73,11 @@ d.exec(`
     UNIQUE (profile_id, food_id),
     FOREIGN KEY (profile_id) REFERENCES user_profiles (id) ON DELETE CASCADE,
     FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE CASCADE);
+  CREATE TABLE meal_template_items (
+    id TEXT PRIMARY KEY NOT NULL, template_id TEXT NOT NULL, food_id TEXT,
+    name_snapshot TEXT NOT NULL, carb_100g_snapshot REAL NOT NULL DEFAULT 0,
+    portion_g REAL NOT NULL DEFAULT 0,
+    FOREIGN KEY (food_id) REFERENCES foods (id) ON DELETE SET NULL);
   CREATE TABLE food_portions (
     id INTEGER PRIMARY KEY AUTOINCREMENT, food_id TEXT NOT NULL, label_key TEXT NOT NULL,
     grams REAL NOT NULL, sort INTEGER NOT NULL DEFAULT 0,
@@ -165,6 +173,8 @@ async function main() {
     INSERT INTO foods (id, name_tr, name_en, carb_100g, is_custom, source) VALUES ('f1','Annemin keki','Mom cake',48,1,NULL);
     INSERT INTO foods (id, name_tr, name_en, carb_100g, is_custom, source) VALUES ('cat','Elma','Apple',14,0,NULL);
     INSERT INTO favorites VALUES ('fav1','P','f1');
+    INSERT INTO meal_template_items (id, template_id, food_id, name_snapshot, carb_100g_snapshot, portion_g) VALUES ('ti1','T','f1','Annemin keki',48,100);
+    INSERT INTO meal_template_items (id, template_id, food_id, name_snapshot, carb_100g_snapshot, portion_g) VALUES ('ti2','T','cat','Elma',14,100);
     INSERT INTO food_portions (food_id, label_key, grams, sort) VALUES ('f1','slice',80,0),('f1','piece',120,1);
     INSERT INTO meal_logs (id, profile_id, food_id, custom_food_name, portion_g, calculated_carbs_g, logged_at) VALUES
       ('ma','P','f1',NULL,120,57.6,'2026-10-27T12:00:00Z'),
@@ -190,6 +200,13 @@ async function main() {
   ok("undo relinks the nameless meal and clears the stamped name", ma.f === "f1" && ma.n === null, JSON.stringify(ma));
   const mb = one("SELECT food_id f, custom_food_name n FROM meal_logs WHERE id = 'mb'");
   ok("undo relinks the named meal and keeps its name", mb.f === "f1" && mb.n === "Kek, ev yapimi", JSON.stringify(mb));
+  ok("undo relinks the template item", one("SELECT food_id f FROM meal_template_items WHERE id = 'ti1'").f === "f1");
+  ok("the catalog food's template item is untouched", one("SELECT food_id f FROM meal_template_items WHERE id = 'ti2'").f === "cat");
+  // a retried snapshot (restoreBatch after a failure) must not undo the first restore
+  await undo.restoreDeletion(foodSnap);
+  const ma2 = one("SELECT food_id f, custom_food_name n FROM meal_logs WHERE id = 'ma'");
+  ok("a second restore keeps the meal link and name", ma2.f === "f1" && ma2.n === null, JSON.stringify(ma2));
+  ok("a second restore keeps favorite, portions and template item", count("SELECT COUNT(*) c FROM favorites WHERE food_id = 'f1'") === 1 && count("SELECT COUNT(*) c FROM food_portions WHERE food_id = 'f1'") === 2 && one("SELECT food_id f FROM meal_template_items WHERE id = 'ti1'").f === "f1");
   const mc = one("SELECT food_id f, custom_food_name n FROM meal_logs WHERE id = 'mc'");
   ok("a meal renamed in the meantime is left alone", mc.f === null && mc.n === "Baska ad", JSON.stringify(mc));
 
@@ -198,22 +215,36 @@ async function main() {
   const mv = (o: Partial<Parameters<typeof shouldMoveLinkedReading>[0]>) =>
     shouldMoveLinkedReading({
       loggedAtChanged: true,
-      readingLoggedAt: "2026-10-27T18:00:00.000Z",
-      mealStoredLoggedAt: "2026-10-27T18:00:00.000Z",
+      linkedSugarLogId: "r1",
+      createdSugarLogId: "r1",
       otherMealsOnReading: 0,
       ...o,
     });
-  ok("reading created with the meal follows the corrected time", mv({}) === true);
+  ok("the reading this meal created follows the corrected time", mv({}) === true);
   ok("time not changed: reading stays", mv({ loggedAtChanged: false }) === false);
   ok("reading shared with another meal never moves", mv({ otherMealsOnReading: 1 }) === false);
-  ok("pre-existing reading (other instant) does not move", mv({ readingLoggedAt: "2026-10-27T17:58:00.000Z" }) === false);
-  ok("unparseable time does not move", mv({ readingLoggedAt: "x" }) === false);
-  const ra = await logs.addSugarLog({ profile_id: "P", glucose_level_mgdl: 140, period_tag: "pre_meal", logged_at: "2026-10-27T18:00:00.000Z" });
-  const m1 = await logs.addMealLog({ profile_id: "P", sugar_log_id: ra.id, portion_g: 50, calculated_carbs_g: 10, insulin_dose_units: 0, logged_at: "2026-10-27T18:02:00.000Z" });
+  ok("a pre-existing reading (not created by this meal) does not move", mv({ createdSugarLogId: null }) === false);
+  ok("a meal relinked to another reading does not move it", mv({ linkedSugarLogId: "r2" }) === false);
+  ok("no link: nothing to move", mv({ linkedSugarLogId: null, createdSugarLogId: null }) === false);
+  // the relation is stored, independent of any timestamp
+  const rc = await logs.addSugarLog({ profile_id: "P", glucose_level_mgdl: 140, period_tag: "pre_meal", logged_at: "2026-10-27T18:00:00.000Z" });
+  const own = await logs.addMealLog({ profile_id: "P", sugar_log_id: rc.id, created_sugar_log_id: rc.id, portion_g: 50, calculated_carbs_g: 10, insulin_dose_units: 0, logged_at: "2026-10-27T18:00:00.000Z" });
+  ok("addMealLog records the creation relation", own.created_sugar_log_id === rc.id);
+  const ra = await logs.addSugarLog({ profile_id: "P", glucose_level_mgdl: 150, period_tag: "pre_meal", logged_at: "2026-10-27T18:00:00.000Z" });
+  const linked = await logs.addMealLog({ profile_id: "P", sugar_log_id: ra.id, portion_g: 50, calculated_carbs_g: 10, insulin_dose_units: 0, logged_at: "2026-10-27T18:00:00.000Z" });
+  ok("a linked pre-existing reading carries no creation relation even at the same instant", (linked.created_sugar_log_id ?? null) === null);
   const m2 = await logs.addMealLog({ profile_id: "P", sugar_log_id: ra.id, portion_g: 50, calculated_carbs_g: 10, insulin_dose_units: 0, logged_at: "2026-10-27T18:10:00.000Z" });
-  ok("two meals on one reading are counted", (await logs.countOtherMealsOnSugarLog(ra.id, m1.id)) === 1 && (await logs.countOtherMealsOnSugarLog(ra.id, m2.id)) === 1);
+  ok("two meals on one reading are counted", (await logs.countOtherMealsOnSugarLog(ra.id, linked.id)) === 1 && (await logs.countOtherMealsOnSugarLog(ra.id, m2.id)) === 1);
   d.exec(`DELETE FROM meal_logs WHERE id = '${m2.id}'`);
-  ok("a sole meal counts none", (await logs.countOtherMealsOnSugarLog(ra.id, m1.id)) === 0);
+  ok("a sole meal counts none", (await logs.countOtherMealsOnSugarLog(ra.id, linked.id)) === 0);
+  await logs.updateMealLog(linked.id, { sugar_log_id: rc.id, created_sugar_log_id: rc.id });
+  ok("updateMealLog can record the relation for a reading created during an edit", (await logs.getMealLog(linked.id))!.created_sugar_log_id === rc.id);
+  const own2 = await undo.captureDeletion("meal", own.id);
+  ok("the relation travels in the undo snapshot", own2.meals?.[0]?.created_sugar_log_id === rc.id);
+
+  // ---- C-1 legacy edit: the sheet leaves the meal dose of an already-basal row alone ----
+  const sheet = readFileSync(join(import.meta.dirname, "..", "components", "InjectionEditSheet.tsx"), "utf8");
+  ok("InjectionEditSheet updates the meal dose only for a row that was a bolus", /\(target\.insulin_type \?\? "bolus"\) === "bolus"\) \{\s*await updateMealLog\(mealId/.test(sheet));
 
   // ---- C-17: undo of an imported reading's delete retires its tombstone ----
   console.log("C-17 health tombstone");

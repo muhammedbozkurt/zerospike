@@ -252,6 +252,9 @@ export interface MealLog {
   meal_template_id: string | null;
   /** Health sample id of the mirrored carbohydrates (schema v26), or null. */
   health_uuid?: string | null;
+  /** The reading this meal's own save created (schema v31), or null when the
+   *  meal only linked to a reading that existed before it. Provenance, no FK. */
+  created_sugar_log_id?: string | null;
 }
 
 export interface Favorite {

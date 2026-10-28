@@ -1278,7 +1278,7 @@ function wiringAndCopy(): void {
   ok("a rejected batch warns in dev", /__DEV__ && result\.status === "drop"/.test(transport));
 
   const dbIndex = src("lib/db/index.ts");
-  ok("SCHEMA_VERSION is 30", /const SCHEMA_VERSION = 30;/.test(dbIndex));
+  ok("SCHEMA_VERSION is 31", /const SCHEMA_VERSION = 31;/.test(dbIndex));
   ok(
     "the v23 -> v24 step runs the real migration",
     /currentVersion < 24\)\s*\{\s*await migrateToV24\(db\);/.test(dbIndex)
