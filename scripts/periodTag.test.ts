@@ -54,9 +54,9 @@ section("A. health_import is always unset, whatever opts says");
   );
 }
 
-section("B. manual_entry: explicit wins, fasting is the default");
+section("B. manual_entry: explicit wins, no label is the default");
 {
-  eq("no opts falls back to fasting", autoPeriodTagFor("manual_entry"), "fasting");
+  eq("no opts falls back to no label", autoPeriodTagFor("manual_entry"), "unset");
   eq(
     "an explicit choice is kept",
     autoPeriodTagFor("manual_entry", { explicit: "post_meal_2h" }),
@@ -68,29 +68,29 @@ section("B. manual_entry: explicit wins, fasting is the default");
     "manual"
   );
   eq(
-    "a null explicit still falls back to fasting",
+    "a null explicit still falls back to no label",
     autoPeriodTagFor("manual_entry", { explicit: null }),
-    "fasting"
+    "unset"
   );
   eq(
     "hour has no effect on manual_entry",
     autoPeriodTagFor("manual_entry", { hour: 23 }),
-    "fasting"
+    "unset"
   );
 }
 
 section("C. widget_quick_add follows the same rule as manual_entry");
 {
-  eq("no opts falls back to fasting", autoPeriodTagFor("widget_quick_add"), "fasting");
+  eq("no opts falls back to no label", autoPeriodTagFor("widget_quick_add"), "unset");
   eq(
     "an explicit choice is kept",
     autoPeriodTagFor("widget_quick_add", { explicit: "bedtime" }),
     "bedtime"
   );
   eq(
-    "a null explicit still falls back to fasting",
+    "a null explicit still falls back to no label",
     autoPeriodTagFor("widget_quick_add", { explicit: null }),
-    "fasting"
+    "unset"
   );
 }
 

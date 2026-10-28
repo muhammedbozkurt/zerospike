@@ -35,12 +35,15 @@ import type { RatioWriter } from "../lib/ratioWriter";
 import { DOSE_BOUNDS, editableMax } from "../lib/numericField";
 import { glucoseSheetBounds } from "../lib/glucoseSheetInput";
 import {
+  linkedReadingEditPatch,
   mealEditPlan,
   ownBolusRow,
   prefillDose,
   savedToastKey,
   writeBolusRow,
 } from "../lib/mealEditPatch";
+import { calculatorIob } from "../lib/calcIob";
+import { resolveRecord } from "../lib/calcRecordLoad";
 import { noSiteToastAction } from "../lib/injectionEditTarget";
 import {
   RECENT_GLUCOSE_WINDOW_MINUTES,
@@ -52,6 +55,7 @@ import { getFood } from "../lib/db/foods";
 import {
   addMealLog,
   addSugarLog,
+  countOtherMealsOnSugarLog,
   deleteMealLog,
   deleteMealRecord,
   findMatchingSugarLog,
@@ -94,12 +98,12 @@ import {
   carbRatioForSlot,
   type InsulinWarning,
 } from "../lib/insulin";
-import { activeInsulinBreakdown } from "../lib/iob";
 import { bolusProfileFor, basalProfileFor, insulinProductById } from "../lib/insulinCatalog";
 import { getInjections } from "../lib/db/injections";
 import {
   classifyGlucose,
   formatGlucose,
+  glucoseFieldToMgdl,
   glucoseFromDisplay,
   glucoseToDisplay,
   glucoseUnitLabel,
@@ -717,6 +721,9 @@ function CalculatorScreen() {
   // The reading an already-saved meal is attached to, so an edit updates that
   // row instead of silently leaving a stale value behind it.
   const [linkedSugarLogId, setLinkedSugarLogId] = useState<string | null>(null);
+  // That reading's stored mg/dL: the field shows it rounded (mmol to one
+  // decimal), and an untouched field must save the stored value, not the rounding.
+  const [storedReadingMgdl, setStoredReadingMgdl] = useState<number | null>(null);
   // Edit mode: the meal's logged_at exactly as prefilled, so save can tell a
   // real user edit of the time apart from the picker simply holding what it
   // was loaded with. Only the linked reading's own logged_at needs this - it
@@ -828,17 +835,30 @@ function CalculatorScreen() {
     if (info.needsConfirmReminder) toast(t("ratioConfirm.savedReminder"), "info");
   }
 
+  // A food, template or meal that is gone (deleted since the link was made) says
+  // so and closes, instead of leaving a skeleton with a dead Save button.
+  const missingRecordRef = useRef(false);
+  function onRecordMissing() {
+    if (missingRecordRef.current) return;
+    missingRecordRef.current = true;
+    toast(t("calculator.recordNotFound"), "info");
+    dismiss();
+  }
+
   useEffect(() => {
-    (async () => {
-      if (!foodId) return;
-      const f = await getFood(foodId);
-      if (f) {
+    if (!foodId) return;
+    void resolveRecord(
+      () => getFood(foodId),
+      (f) => {
         setFood(f);
         // Prefill the portion from a one-tap "recent meal" re-log, else default.
         const p = Number(portionParam);
         setPortion(Number.isFinite(p) && p > 0 ? p : f.portion_size_g || 100);
-      }
-    })();
+      },
+      onRecordMissing,
+      (err) => logCrash(err, { screen: "calculator", step: "loadFood" })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [foodId, portionParam]);
 
   // Template mode: load the recipe, fold it into one synthetic food and pin the
@@ -846,25 +866,29 @@ function CalculatorScreen() {
   // without touching the stored template; it is all-or-nothing, so a stale link
   // falls back to the template as it stands rather than dosing on a partial read.
   useEffect(() => {
-    (async () => {
-      if (!templateId) return;
-      const loaded = await getTemplateWithItems(templateId, lang);
-      if (!loaded) return;
-      const carried = parsePortions(portions, loaded.items.length);
-      const items = carried
-        ? loaded.items.map((item, i) => applyItemPortion(item, carried[i]))
-        : loaded.items;
-      const totals = resolvedTotals(items);
-      const ctx: TemplateWithItems = {
-        template: loaded.template,
-        items,
-        carbs_g: totals.carbs_g,
-        portion_g: totals.portion_g,
-      };
-      setTemplateCtx(ctx);
-      setFood(foodFromTemplate(ctx));
-      setPortion(100);
-    })();
+    if (!templateId) return;
+    void resolveRecord(
+      () => getTemplateWithItems(templateId, lang),
+      (loaded) => {
+        const carried = parsePortions(portions, loaded.items.length);
+        const items = carried
+          ? loaded.items.map((item, i) => applyItemPortion(item, carried[i]))
+          : loaded.items;
+        const totals = resolvedTotals(items);
+        const ctx: TemplateWithItems = {
+          template: loaded.template,
+          items,
+          carbs_g: totals.carbs_g,
+          portion_g: totals.portion_g,
+        };
+        setTemplateCtx(ctx);
+        setFood(foodFromTemplate(ctx));
+        setPortion(100);
+      },
+      onRecordMissing,
+      (err) => logCrash(err, { screen: "calculator", step: "loadTemplate" })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, portions, lang]);
 
   // Edit mode: prefill every field from the stored log, including the dose
@@ -878,7 +902,10 @@ function CalculatorScreen() {
       }
       try {
       const log = await getMealLog(mealLogId);
-      if (!log) return;
+      if (!log) {
+        onRecordMissing();
+        return;
+      }
       const catalogueFood = log.food_id ? await getFood(log.food_id) : null;
       // No catalogue row (typed name, or the food was deleted since): stand one in
       // from the meal's own values instead of leaving the screen loading forever.
@@ -921,6 +948,7 @@ function CalculatorScreen() {
       if (log.sugar_log_id) {
         const reading = await getSugarLog(log.sugar_log_id);
         if (reading) {
+          setStoredReadingMgdl(reading.glucose_level_mgdl);
           setGlucose(
             num(
               glucoseToDisplay(
@@ -959,7 +987,7 @@ function CalculatorScreen() {
   useEffect(() => {
     void readFreshIob();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProfile, dataVersion]);
+  }, [activeProfile, dataVersion, loggedAt?.getTime()]);
 
   // The least-recently-used hint next to the site row below. Purely descriptive
   // of the user's own history, same as the injection tab's own rotation card -
@@ -1010,7 +1038,11 @@ function CalculatorScreen() {
   async function readFreshIob(): Promise<number> {
     if (!activeProfile) return 0;
     const injections = await getInjections(activeProfile.id, 100);
-    const breakdown = activeInsulinBreakdown(injections, {
+    const editedBolus =
+      isEdit && mealLogId ? ownBolusRow(await getCalculatorInjectionForMeal(mealLogId)) : null;
+    const breakdown = calculatorIob(injections, {
+      excludeInjectionId: editedBolus?.id ?? null,
+      at: loggedAt,
       bolusProfile: bolusProfileFor(activeProfile.bolus_insulin_id),
       basalProfile: basalProfileFor(activeProfile.basal_insulin_id),
     });
@@ -1096,8 +1128,9 @@ function CalculatorScreen() {
 
   const glucoseMgdl = useMemo(() => {
     if (glucoseTyped == null || !(glucoseTyped > 0)) return null;
-    return boundOffer ? boundOffer.mgdl : glucoseFromDisplay(glucoseTyped, unit);
-  }, [glucoseTyped, unit, boundOffer]);
+    if (boundOffer) return boundOffer.mgdl;
+    return glucoseFieldToMgdl(glucoseTyped, unit, isEdit ? storedReadingMgdl : null);
+  }, [glucoseTyped, unit, boundOffer, isEdit, storedReadingMgdl]);
 
   // Descriptive only: a reading past what a consumer meter reports is still
   // accepted and stored, it just gets said out loud.
@@ -1534,13 +1567,22 @@ function CalculatorScreen() {
         // dose or a tag - passed through here with the untouched prefill value
         // and overwrote it to match the meal every time.
         if (linkedSugarLogId && glucoseMgdl != null) {
-          await updateSugarLog(linkedSugarLogId, {
-            glucose_level_mgdl: glucoseMgdl,
-            ...(loggedAtChanged ? { logged_at: loggedIso } : {}),
+          const storedMeal = await getMealLog(mealLogId);
+          const readingPatch = linkedReadingEditPatch({
+            loggedAtChanged,
+            linkedSugarLogId,
+            createdSugarLogId: storedMeal?.created_sugar_log_id ?? null,
+            otherMealsOnReading: await countOtherMealsOnSugarLog(linkedSugarLogId, mealLogId),
+            storedMgdl: storedReadingMgdl,
+            valueMgdl: glucoseMgdl,
+            loggedIso: loggedIso ?? null,
           });
+          const readingChanged = Object.keys(readingPatch).length > 0;
+          if (readingChanged) await updateSugarLog(linkedSugarLogId, readingPatch);
+          // Nothing about the reading changed: its Health sample is left alone.
           // A previously mirrored reading must not keep its stale value in
           // Apple Health after a correction here.
-          void (async () => {
+          if (readingChanged) void (async () => {
             try {
               // With the mirror off the old sample and its link stay as they are.
               const row = await getSugarLog(linkedSugarLogId);
@@ -1573,6 +1615,7 @@ function CalculatorScreen() {
             at
           );
           let newSugarLogId: string;
+          let createdNewReading = false;
           if (existingReading) {
             newSugarLogId = existingReading.id;
           } else {
@@ -1589,8 +1632,12 @@ function CalculatorScreen() {
               }
             });
             newSugarLogId = sugar.id;
+            createdNewReading = true;
           }
-          await updateMealLog(mealLogId, { sugar_log_id: newSugarLogId });
+          await updateMealLog(mealLogId, {
+            sugar_log_id: newSugarLogId,
+            ...(createdNewReading ? { created_sugar_log_id: newSugarLogId } : {}),
+          });
         }
 
         logEvent("log_edited", { kind: "meal" });
@@ -1660,6 +1707,7 @@ function CalculatorScreen() {
         tags,
         logged_at: loggedIso,
         meal_template_id: templateCtx ? templateCtx.template.id : null,
+        created_sugar_log_id: createdSugarLogId,
       });
       // From here on the meal row EXISTS. Everything below is a side effect, and
       // none of it may keep the screen open: an exception between the write and

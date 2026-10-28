@@ -18,10 +18,12 @@ import { Ionicons } from "@expo/vector-icons";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 import type { GlucoseUnit, LogTag, PeriodTag } from "../lib/db/types";
+import { DEFAULT_NEW_READING_PERIOD } from "../lib/periodTag";
 import type { GlucoseStatus, TargetProfile } from "../lib/glucose";
 import {
   classifyGlucose,
   formatGlucose,
+  glucoseFieldToMgdl,
   glucoseFromDisplay,
   glucoseToDisplay,
   glucoseUnitLabel,
@@ -128,7 +130,7 @@ interface Props {
  */
 export function GlucoseInputSheet({
   visible,
-  initialPeriod = "fasting",
+  initialPeriod = DEFAULT_NEW_READING_PERIOD,
   unit = "mgdl",
   profile,
   edit = null,
@@ -329,7 +331,7 @@ export function GlucoseInputSheet({
     if (submittedRef.current || guardingRef.current) return;
     // Captured BEFORE the exit animation: the callback fires a frame later and
     // must save exactly what was on screen when Save was pressed.
-    const mgdl = glucoseFromDisplay(typed, unit);
+    const mgdl = glucoseFieldToMgdl(typed, unit, edit?.glucose_level_mgdl);
     const p = period;
     const tg = tags;
     const at = loggedAt;

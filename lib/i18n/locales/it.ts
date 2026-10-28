@@ -446,6 +446,7 @@ const it: TranslationSchema = {
     savedRecord: "Voce salvata.",
     bolusSaveFailed: "Pasto salvato, ma non è stato possibile aggiungere la voce dell'iniezione di bolo. La dose non comparirà nello storico delle iniezioni né nell'insulina attiva.",
     bolusRetry: "Riprova",
+    recordNotFound: "Voce non trovata.",
     undone: "Voce ripristinata.",
     carbFocusBodyBasal: "La sezione della dose del pasto è nascosta perché usa solo insulina basale; può cambiarlo nelle Impostazioni.",
     emptyDoseTitle: "Il campo della dose è vuoto",

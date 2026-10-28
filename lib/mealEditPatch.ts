@@ -123,3 +123,42 @@ export function savedToastKey(s: {
   if (s.wroteInjection) return s.hasSite ? "autoInjection" : "autoInjectionNoSite";
   return s.createdReading ? "autoGlucose" : "savedRecord";
 }
+
+/**
+ * What a meal edit writes onto the reading the meal is linked to: the glucose
+ * only when its mg/dL really differs (a value the user did not touch is never
+ * rewritten, so a Health row keeps its tombstone state), and the time only when
+ * the reading is the one that follows the meal's own time correction. An empty
+ * patch means no write at all.
+ */
+export function linkedReadingPatch(input: {
+  storedMgdl: number | null;
+  valueMgdl: number | null;
+  moveToIso: string | null;
+}): { glucose_level_mgdl?: number; logged_at?: string } {
+  const patch: { glucose_level_mgdl?: number; logged_at?: string } = {};
+  if (input.valueMgdl != null && input.valueMgdl !== input.storedMgdl) {
+    patch.glucose_level_mgdl = input.valueMgdl;
+  }
+  if (input.moveToIso != null) patch.logged_at = input.moveToIso;
+  return patch;
+}
+
+/**
+ * The whole decision of what a meal edit writes onto its linked reading: the
+ * move (only a reading this meal created, shared with no other meal) and the
+ * changed glucose, as one patch. Empty means the reading is not written.
+ */
+export function linkedReadingEditPatch(
+  input: LinkedReadingMoveInput & {
+    storedMgdl: number | null;
+    valueMgdl: number | null;
+    loggedIso: string | null;
+  }
+): { glucose_level_mgdl?: number; logged_at?: string } {
+  return linkedReadingPatch({
+    storedMgdl: input.storedMgdl,
+    valueMgdl: input.valueMgdl,
+    moveToIso: shouldMoveLinkedReading(input) ? input.loggedIso : null,
+  });
+}

@@ -76,6 +76,7 @@ import { captureDeletion } from "../../lib/db/undo";
 import { checkDose } from "../../lib/insulin";
 import { OTHER_PRODUCT_ID } from "../../lib/insulinCatalog";
 import { insulinModeOf, insulinModeUsesInsulin } from "../../lib/insulinMode";
+import { injectionFormDefaults } from "../../lib/injectionFormDefaults";
 import { logCrash, logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { noteFirstLog } from "../../lib/services/firstLog";
@@ -216,8 +217,9 @@ export default function InjectionScreen() {
   const [cycleStart, setCycleStart] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<PointSelection | null>(null);
-  const [dose, setDose] = useState(0);
-  const [insulinType, setInsulinType] = useState<InsulinType>("bolus");
+  const formInit = injectionFormDefaults(activeProfile);
+  const [dose, setDose] = useState(formInit.dose);
+  const [insulinType, setInsulinType] = useState<InsulinType>(formInit.type);
   const [bolusKind, setBolusKind] = useState<BolusKind | null>(null);
   const [loggedAt, setLoggedAt] = useState(new Date());
   const [timePickerOpen, setTimePickerOpen] = useState(false);
@@ -299,8 +301,8 @@ export default function InjectionScreen() {
     try {
       const hist = await getInjections(activeProfile.id, historyLimit);
       setHistory(hist);
-      if (!typeSeeded.current && hist[0]?.insulin_type) {
-        applyInsulinType(hist[0].insulin_type);
+      if (!typeSeeded.current) {
+        applyInsulinType(injectionFormDefaults(activeProfile, hist[0]?.insulin_type ?? null).type);
         typeSeeded.current = true;
       }
     } catch (err) {
@@ -309,6 +311,39 @@ export default function InjectionScreen() {
       setHistoryLoaded(true);
     }
   }, [activeProfile, historyLimit, applyInsulinType]);
+
+  // The tab never unmounts (freezeOnBlur), so a profile switch would otherwise
+  // leave the previous profile's type, dose, region and note in the form.
+  const formProfileRef = useRef(activeProfile?.id ?? null);
+  useEffect(() => {
+    const id = activeProfile?.id ?? null;
+    if (formProfileRef.current === id) return;
+    formProfileRef.current = id;
+    typeSeeded.current = false;
+    doseTouched.current = false;
+    timeTouched.current = false;
+    timeStale.current = false;
+    const fresh = injectionFormDefaults(activeProfile);
+    setInsulinType(fresh.type);
+    setDose(fresh.dose);
+    setSelected(null);
+    setBolusKind(null);
+    setNote("");
+    setLoggedAt(new Date());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile?.id]);
+
+  // The daily basal amount changed in Settings: the ready-made dose follows it
+  // until the user has typed one of their own.
+  const basalUnitsSeenRef = useRef({ id: activeProfile?.id, units: activeProfile?.basal_daily_units });
+  useEffect(() => {
+    const seen = basalUnitsSeenRef.current;
+    const units = activeProfile?.basal_daily_units;
+    basalUnitsSeenRef.current = { id: activeProfile?.id, units };
+    if (seen.id !== activeProfile?.id || seen.units === units) return;
+    if (!doseTouched.current && insulinType === "basal") setDose(units ?? 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile?.id, activeProfile?.basal_daily_units]);
 
   useEffect(() => {
     loadRotation();
@@ -493,6 +528,7 @@ export default function InjectionScreen() {
   }
 
   async function save() {
+    // Region rule: this tab is region-first (required); the calculator and the basal confirmation keep it optional, with an "Add region" route.
     if (!activeProfile || !selected || !stepperFields.allValid || !injectionDoseOk(dose)) return;
     const profile = activeProfile;
     const site = selected;
@@ -1114,7 +1150,10 @@ export default function InjectionScreen() {
                 key={type}
                 label={type === "basal" ? t("injection.typeBasal") : t("injection.typeBolus")}
                 selected={insulinType === type}
-                onPress={() => applyInsulinType(type)}
+                onPress={() => {
+                  typeSeeded.current = true;
+                  applyInsulinType(type);
+                }}
                 className="flex-1"
               />
             ))}

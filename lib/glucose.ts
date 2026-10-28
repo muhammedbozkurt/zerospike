@@ -46,6 +46,21 @@ export function glucoseFromDisplay(value: number, unit: GlucoseUnit): number {
 }
 
 /**
+ * The mg/dL a glucose field saves. The field shows a rounded figure (mmol to one
+ * decimal), so a value the user never touched must not be converted back from
+ * that rounding: when the typed number is exactly what the stored reading
+ * displays as, the stored mg/dL is kept as it is (100 stays 100, not 99).
+ */
+export function glucoseFieldToMgdl(
+  typed: number,
+  unit: GlucoseUnit,
+  storedMgdl: number | null | undefined
+): number {
+  if (storedMgdl != null && glucoseToDisplay(storedMgdl, unit) === typed) return storedMgdl;
+  return glucoseFromDisplay(typed, unit);
+}
+
+/**
  * mmol/L → mg/dL. Call ONLY on a value already known to be mmol/L (e.g. a
  * health record's explicit mmol field). Never infer the unit from magnitude:
  * a real severe-hypo mg/dL reading (e.g. 25) overlaps the mmol range and would
