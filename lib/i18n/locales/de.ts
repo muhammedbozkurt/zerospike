@@ -426,7 +426,8 @@ const de: TranslationSchema = {
     saveChanges: "Änderungen speichern",
     loggedTime: "Datum und Uhrzeit des Eintrags",
     autoInjection: "Die Dosis wurde ebenfalls als Bolus-Injektion erfasst.",
-    autoInjectionNoSite: "Die Dosis wurde ebenfalls als Bolus-Injektion ohne Region erfasst. Sie können die Region im Injektions-Tab ergänzen.",
+    autoInjectionNoSite: "Die Dosis wurde als Bolus ohne Region erfasst. Tippen Sie auf Region ergänzen, um eine hinzuzufügen.",
+    addSite: "Region ergänzen",
     autoInjectionShort: "Bolus-Eintrag erstellt",
     autoGlucose: "Der eingegebene Glukosewert wurde ebenfalls erfasst.",
     correctionTargetNote: "Die Korrektur zielt auf die Mitte Ihres Zielbereichs ({{value}} {{unit}}).",
@@ -593,6 +594,11 @@ const de: TranslationSchema = {
   },
   entryGuard: {
     title: "Trotzdem speichern?",
+    addSiteToRecord: "Region zu diesem Eintrag ergänzen",
+    saveAnyway: "Trotzdem speichern",
+    addSiteTitle: "Region zu diesem Eintrag ergänzen?",
+    addSiteBody: "Die Region wird bei diesem Eintrag ergänzt; die neue Dosis wird nicht gespeichert.",
+    cancelSave: "Nicht speichern",
     recentBasal: "In den letzten {{h}} Std. gibt es bereits einen Basal-Eintrag ({{time}}, {{units}} Einheiten).",
     recentBolus: "In den letzten {{m}} Min. gibt es bereits einen Bolus-Eintrag ({{time}}, {{units}} Einheiten).",
     recentGlucose: "In den letzten {{m}} Min. gibt es bereits einen Glukose-Eintrag ({{time}}, {{value}}).",
@@ -1505,8 +1511,6 @@ const de: TranslationSchema = {
     rotationHint: "Wechsel",
     selfViewNote:
       "Die Karte zeigt Sie, als stünde Ihnen jemand gegenüber: Ihre linke Seite erscheint rechts.",
-    flipNotice:
-      "Kartenausrichtung aktualisiert: Sie zeigt Ihnen jetzt gegenüber, Ihre linke Seite liegt rechts.",
   },
   spike: {
     title: "Spike",

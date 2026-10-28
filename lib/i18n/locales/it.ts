@@ -426,7 +426,8 @@ const it: TranslationSchema = {
     saveChanges: "Salva le modifiche",
     loggedTime: "Data e ora della voce",
     autoInjection: "La dose è stata registrata anche come iniezione di bolo.",
-    autoInjectionNoSite: "La dose è stata registrata anche come iniezione di bolo, senza sede. Può aggiungere la sede nella scheda Iniezioni.",
+    autoInjectionNoSite: "La dose è stata registrata come bolo, senza sede. Per aggiungerne una, tocchi Aggiungi sede.",
+    addSite: "Aggiungi sede",
     autoInjectionShort: "Voce bolo creata",
     autoGlucose: "Anche il valore di glicemia inserito è stato registrato.",
     correctionTargetNote: "La correzione punta al centro del Suo intervallo target ({{value}} {{unit}}).",
@@ -593,6 +594,11 @@ const it: TranslationSchema = {
   },
   entryGuard: {
     title: "Salvare comunque?",
+    addSiteToRecord: "Aggiungi sede a quella voce",
+    saveAnyway: "Salva comunque",
+    addSiteTitle: "Aggiungere la sede a quella voce?",
+    addSiteBody: "La sede viene aggiunta a quella voce; la nuova dose non viene salvata.",
+    cancelSave: "Non salvare",
     recentBasal: "C'è una registrazione basale nelle ultime {{h}} ore ({{time}}, {{units}} unità).",
     recentBolus: "C'è una registrazione di bolo negli ultimi {{m}} minuti ({{time}}, {{units}} unità).",
     recentGlucose: "C'è una registrazione di glicemia negli ultimi {{m}} minuti ({{time}}, {{value}}).",
@@ -1505,8 +1511,6 @@ const it: TranslationSchema = {
     rotationHint: "Rotazione",
     selfViewNote:
       "La mappa è vista come da una persona di fronte a Lei: il Suo lato sinistro appare a destra.",
-    flipNotice:
-      "Orientamento aggiornato: la mappa è ora vista come da una persona di fronte a Lei, il Suo lato sinistro è a destra.",
   },
   spike: {
     title: "Spike",

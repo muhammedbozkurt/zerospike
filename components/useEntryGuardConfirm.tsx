@@ -16,6 +16,7 @@ import { listRecentSugarLogs } from "../lib/db/logs";
 import { listRecentInjections } from "../lib/db/injections";
 import { listRecentMealLogs } from "../lib/db/logs";
 import { logCrash } from "../lib/analytics";
+import { runGuardDialog, type GuardAddSiteChoice } from "../lib/injectionEditTarget";
 
 export interface EntryGuardRequest {
   entryKind: "glucose" | "meal" | "injection" | "post_meal_timer";
@@ -30,6 +31,12 @@ export interface EntryGuardRequest {
   /** Caller reads this from the DB itself if it already has it; otherwise the
    *  hook fetches the profile's last few hours on its own. */
   recent?: EntryGuardInput["recent"];
+  /** Units on the injection form; part of the "add region" eligibility. */
+  doseUnits?: number | null;
+  /** Injection form only: when the matched bolus is a region-less meal-save
+   *  row, the dialog also offers "add region to that entry"; picking it calls
+   *  this with the row id and the pending save is dropped (no second row). */
+  onAddSite?: (injectionId: string) => void;
 }
 
 /**
@@ -104,7 +111,7 @@ export function entryGuardMessageKeys(
  */
 export function useEntryGuardConfirm(): (req: EntryGuardRequest) => Promise<boolean> {
   const { t } = useTranslation();
-  const { confirm } = useFeedback();
+  const { confirm, actionSheet } = useFeedback();
   const { activeProfile } = useApp();
 
   return useCallback(
@@ -148,6 +155,7 @@ export function useEntryGuardConfirm(): (req: EntryGuardRequest) => Promise<bool
         insulinType: req.insulinType,
         foodKey: req.foodKey,
         foodName: req.foodName,
+        doseUnits: req.doseUnits,
         excludeId: req.excludeId,
         runningTimerEndsAtIso: req.runningTimerEndsAtIso,
         recent,
@@ -158,15 +166,46 @@ export function useEntryGuardConfirm(): (req: EntryGuardRequest) => Promise<bool
         .map(({ key, vars }) => t(key, vars))
         .join("\n");
 
-      return confirm({
-        title: t("entryGuard.title"),
-        message,
-        confirmLabel: t("common.save"),
-        cancelLabel: t("common.cancel"),
-        destructive: false,
-        icon: "time-outline",
+      const addSiteId = req.onAddSite
+        ? notices.find((n) => n.kind === "recent_bolus" && n.detail?.addSiteToId)?.detail?.addSiteToId
+        : undefined;
+      return runGuardDialog({
+        hasNotices: true,
+        addSiteId,
+        onAddSite: req.onAddSite,
+        confirmSave: () =>
+          confirm({
+            title: t("entryGuard.title"),
+            message,
+            confirmLabel: t("common.save"),
+            cancelLabel: t("common.cancel"),
+            destructive: false,
+            icon: "time-outline",
+          }),
+        // Three ways out, and the sheet states what each does: the region goes
+        // onto THAT entry and the new dose is not saved; save anyway; give up.
+        chooseAddSite: () =>
+          new Promise<GuardAddSiteChoice>((resolve) => {
+            actionSheet({
+              title: `${t("entryGuard.addSiteTitle")}\n${message}\n${t("entryGuard.addSiteBody")}`,
+              actions: [
+                {
+                  label: t("entryGuard.addSiteToRecord"),
+                  icon: "add-circle-outline",
+                  onPress: () => resolve("addSite"),
+                },
+                {
+                  label: t("entryGuard.saveAnyway"),
+                  icon: "save-outline",
+                  onPress: () => resolve("save"),
+                },
+              ],
+              cancelLabel: t("entryGuard.cancelSave"),
+              onDismiss: () => resolve("cancel"),
+            });
+          }),
       });
     },
-    [activeProfile, confirm, t]
+    [activeProfile, confirm, actionSheet, t]
   );
 }

@@ -426,7 +426,8 @@ const es: TranslationSchema = {
     saveChanges: "Guardar cambios",
     loggedTime: "Fecha y hora del registro",
     autoInjection: "La dosis también se registró como inyección de bolo.",
-    autoInjectionNoSite: "La dosis también se registró como inyección de bolo, sin zona. Puede añadir la zona en la pestaña Inyección.",
+    autoInjectionNoSite: "La dosis se registró como bolo, sin zona. Para añadir una, toque Añadir zona.",
+    addSite: "Añadir zona",
     autoInjectionShort: "Registro de bolo creado",
     autoGlucose: "El valor de glucosa que introdujo también se registró.",
     correctionTargetNote: "La corrección apunta al punto medio de su rango objetivo ({{value}} {{unit}}).",
@@ -593,6 +594,11 @@ const es: TranslationSchema = {
   },
   entryGuard: {
     title: "¿Guardar de todas formas?",
+    addSiteToRecord: "Añadir zona a ese registro",
+    saveAnyway: "Guardar de todas formas",
+    addSiteTitle: "¿Añadir la zona a ese registro?",
+    addSiteBody: "La zona se añade a ese registro; la nueva dosis no se guarda.",
+    cancelSave: "No guardar",
     recentBasal: "Hay un registro basal en las últimas {{h}} horas ({{time}}, {{units}} unidades).",
     recentBolus: "Hay un registro de bolo en los últimos {{m}} minutos ({{time}}, {{units}} unidades).",
     recentGlucose: "Hay un registro de glucosa en los últimos {{m}} minutos ({{time}}, {{value}}).",
@@ -1505,8 +1511,6 @@ const es: TranslationSchema = {
     rotationHint: "Rotación",
     selfViewNote:
       "El mapa se muestra como si alguien estuviera frente a usted: su lado izquierdo aparece a la derecha.",
-    flipNotice:
-      "Se actualizó la orientación del mapa: ahora queda frente a usted, su lado izquierdo está a la derecha.",
   },
   spike: {
     title: "Spike",

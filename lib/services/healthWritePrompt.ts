@@ -1,8 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /**
- * One-time prompts around Health writing, device-wide like
- * injectionMapNotice.ts: the "also save manual readings to Health?" question
+ * One-time prompts around Health writing, device-wide: the "also save manual readings to Health?" question
  * for existing users (asked right after a manual reading, never again once
  * answered either way) and the "send past readings?" offer shown the first time
  * writing is switched on.

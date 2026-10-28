@@ -34,6 +34,7 @@ import { isReducedMotionNow } from "../../lib/useReducedMotion";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DirIcon } from "../../components/DirIcon";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
+import { handleEditRequest, loadEditRow, type SitePreset } from "../../lib/injectionEditTarget";
 import { useStepperValidity } from "../../components/Stepper";
 import { NumericField } from "../../components/NumericField";
 import { INJECTION_DOSE_BOUNDS } from "../../lib/numericField";
@@ -64,6 +65,7 @@ import {
   getSiteUsageHistory,
   leastRecentlyUsedPoint,
   countInjectionsAfter,
+  getInjection,
   getInjections,
   logInjection,
   deleteInjection,
@@ -78,10 +80,6 @@ import { logCrash, logEvent } from "../../lib/analytics";
 import { noteLogAndMaybeReview } from "../../lib/services/review";
 import { noteFirstLog } from "../../lib/services/firstLog";
 import { noteJournalActivity } from "../../lib/services/notifications";
-import {
-  injectionMapFlipNoticeSeen,
-  markInjectionMapFlipNoticeSeen,
-} from "../../lib/services/injectionMapNotice";
 import { formatTime, num, relativeDay } from "../../lib/format";
 import {
   groupInjectionsByDay,
@@ -151,7 +149,14 @@ export default function InjectionScreen() {
   const insets = useSafeAreaInsets();
   const { width: winWidth } = useWindowDimensions();
   const router = useRouter();
-  const params = useLocalSearchParams<{ compose?: string; from?: string; segment?: string; zoom?: string }>();
+  const params = useLocalSearchParams<{
+    compose?: string;
+    from?: string;
+    segment?: string;
+    zoom?: string;
+    editId?: string;
+    focus?: string;
+  }>();
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
   const proCta = useProCta(!isProUser);
   const { confirm, choose, actionSheet, toast } = useFeedback();
@@ -184,7 +189,6 @@ export default function InjectionScreen() {
   // column only toggles between the form and the history: a "map" segment
   // reads as the form there.
   const shownSegment: Segment = twoCol && segment === "map" ? "save" : segment;
-  const mapVisible = twoCol || segment === "map";
 
   const [usage, setUsage] = useState<RotationUsage>({
     sites: [],
@@ -222,6 +226,7 @@ export default function InjectionScreen() {
   const savingRef = useRef(false);
   const stepperFields = useStepperValidity();
   const [editing, setEditing] = useState<Injection | null>(null);
+  const [editPreset, setEditPreset] = useState<SitePreset | null>(null);
 
   const typeSeeded = useRef(false);
   // True once the dose has been hand-edited this session; while false, an
@@ -342,6 +347,36 @@ export default function InjectionScreen() {
     router.setParams({ compose: "", from: "" });
   }, [params.compose, params.from, router]);
 
+  // Opens the sheet for one EXISTING row (meal-save toast "Add region", entry
+  // guard "Add region to that entry"). Edits it in place, never logs a new row;
+  // a row that is gone (deleted, undone) just leaves History showing.
+  const openEditById = useCallback(
+    async (id: string, preset: SitePreset | null = null) => {
+      const row = await loadEditRow({
+        id,
+        profileId: activeProfile?.id,
+        fetchRow: getInjection,
+        onError: (err) => logCrash(err, { screen: "injection", op: "openEditById" }),
+      });
+      if (row) {
+        setEditPreset(preset);
+        setEditing(row);
+      }
+    },
+    [activeProfile?.id]
+  );
+
+  useEffect(() => {
+    handleEditRequest(params, {
+      showHistory: () => {
+        fromTodayRef.current = false;
+        setSegment("history");
+      },
+      clearParams: () => router.setParams({ editId: "", focus: "" }),
+      openEdit: (id) => void openEditById(id),
+    });
+  }, [params.editId, params.focus, router, openEditById]);
+
   // Leaving the tab without saving ends the "came from Today" intent, so a
   // later direct visit and save stays in the log.
   useFocusEffect(
@@ -378,29 +413,6 @@ export default function InjectionScreen() {
     const timer = setTimeout(() => setHighlightId(null), SAVED_HIGHLIGHT_MS);
     return () => clearTimeout(timer);
   }, [highlightId]);
-
-  // One-time notice for the injection map's self-view -> observer-view flip
-  // (components/InjectionBodyMap.tsx SIDE CONVENTION note): a profile that
-  // already has injection history had the old left-on-left layout memorised,
-  // so opening MAP shows one short toast the first time, then never again (flag
-  // in lib/services/injectionMapNotice.ts). A fresh install has no history to
-  // reorient from, so `history` staying empty just keeps this effect waiting -
-  // checkedRef is only latched once a real (loaded, non-empty) history read has
-  // decided the outcome, so a profile that logs its first entry later still
-  // gets evaluated on its next visit to MAP instead of being silently skipped.
-  const flipNoticeChecked = useRef(false);
-  useEffect(() => {
-    if (!mapVisible) return;
-    if (flipNoticeChecked.current) return;
-    if (!historyLoaded || history.length === 0) return;
-    if (isScreenshotMode()) return;
-    flipNoticeChecked.current = true;
-    (async () => {
-      if (await injectionMapFlipNoticeSeen()) return;
-      toast(t("injectionMap.flipNotice"), "info");
-      await markInjectionMapFlipNoticeSeen();
-    })();
-  }, [mapVisible, historyLoaded, history, t, toast]);
 
   // Store-screenshot navigation: ?segment=map opens the heat map (the 02-bodymap
   // shot). Only honoured behind the double lock; ignored in a normal build.
@@ -529,6 +541,11 @@ export default function InjectionScreen() {
           entryKind: "injection",
           insulinType,
           entryAtIso: stampNow().toISOString(),
+          doseUnits: dose,
+          onAddSite: (id) => {
+            setSegment("history");
+            void openEditById(id, { site: site.site, point: site.point });
+          },
         });
       },
       write: () => {
@@ -1403,9 +1420,14 @@ export default function InjectionScreen() {
       <InjectionEditSheet
         visible={editing != null}
         injection={editing}
-        onClose={() => setEditing(null)}
+        presetSite={editPreset}
+        onClose={() => {
+          setEditing(null);
+          setEditPreset(null);
+        }}
         onSaved={() => {
           setEditing(null);
+          setEditPreset(null);
           bumpData();
         }}
       />

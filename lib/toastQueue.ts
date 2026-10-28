@@ -73,6 +73,30 @@ export function toastVisibleMs(opts: {
   return opts.screenReader ? opts.actionScreenReaderMs : opts.actionMs;
 }
 
+/** An action with an optional quieter second button (e.g. "Add region" + "Undo"). */
+export interface TwoButtonAction {
+  label: string;
+  onPress: () => void | Promise<void>;
+  secondary?: { label: string; onPress: () => void | Promise<void> };
+}
+
+/** The button that was pressed: the secondary one only when asked for AND present. */
+export function pickToastAction<A extends TwoButtonAction>(
+  action: A,
+  which?: "secondary"
+): { label: string; onPress: () => void | Promise<void> } {
+  return which === "secondary" && action.secondary ? action.secondary : action;
+}
+
+/** What a screen reader hears when the toast appears: the message, then every
+ *  button on offer (the toast never takes focus, so this is the only cue). */
+export function toastAnnouncement(message: string, action?: TwoButtonAction | null): string {
+  if (!action) return message;
+  return action.secondary
+    ? `${message}. ${action.label}. ${action.secondary.label}`
+    : `${message}. ${action.label}`;
+}
+
 export function initialToastState<A = unknown>(): ToastState<A> {
   return { current: null, phase: "idle", queue: [], seq: 0, reduceMotion: false };
 }

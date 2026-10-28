@@ -41,6 +41,7 @@ import {
   savedToastKey,
   writeBolusRow,
 } from "../lib/mealEditPatch";
+import { noSiteToastAction } from "../lib/injectionEditTarget";
 import {
   RECENT_GLUCOSE_WINDOW_MINUTES,
   fieldIsOffer,
@@ -1737,6 +1738,17 @@ function CalculatorScreen() {
         hasSite: chosenSite != null,
         createdReading: createdReading != null,
       });
+      // The bolus row already exists: this opens ITS edit sheet on the Injection
+      // tab (lib/injectionEditTarget.ts). Logging from the map would write a
+      // second bolus. Looks the row up, never writes one.
+      const addSiteAction = (secondary?: { label: string; onPress: () => void | Promise<void> }) =>
+        noSiteToastAction({
+          label: t("calculator.addSite"),
+          lookupRowId: async () => (await getCalculatorInjectionForMeal(mealId))?.id ?? null,
+          navigate: (params) => router.navigate({ pathname: "/(tabs)/injection", params }),
+          onError: (err) => logCrash(err, { screen: "calculator", step: "addSiteLookup" }),
+          secondary,
+        });
       if (toastKey === "bolusSaveFailed") {
         toast(t("calculator.bolusSaveFailed"), "error", {
           label: t("calculator.bolusRetry"),
@@ -1753,7 +1765,8 @@ function CalculatorScreen() {
                 bumpData();
                 toast(
                   t(chosenSite ? "calculator.autoInjection" : "calculator.autoInjectionNoSite"),
-                  "success"
+                  "success",
+                  chosenSite ? undefined : addSiteAction()
                 );
               } else {
                 logCrash(retry.error, { screen: "calculator", step: "logInjectionRetry" });
@@ -1774,7 +1787,7 @@ function CalculatorScreen() {
             : toastKey === "autoGlucose"
               ? t("calculator.autoGlucose")
               : t("calculator.savedRecord");
-      toast(message, "success", {
+      const undoAction = {
         label: t("common.undo"),
         onPress: () => {
           void (async () => {
@@ -1801,7 +1814,12 @@ function CalculatorScreen() {
             toast(t("calculator.undone"), "info");
           })();
         },
-      });
+      };
+      if (toastKey === "autoInjectionNoSite") {
+        toast(message, "success", addSiteAction(undoAction));
+      } else {
+        toast(message, "success", undoAction);
+      }
       dismiss();
       if (glucoseStatus !== "low") void maybeRequestReview("log_saved");
     } catch (err) {

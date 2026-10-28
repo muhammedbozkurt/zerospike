@@ -53,6 +53,7 @@ import { useSheetKeyboard } from "../lib/useSheetKeyboard";
 import { STACK_AT_SCALE } from "../lib/layoutForFontScale";
 import { useFontScale } from "../lib/useFontScale";
 import { sheetFrame } from "../lib/sheetLayout";
+import type { SitePreset } from "../lib/injectionEditTarget";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 
@@ -117,9 +118,13 @@ export function InjectionEditSheet({
   onClose,
   onSaved,
   onDelete,
+  presetSite,
 }: {
   visible: boolean;
   injection: InjectionEditTarget | null;
+  /** Region already chosen on the save form: a region-less row opens with it
+   *  selected, so "add region to that entry" does not ask for it twice. */
+  presetSite?: SitePreset | null;
   onClose: () => void;
   onSaved: () => void;
   /** Destructive "Delete" action (2.3.1 P4): confirms first, then fires this so
@@ -192,9 +197,10 @@ export function InjectionEditSheet({
       // A row logged without a region (a calculator bolus) opens on the first
       // selectable region so the user CAN fill one in; it only becomes part of
       // the record if they pick one (see hasSite).
-      setSite(injection.site ?? SELECTABLE_SITES[0]);
-      setHasSite(injection.site != null);
-      setPoint(injection.site_point);
+      const preset = injection.site == null ? (presetSite ?? null) : null;
+      setSite(injection.site ?? preset?.site ?? SELECTABLE_SITES[0]);
+      setHasSite(injection.site != null || preset != null);
+      setPoint(injection.site != null ? injection.site_point : (preset?.point ?? null));
       setLoggedAt(new Date(injection.logged_at));
       setTimePickerOpen(false);
       setStep("form");

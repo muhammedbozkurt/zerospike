@@ -6,6 +6,8 @@
  * dose.
  */
 
+import { offerAddSiteToRow } from "./injectionEditTarget";
+
 export type EntryGuardKind =
   | "recent_basal"
   | "recent_bolus"
@@ -19,7 +21,14 @@ export interface EntryGuardNotice {
   /** ISO time of the existing record the confirmation is about; for
    *  future_dated this is the new entry's own time instead. */
   atIso: string;
-  detail?: { units?: number; valueText?: string; foodName?: string };
+  detail?: {
+    units?: number;
+    valueText?: string;
+    foodName?: string;
+    /** recent_bolus only: the matched row is a meal-save bolus with no region,
+     *  so the dialog may offer to add the region to it instead of a new row. */
+    addSiteToId?: string;
+  };
 }
 
 export interface EntryGuardInput {
@@ -29,6 +38,9 @@ export interface EntryGuardInput {
   entryAtIso?: string;
   entryKind: "glucose" | "meal" | "injection" | "post_meal_timer";
   insulinType?: "basal" | "bolus" | null;
+  /** Units on the injection form. Only used to decide whether "add region to
+   *  that entry" is a fair offer (same dose as the matched meal bolus). */
+  doseUnits?: number | null;
   foodKey?: string | null;
   foodName?: string | null;
   /** The id of the record being EDITED, if any. Any `recent` row sharing this
@@ -45,7 +57,14 @@ export interface EntryGuardInput {
   /** Caller reads these from the DB; this module never touches storage. Order
    *  does not matter, the nearest match within the window is picked. */
   recent?: {
-    injections?: { id: string; logged_at: string; insulin_type: "basal" | "bolus" | null; dose_units: number | null }[];
+    injections?: {
+      id: string;
+      logged_at: string;
+      insulin_type: "basal" | "bolus" | null;
+      dose_units: number | null;
+      source?: string | null;
+      site?: string | null;
+    }[];
     glucose?: { id: string; logged_at: string; valueText: string }[];
     meals?: { id: string; logged_at: string; foodKey: string | null; foodName: string | null }[];
   };
@@ -111,18 +130,28 @@ export function checkEntryGuards(input: EntryGuardInput): EntryGuardNotice[] {
   if (input.entryKind === "injection" && (input.insulinType === "basal" || input.insulinType === "bolus")) {
     const windowMs = input.insulinType === "basal" ? GUARD_WINDOW_MS.recent_basal : GUARD_WINDOW_MS.recent_bolus;
     const kind: EntryGuardKind = input.insulinType === "basal" ? "recent_basal" : "recent_bolus";
-    const candidates: NearestMatch<{ dose_units: number | null }>[] = [];
+    const candidates: NearestMatch<{ id: string; dose_units: number | null; addSite: boolean }>[] = [];
     for (const inj of input.recent?.injections ?? []) {
       if (inj.insulin_type !== input.insulinType) continue;
       const ms = parseIso(inj.logged_at);
       if (ms === null || isExcluded(inj.id)) continue;
       if (Math.abs(entryAtMs - ms) > windowMs) continue;
-      candidates.push({ ms, iso: inj.logged_at, record: { dose_units: inj.dose_units } });
+      candidates.push({
+        ms,
+        iso: inj.logged_at,
+        record: {
+          id: inj.id,
+          dose_units: inj.dose_units,
+          addSite: offerAddSiteToRow({ row: inj, rowAtMs: ms, entryAtMs, doseUnits: input.doseUnits }),
+        },
+      });
     }
     const best = pickNearest(candidates, entryAtMs);
     if (best !== null) {
-      const detail = best.record.dose_units !== null ? { units: best.record.dose_units } : undefined;
-      notices.push({ kind, atIso: best.iso, ...(detail ? { detail } : {}) });
+      const detail: NonNullable<EntryGuardNotice["detail"]> = {};
+      if (best.record.dose_units !== null) detail.units = best.record.dose_units;
+      if (kind === "recent_bolus" && best.record.addSite) detail.addSiteToId = best.record.id;
+      notices.push({ kind, atIso: best.iso, ...(Object.keys(detail).length ? { detail } : {}) });
     }
   }
 
