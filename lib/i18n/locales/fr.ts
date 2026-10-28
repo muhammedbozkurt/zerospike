@@ -824,6 +824,8 @@ const fr: TranslationSchema = {
     saved: "Enregistré",
     rtlRestartTitle: "Le sens de mise en page va changer",
     rtlRestartBody: "L'application va redémarrer. Vos enregistrements ne sont pas affectés.",
+    rtlManualTitle: "Redémarrez l'application",
+    rtlManualBody: "Pour appliquer le sens de lecture, fermez complètement l'application puis rouvrez-la. Vos enregistrements ne sont pas affectés.",
   },
   cgmSource: {
     cgm: "CGM",

@@ -822,6 +822,8 @@ const tr = {
     saved: "Kaydedildi",
     rtlRestartTitle: "Yerleşim yönü değişecek",
     rtlRestartBody: "Uygulama yeniden başlatılacak. Kayıtlarınız etkilenmez.",
+    rtlManualTitle: "Uygulamayı yeniden başlatın",
+    rtlManualBody: "Dil yönünü uygulamak için uygulamayı tamamen kapatıp yeniden açın. Kayıtlarınız etkilenmez.",
   },
   cgmSource: {
     cgm: "CGM",

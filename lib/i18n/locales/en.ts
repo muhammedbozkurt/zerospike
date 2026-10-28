@@ -824,6 +824,8 @@ const en: TranslationSchema = {
     saved: "Saved",
     rtlRestartTitle: "Layout direction will change",
     rtlRestartBody: "The app will restart. Your records are not affected.",
+    rtlManualTitle: "Restart the app",
+    rtlManualBody: "To apply the layout direction, close the app completely and open it again. Your records are not affected.",
   },
   cgmSource: {
     cgm: "CGM",

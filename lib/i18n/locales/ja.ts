@@ -824,6 +824,8 @@ const ja: TranslationSchema = {
     saved: "保存しました",
     rtlRestartTitle: "レイアウトの向きが変わります",
     rtlRestartBody: "アプリを再起動します。記録には影響しません。",
+    rtlManualTitle: "アプリを再起動してください",
+    rtlManualBody: "レイアウトの向きを反映するには、アプリを完全に終了してからもう一度開いてください。記録には影響しません。",
   },
   cgmSource: {
     cgm: "CGM",

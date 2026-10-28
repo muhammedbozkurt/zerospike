@@ -31,6 +31,7 @@ import { seedScreenshotData, ensureTrackingProfile } from "../lib/db/screenshotS
 import { DEFAULT_PROFILE_ID, SCREENSHOT_TRACKING_PROFILE_ID } from "../lib/db/index";
 import { exportLogsPdf } from "../lib/services/report";
 import { SUPPORTED_LANGS, isRTLLang } from "../lib/i18n";
+import { decideRtlStartup } from "../lib/rtlSync";
 import type { Lang } from "../lib/db/types";
 
 import {
@@ -296,29 +297,32 @@ function RootNavigator() {
     if (!ready || rtlSyncDone.current) return;
     rtlSyncDone.current = true;
     const targetRTL = isRTLLang(lang);
-    if (targetRTL === I18nManager.isRTL) {
-      // Matched: drop any stale attempt flag so a FUTURE mismatch (a new
-      // language choice) still gets its own one-shot auto-reload.
-      void AsyncStorage.removeItem(RTL_AUTO_RELOAD_KEY);
-      return;
-    }
-    // Store-screenshot: the capture pipeline drives its own relaunches on a
-    // deterministic schedule: an uninvited reload here would race that
-    // sequence. Only the direction FLAG gets fixed; no reload.
-    if (isScreenshotMode()) {
-      I18nManager.allowRTL(targetRTL);
-      I18nManager.forceRTL(targetRTL);
-      return;
-    }
     void (async () => {
-      const already = await AsyncStorage.getItem(RTL_AUTO_RELOAD_KEY);
-      // Already tried once for this exact target and it still does not match -
-      // do not loop forever reloading; leave it for the next explicit language
-      // change instead.
-      if (already === String(targetRTL)) return;
-      await AsyncStorage.setItem(RTL_AUTO_RELOAD_KEY, String(targetRTL));
+      let tried: string | null = null;
+      try {
+        tried = await AsyncStorage.getItem(RTL_AUTO_RELOAD_KEY);
+      } catch {
+        // unreadable marker: treated as "never tried"
+      }
+      const action = decideRtlStartup({
+        targetRTL,
+        currentRTL: I18nManager.isRTL,
+        screenshotMode: isScreenshotMode(),
+        reloadTriedFor: tried,
+      });
+      if (action === "none") {
+        // Matched: drop any stale attempt marker so a FUTURE mismatch (a new
+        // language choice) still gets its own one-shot reload.
+        void AsyncStorage.removeItem(RTL_AUTO_RELOAD_KEY);
+        return;
+      }
+      // The flags are written on every mismatch, reload or not: the native
+      // layer reads them at the next cold start, which is what finally fixes
+      // the layout when no reload is possible (dev client, Expo Go).
       I18nManager.allowRTL(targetRTL);
       I18nManager.forceRTL(targetRTL);
+      if (action !== "reload") return;
+      await AsyncStorage.setItem(RTL_AUTO_RELOAD_KEY, String(targetRTL));
       await reloadForDirectionChange();
     })();
   }, [ready, lang]);

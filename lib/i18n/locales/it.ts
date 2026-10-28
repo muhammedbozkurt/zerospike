@@ -824,6 +824,8 @@ const it: TranslationSchema = {
     saved: "Salvato",
     rtlRestartTitle: "La direzione del layout cambierà",
     rtlRestartBody: "L'app verrà riavviata. I Suoi dati non vengono toccati.",
+    rtlManualTitle: "Riavvii l'app",
+    rtlManualBody: "Per applicare la direzione del layout, chiuda completamente l'app e la riapra. I Suoi dati non vengono toccati.",
   },
   cgmSource: {
     cgm: "CGM",

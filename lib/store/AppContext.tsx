@@ -30,6 +30,7 @@ import { armAfterLogsPaywall } from "../services/afterLogsPaywall";
 import { markWhatsNewSeenNow } from "../whatsNewStore";
 import { takePendingAlarmRoute } from "../../modules/zerospike-alarmkit";
 import { isScreenshotMode } from "../screenshotMode";
+import { needsManualRestartNotice, type RtlReloadOutcome } from "../rtlSync";
 
 /**
  * The RTL restart confirm is the app's own themed dialog (components/Feedback),
@@ -39,7 +40,11 @@ import { isScreenshotMode } from "../screenshotMode";
  * descendant of both providers - registers the live confirm function here once
  * it mounts, so setLanguage below can still show the real dialog.
  */
-type RTLConfirmFn = (opts: { title: string; message: string }) => Promise<boolean>;
+type RTLConfirmFn = (opts: {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+}) => Promise<boolean>;
 let rtlConfirmHandler: RTLConfirmFn | null = null;
 export function setRTLConfirmHandler(fn: RTLConfirmFn | null): void {
   rtlConfirmHandler = fn;
@@ -58,11 +63,11 @@ export function setRTLConfirmHandler(fn: RTLConfirmFn | null): void {
  * self-corrects on the next real launch (see the startup sync in
  * app/_layout.tsx).
  */
-export async function reloadForDirectionChange(): Promise<void> {
+export async function reloadForDirectionChange(): Promise<RtlReloadOutcome> {
   try {
     const Updates = require("expo-updates");
     await Updates.reloadAsync();
-    return;
+    return "reloaded";
   } catch {
     // expo-updates missing from the binary or unavailable (Expo Go / some dev-client states)
   }
@@ -71,6 +76,9 @@ export async function reloadForDirectionChange(): Promise<void> {
   } catch {
     // no reload path available; the next launch's startup sync still fixes it
   }
+  // DevSettings.reload only restarts JS: native views keep the old direction,
+  // so this still counts as "the user has to restart".
+  return "manual";
 }
 
 const ACTIVE_PROFILE_KEY = "zerospike.activeProfile";
@@ -267,7 +275,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     I18nManager.allowRTL(targetRTL);
     I18nManager.forceRTL(targetRTL);
-    await reloadForDirectionChange();
+    const outcome = await reloadForDirectionChange();
+    // No real reload was possible, so the flags above only take effect on the
+    // next cold start: say so instead of leaving the screen unchanged.
+    if (needsManualRestartNotice(outcome) && rtlConfirmHandler) {
+      await rtlConfirmHandler({
+        title: i18nInstance.t("settings.rtlManualTitle"),
+        message: i18nInstance.t("settings.rtlManualBody"),
+        confirmLabel: i18nInstance.t("common.done"),
+      });
+    }
   }, []);
 
   const completeOnboarding = useCallback(async () => {

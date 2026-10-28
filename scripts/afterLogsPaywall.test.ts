@@ -6,6 +6,10 @@
  */
 declare const console: { log: (...a: unknown[]) => void };
 declare const process: { exit: (code: number) => void };
+declare const require: (id: string) => any;
+declare const __dirname: string;
+const nodeFs = require("node:fs");
+const nodePath = require("node:path");
 
 import {
   AFTER_LOGS_THRESHOLD,
@@ -116,6 +120,21 @@ section(
     isProUser: false,
   });
   ok("visible count of 2 does not trigger yet", !withVisibleCount);
+}
+
+section("G. only the user's own entries are counted (Health / CGM imports are not logs)");
+{
+  // A session that imported 3 Apple Health readings and then saved 2 manual
+  // ones opened this paywall one log early. The caller reads the journal with
+  // userEntered: true (SQL in lib/db/journalSql.ts, executed by
+  // scripts/journal.test.ts section F); pin the call site here.
+  const dash: string = nodeFs.readFileSync(nodePath.join(__dirname, "..", "app", "(tabs)", "index.tsx"), "utf8");
+  const at = dash.indexOf("AFTER_LOGS_THRESHOLD, undefined");
+  const call = at >= 0 ? dash.slice(at, at + 160) : "";
+  ok("the dashboard check reads the journal with userEntered: true", /userEntered:\s*true/.test(call), call);
+  ok("and still excludes the calculator's silent bolus row", /excludeCalculatorInjections:\s*true/.test(call));
+  const sql: string = nodeFs.readFileSync(nodePath.join(__dirname, "..", "lib", "db", "journalSql.ts"), "utf8");
+  ok("the SQL filter is the manual-source allowlist", sql.includes("s.source = 'manual'"));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

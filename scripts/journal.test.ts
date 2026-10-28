@@ -305,6 +305,28 @@ function main() {
     db.close();
   }
 
+  section("F. userEntered: imported readings never spend the 'first logs' LIMIT");
+  {
+    const db = makeFeedDb(2);
+    for (const col of V29_COLUMNS) db.exec(`ALTER TABLE sugar_logs ADD COLUMN ${col.name} ${col.type};`);
+    const imp = db.prepare(
+      `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags, is_cgm)
+       VALUES (?, 'p1', 110, 'unset', ?, ?, '[]', 0);`
+    );
+    const base = Date.parse("2026-07-20T00:00:00.000Z");
+    for (let i = 0; i < 3; i++) imp.run(`h${i}`, "health", new Date(base + i * 300000).toISOString());
+    imp.run("n0", "nightscout", new Date(base + 900000).toISOString());
+    const run = (userEntered: boolean) =>
+      db
+        .prepare(journalFeedSql(false, true, { userEntered } as never))
+        .all(...(journalFeedArgs("p1", 3) as never[])) as unknown as FeedRow[];
+    eq("without the filter the newest 3 are all imported", run(false).every((r) => r.source === "health" || r.source === "nightscout"), true);
+    const own = run(true);
+    eq("with the filter no imported reading is returned", own.some((r) => r.id.startsWith("h") || r.id.startsWith("n")), false);
+    eq("the user's own rows fill the limit", own.length, 3);
+    db.close();
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 }
