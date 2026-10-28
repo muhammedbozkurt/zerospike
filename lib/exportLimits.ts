@@ -67,7 +67,10 @@ export type ExportProgress =
   | { stage: "reading"; done: number; total: number }
   | { stage: "writing"; done: number; total: number }
   | { stage: "analyzing" }
-  | { stage: "rendering" };
+  | { stage: "rendering" }
+  /** The file is ready and the share sheet is about to open: the busy state ends here, because
+   *  the share promise only settles once the sheet is dismissed (and never if it fails to present). */
+  | { stage: "sharing" };
 
 /** Whole-number share (0..100) of a stage, never past 100. */
 export function progressPercent(done: number, total: number): number {

@@ -122,7 +122,7 @@ must("app/settings/reminders.tsx", "accessibilityValue", "row speaks on or off",
 
 // Insights coverage tile reads as one sentence.
 must("components/StatCard.tsx", "a11yLabel", "StatCard accepts a spoken label");
-must("app/insights.tsx", "a11yLabel={coverageLine(t, data.days, data.cgmCoverage)}", "coverage tile speaks days and share");
+must("app/insights.tsx", "a11yLabel={coverageLine(t, selWindowDays, data.cgmCoverage)}", "coverage tile speaks the selected window and share");
 
 // Injection stale-time dialog: the overlay owns focus and both answers are buttons.
 const fb = "components/Feedback.tsx";

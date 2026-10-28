@@ -6,7 +6,7 @@ import DateTimePicker, {
 import { useTranslation } from "react-i18next";
 
 import { Button } from "./ui";
-import { SPACE } from "../lib/theme/tokens";
+import { SPACE, THEME } from "../lib/theme/tokens";
 
 function two(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
@@ -69,7 +69,7 @@ export function InlineTimePicker({
         is24Hour
         display="spinner"
         onChange={handle}
-        themeVariant="dark"
+        themeVariant={THEME.scheme}
       />
     </View>
   );

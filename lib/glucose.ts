@@ -73,6 +73,16 @@ export type GlucoseStatus = "low" | "normal" | "elevated" | "high" | "veryHigh";
  */
 export const VERY_HIGH_MGDL = 250;
 
+/**
+ * The one "in target range" test for time-in-range figures. The bands are
+ * disjoint: a reading at or above VERY_HIGH_MGDL is "very high" even when a
+ * lenient personal ceiling (up to 300) would otherwise cover it, so the in-range,
+ * high and very-high shares can never add up past 100 %.
+ */
+export function inTargetBand(value: number, band: { low: number; high: number }): boolean {
+  return value >= band.low && value <= band.high && value < VERY_HIGH_MGDL;
+}
+
 /** Bounds the user's own range/threshold inputs to values that stay sane. */
 export const HYPO_THRESHOLD_RANGE = { min: 54, max: 90 } as const;
 export const TARGET_RANGE_BOUNDS = { min: 60, max: 300 } as const;

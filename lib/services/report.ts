@@ -22,6 +22,7 @@ import {
   formatGlucose,
   glucoseUnitLabel,
   hypoThreshold,
+  inTargetBand,
   VERY_HIGH_MGDL,
   LOW_FOLLOWUP_MINUTES,
 } from "../glucose";
@@ -323,7 +324,7 @@ function buildTimeline(
           ? g.cgmLevels
           : [...g.readings.map((r) => r.glucose_level_mgdl), ...g.cgmLevels];
       const avg = levels.length ? Math.round(levels.reduce((a, b) => a + b, 0) / levels.length) : null;
-      const inR = levels.filter((v) => v >= band.low && v <= band.high).length;
+      const inR = levels.filter((v) => inTargetBand(v, band)).length;
       const tir = levels.length ? Math.round((inR / levels.length) * 100) : null;
       const hourCellW = span / 24;
       const strip = g.hours
@@ -1204,10 +1205,10 @@ export function buildReportDocument(
   for (const s of basis.readings) {
     const v = s.glucose_level_mgdl;
     tir.total++;
-    if (v >= 250) tir.veryHigh++;
+    if (v >= VERY_HIGH_MGDL) tir.veryHigh++;
     else if (v < 54) tir.veryLow++;
     else if (v < reportBand.low) tir.low++;
-    else if (v <= reportBand.high) tir.target++;
+    else if (inTargetBand(v, reportBand)) tir.target++;
     else tir.high++;
   }
 
@@ -1463,6 +1464,7 @@ export async function exportLogsPdf(
     return { ok: false, reason: "sharingUnavailable" };
   }
 
+  opts?.onProgress?.({ stage: "sharing" });
   await Sharing.shareAsync(uri, {
     mimeType: "application/pdf",
     dialogTitle: i18n.t("report.shareTitle"),

@@ -6,7 +6,7 @@ import DateTimePicker, {
 import { useTranslation } from "react-i18next";
 
 import { Button } from "./ui";
-import { SPACE } from "../lib/theme/tokens";
+import { SPACE, THEME } from "../lib/theme/tokens";
 
 /**
  * Cross-platform date + time picker for a log's recorded moment, following the
@@ -107,7 +107,7 @@ export function InlineDateTimePicker({
         onChange={(_e: DateTimePickerEvent, date?: Date) => {
           if (date) onChange(clamp(date));
         }}
-        themeVariant="dark"
+        themeVariant={THEME.scheme}
       />
     </View>
   );

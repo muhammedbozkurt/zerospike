@@ -7,7 +7,7 @@ import type {
 } from "./db/types";
 import { INJECTION_SITES, LOG_TAGS } from "./db/types";
 import { percentile } from "./agp";
-import { VERY_HIGH_MGDL } from "./glucose";
+import { VERY_HIGH_MGDL, inTargetBand } from "./glucose";
 import { isUserEntered } from "./glucoseSource";
 import {
   cgmGmiEligible,
@@ -15,6 +15,7 @@ import {
   isCgmPoint,
   selectGlucoseBasis,
   timeOf,
+  windowFitsGmi,
   type CgmSourceKind,
   type MetricsWindow,
 } from "./cgm/metrics";
@@ -39,7 +40,7 @@ export interface Insights {
   days: number;
   avgGlucose: number | null;
   /** The four shares are mutually exclusive and sum to 100. */
-  inRangePct: number | null; // inside the profile's target band
+  inRangePct: number | null; // inside the profile's target band and under 250 mg/dL
   lowPct: number | null; // below the band's low end
   highPct: number | null; // above the band, under the fixed 250 ceiling
   veryHighPct: number | null; // at/above 250 mg/dL
@@ -153,12 +154,18 @@ export function hasGmiBasis(readings: { logged_at: string; t?: number }[]): bool
 }
 
 /**
- * Which hint explains a withheld GMI. Any sensor reading in the window means the
- * sensor rule (14 days, 70 % coverage) is the one that decides, even when the
- * basis fell back to the fingersticks: "needs 14 readings" would be false for
- * someone who already has 120.
+ * Which hint explains a withheld GMI. A window shorter than the 14 days either
+ * rule needs can never carry one, whatever the data, so that comes first: the
+ * user's way out is a longer window, not more readings. Past that, any sensor
+ * reading in the window means the sensor rule (70 % coverage of the window) is
+ * the one that decides, even when the basis fell back to the fingersticks:
+ * "needs 14 readings" would be false for someone who already has 120.
  */
-export function gmiWithheldReason(i: Pick<Insights, "basis" | "cgmReadings">): "coverage" | "readings" {
+export function gmiWithheldReason(
+  i: Pick<Insights, "basis" | "cgmReadings">,
+  windowDays: number
+): "window" | "coverage" | "readings" {
+  if (!windowFitsGmi(windowDays)) return "window";
   return i.basis === "cgm" || i.cgmReadings > 0 ? "coverage" : "readings";
 }
 
@@ -218,7 +225,7 @@ export function computeInsights(
   const levels = basisRows.map((x) => x.glucose_level_mgdl);
   const readings = levels.length;
 
-  const inRange = levels.filter((v) => v >= band.low && v <= band.high).length;
+  const inRange = levels.filter((v) => inTargetBand(v, band)).length;
   const low = levels.filter((v) => v < band.low).length;
   const veryHigh = levels.filter((v) => v >= VERY_HIGH_MGDL).length;
   const high = levels.filter((v) => v > band.high && v < VERY_HIGH_MGDL).length;
@@ -285,7 +292,10 @@ export function computeInsights(
     dayKeys.add(key);
     handDayKeys.add(key);
   }
-  const days = dayKeys.size;
+  // A rolling 7 x 24 h window starts mid-day, so it touches 8 calendar days; the
+  // count never exceeds the window's own length.
+  const spanDays = Math.max(1, Math.ceil((win.end - win.start) / 86_400_000));
+  const days = Math.min(dayKeys.size, spanDays);
   const carbDays = handDayKeys.size;
 
   const totalCarbs = m.reduce((a, x) => a + (x.calculated_carbs_g || 0), 0);
@@ -401,7 +411,7 @@ export function trendVsPrevious(
   const avgOf = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
   const tirOf = (a: number[]) =>
     a.length
-      ? (a.filter((v) => v >= band.low && v <= band.high).length / a.length) * 100
+      ? (a.filter((v) => inTargetBand(v, band)).length / a.length) * 100
       : null;
   const curAvg = avgOf(cur);
   const prevAvg = avgOf(prev);

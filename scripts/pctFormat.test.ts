@@ -69,7 +69,7 @@ eq("no sensor reading: no basis line", basisLine(fakeT, "ios", { basis: "manual"
 eq(
   "low coverage: manual basis, coverage still named",
   basisLine(fakeT, "ios", { basis: "manual", cgmCoverage: 12, cgmSources: ["health"], manualReadings: 4 }),
-  "cgmInsights.basisManual||12%||"
+  "cgmInsights.basisAll||12%||"
 );
 eq(
   "sensor basis with hand-entered rows names their count",
