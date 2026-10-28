@@ -424,7 +424,8 @@ const tr = {
     saveChanges: "Değişiklikleri Kaydet",
     loggedTime: "Kayıt tarihi ve saati",
     autoInjection: "Doz da bolus enjeksiyonu olarak kaydedildi.",
-    autoInjectionNoSite: "Doz da bölgesiz bir bolus enjeksiyonu olarak kaydedildi. Bölgeyi Enjeksiyon sekmesinden ekleyebilirsiniz.",
+    autoInjectionNoSite: "Doz, bölgesiz bir bolus olarak kaydedildi. Bölge eklemek için Bölge ekle'ye dokunun.",
+    addSite: "Bölge ekle",
     autoInjectionShort: "Bolus kaydı oluşturuldu",
     autoGlucose: "Girdiğiniz şeker ölçümü de kaydedildi.",
     correctionTargetNote: "Düzeltme, hedef aralığının ortasını ({{value}} {{unit}}) esas alır.",
@@ -591,6 +592,8 @@ const tr = {
   },
   entryGuard: {
     title: "Yine de kaydedilsin mi?",
+    addSiteToRecord: "Bu kayda bölge ekle",
+    saveAnyway: "Yine de kaydet",
     recentBasal: "Son {{h}} saat içinde bir bazal kaydı var ({{time}}, {{units}} ünite).",
     recentBolus: "Son {{m}} dakika içinde bir bolus kaydı var ({{time}}, {{units}} ünite).",
     recentGlucose: "Son {{m}} dakika içinde bir şeker kaydı var ({{time}}, {{value}}).",

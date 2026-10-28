@@ -41,6 +41,7 @@ import {
   savedToastKey,
   writeBolusRow,
 } from "../lib/mealEditPatch";
+import { siteEditParams } from "../lib/injectionEditTarget";
 import {
   RECENT_GLUCOSE_WINDOW_MINUTES,
   fieldIsOffer,
@@ -1774,7 +1775,7 @@ function CalculatorScreen() {
             : toastKey === "autoGlucose"
               ? t("calculator.autoGlucose")
               : t("calculator.savedRecord");
-      toast(message, "success", {
+      const undoAction = {
         label: t("common.undo"),
         onPress: () => {
           void (async () => {
@@ -1801,7 +1802,28 @@ function CalculatorScreen() {
             toast(t("calculator.undone"), "info");
           })();
         },
-      });
+      };
+      if (toastKey === "autoInjectionNoSite") {
+        // The row already exists: the action opens ITS edit sheet on the
+        // Injection tab. Logging from the map would write a second bolus.
+        toast(message, "success", {
+          label: t("calculator.addSite"),
+          onPress: () => {
+            void (async () => {
+              let rowId: string | null = null;
+              try {
+                rowId = (await getCalculatorInjectionForMeal(mealId))?.id ?? null;
+              } catch (err) {
+                logCrash(err, { screen: "calculator", step: "addSiteLookup" });
+              }
+              router.navigate({ pathname: "/(tabs)/injection", params: siteEditParams(rowId) });
+            })();
+          },
+          secondary: undoAction,
+        });
+      } else {
+        toast(message, "success", undoAction);
+      }
       dismiss();
       if (glucoseStatus !== "low") void maybeRequestReview("log_saved");
     } catch (err) {

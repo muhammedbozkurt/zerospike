@@ -10,6 +10,7 @@ export type ToastKind = "success" | "info" | "error";
 export interface ToastCardAction {
   label: string;
   onPress: () => void;
+  secondary?: { label: string; onPress: () => void };
 }
 
 /** The kind is carried by the icon shape as well as its color, so it survives Increase Contrast and color-blindness. */
@@ -35,25 +36,51 @@ export function ToastCard({
   action: ToastCardAction | null;
 }) {
   const ks = kindStyle(kind);
-  return (
-    <View
-      style={{
-        flexDirection: "row",
+  const two = action?.secondary != null;
+  const primary = action ? (
+    <Pressable
+      onPress={action.onPress}
+      accessibilityRole="button"
+      accessibilityLabel={action.label}
+      style={({ pressed }) => ({
+        marginStart: 8,
+        minHeight: HIT_TARGET,
+        minWidth: HIT_TARGET,
+        justifyContent: "center",
         alignItems: "center",
-        backgroundColor: THEME.surfaceRaised,
-        borderRadius: RADIUS.lg,
-        borderWidth: 1,
-        borderColor: THEME.borderStrong,
-        paddingVertical: 8,
-        paddingStart: 14,
-        paddingEnd: action ? 8 : 14,
-        minHeight: HIT_TARGET + 16,
-        width: "100%",
-        maxWidth: TOAST_MAX_WIDTH,
-        alignSelf: "center",
-        ...ELEVATION.card,
-      }}
+        backgroundColor: THEME.accentFill,
+        borderRadius: RADIUS.full,
+        paddingHorizontal: 16,
+        opacity: pressed ? 0.8 : 1,
+      })}
     >
+      <Text style={{ color: THEME.accentOnFill, fontWeight: "800", fontSize: 14 }}>
+        {action.label}
+      </Text>
+    </Pressable>
+  ) : null;
+  const secondary = action?.secondary ? (
+    <Pressable
+      onPress={action.secondary.onPress}
+      accessibilityRole="button"
+      accessibilityLabel={action.secondary.label}
+      style={({ pressed }) => ({
+        minHeight: HIT_TARGET,
+        minWidth: HIT_TARGET,
+        justifyContent: "center",
+        alignItems: "center",
+        borderRadius: RADIUS.full,
+        paddingHorizontal: 12,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Text style={{ color: THEME.text, fontWeight: "700", fontSize: 14 }}>
+        {action.secondary.label}
+      </Text>
+    </Pressable>
+  ) : null;
+  const messageRow = (
+    <View style={{ flexDirection: "row", alignItems: "center", flex: two ? undefined : 1 }}>
       <Ionicons name={ks.icon} size={22} color={ks.color} />
       <Text
         accessible
@@ -71,28 +98,36 @@ export function ToastCard({
       >
         {message}
       </Text>
-      {action ? (
-        <Pressable
-          onPress={action.onPress}
-          accessibilityRole="button"
-          accessibilityLabel={action.label}
-          style={({ pressed }) => ({
-            marginStart: 8,
-            minHeight: HIT_TARGET,
-            minWidth: HIT_TARGET,
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: THEME.accentFill,
-            borderRadius: RADIUS.full,
-            paddingHorizontal: 16,
-            opacity: pressed ? 0.8 : 1,
-          })}
-        >
-          <Text style={{ color: THEME.accentOnFill, fontWeight: "800", fontSize: 14 }}>
-            {action.label}
-          </Text>
-        </Pressable>
-      ) : null}
+    </View>
+  );
+  return (
+    <View
+      style={{
+        flexDirection: two ? "column" : "row",
+        alignItems: two ? "stretch" : "center",
+        backgroundColor: THEME.surfaceRaised,
+        borderRadius: RADIUS.lg,
+        borderWidth: 1,
+        borderColor: THEME.borderStrong,
+        paddingVertical: 8,
+        paddingStart: 14,
+        paddingEnd: action ? 8 : 14,
+        minHeight: HIT_TARGET + 16,
+        width: "100%",
+        maxWidth: TOAST_MAX_WIDTH,
+        alignSelf: "center",
+        ...ELEVATION.card,
+      }}
+    >
+      {messageRow}
+      {two ? (
+        <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
+          {secondary}
+          {primary}
+        </View>
+      ) : (
+        primary
+      )}
     </View>
   );
 }

@@ -426,7 +426,8 @@ const ar: TranslationSchema = {
     saveChanges: "حفظ التغييرات",
     loggedTime: "تاريخ السجل ووقته",
     autoInjection: "سُجّلت الجرعة أيضًا كحقنة إنسولين سريع المفعول.",
-    autoInjectionNoSite: "سُجّلت الجرعة أيضًا كحقنة إنسولين سريع المفعول بلا منطقة. يمكنك إضافة المنطقة من تبويب الحقن.",
+    autoInjectionNoSite: "سُجّلت الجرعة كحقنة إنسولين سريع المفعول بلا منطقة. يمكنك إضافة منطقة بالضغط على «إضافة منطقة».",
+    addSite: "إضافة منطقة",
     autoInjectionShort: "تم إنشاء سجل حقنة سريعة المفعول",
     autoGlucose: "سُجّلت أيضًا قيمة سكر الدم التي أدخلتها.",
     correctionTargetNote: "يستهدف التصحيح منتصف نطاقك المستهدف ({{value}} {{unit}}).",
@@ -593,6 +594,8 @@ const ar: TranslationSchema = {
   },
   entryGuard: {
     title: "هل تحفظ على أي حال؟",
+    addSiteToRecord: "إضافة منطقة إلى ذلك السجل",
+    saveAnyway: "الحفظ على أي حال",
     recentBasal: "يوجد تسجيل قاعدي خلال آخر {{h}} ساعة ({{time}}، {{units}} وحدة).",
     recentBolus: "يوجد تسجيل سريع المفعول خلال آخر {{m}} دقيقة ({{time}}، {{units}} وحدة).",
     recentGlucose: "يوجد تسجيل سكر دم خلال آخر {{m}} دقيقة ({{time}}، {{value}}).",

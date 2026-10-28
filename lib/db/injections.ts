@@ -386,6 +386,8 @@ export interface RecentInjection {
   logged_at: string;
   insulin_type: InsulinType | null;
   dose_units: number | null;
+  source?: string | null;
+  site?: InjectionSite | null;
 }
 
 /**
@@ -402,7 +404,7 @@ export async function listRecentInjections(
   const db = await getDb();
   const values = untilIso ? [profileId, sinceIso, untilIso] : [profileId, sinceIso];
   return db.getAllAsync<RecentInjection>(
-    `SELECT id, logged_at, insulin_type, dose_units FROM injection_logs
+    `SELECT id, logged_at, insulin_type, dose_units, source, site FROM injection_logs
       WHERE profile_id = ? AND logged_at >= ? ${untilIso ? "AND logged_at <= ?" : ""}
       ORDER BY logged_at DESC;`,
     values

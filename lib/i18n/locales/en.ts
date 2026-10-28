@@ -426,7 +426,8 @@ const en: TranslationSchema = {
     saveChanges: "Save Changes",
     loggedTime: "Entry date and time",
     autoInjection: "The dose was logged as a bolus injection too.",
-    autoInjectionNoSite: "The dose was logged as a bolus injection too, with no region. You can add the region on the Injection tab.",
+    autoInjectionNoSite: "The dose was logged as a bolus with no region. To add one, tap Add region.",
+    addSite: "Add region",
     autoInjectionShort: "Bolus entry created",
     autoGlucose: "The glucose value you entered was logged too.",
     correctionTargetNote: "The correction aims at the middle of your target range ({{value}} {{unit}}).",
@@ -593,6 +594,8 @@ const en: TranslationSchema = {
   },
   entryGuard: {
     title: "Save anyway?",
+    addSiteToRecord: "Add region to that entry",
+    saveAnyway: "Save anyway",
     recentBasal: "There is a basal entry in the last {{h}} h ({{time}}, {{units}} units).",
     recentBolus: "There is a bolus entry in the last {{m}} min ({{time}}, {{units}} units).",
     recentGlucose: "There is a glucose entry in the last {{m}} min ({{time}}, {{value}}).",

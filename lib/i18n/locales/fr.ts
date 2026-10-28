@@ -426,7 +426,8 @@ const fr: TranslationSchema = {
     saveChanges: "Enregistrer les modifications",
     loggedTime: "Date et heure de l'entrée",
     autoInjection: "La dose a également été enregistrée comme injection de bolus.",
-    autoInjectionNoSite: "La dose a également été enregistrée comme injection de bolus, sans zone. Vous pouvez ajouter la zone dans l'onglet Injection.",
+    autoInjectionNoSite: "La dose a été enregistrée comme bolus, sans zone. Pour en ajouter une, touchez Ajouter la zone.",
+    addSite: "Ajouter la zone",
     autoInjectionShort: "Entrée de bolus créée",
     autoGlucose: "La valeur de glycémie saisie a aussi été enregistrée.",
     correctionTargetNote: "La correction vise le milieu de votre plage cible ({{value}} {{unit}}).",
@@ -593,6 +594,8 @@ const fr: TranslationSchema = {
   },
   entryGuard: {
     title: "Enregistrer quand même ?",
+    addSiteToRecord: "Ajouter la zone à cette entrée",
+    saveAnyway: "Enregistrer quand même",
     recentBasal: "Il y a une saisie basale dans les {{h}} dernières heures ({{time}}, {{units}} unités).",
     recentBolus: "Il y a une saisie bolus dans les {{m}} dernières minutes ({{time}}, {{units}} unités).",
     recentGlucose: "Il y a une saisie de glycémie dans les {{m}} dernières minutes ({{time}}, {{value}}).",

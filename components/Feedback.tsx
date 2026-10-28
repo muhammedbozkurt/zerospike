@@ -53,6 +53,9 @@ import { useToastBottom } from "./useToastBottom";
 export interface ToastAction {
   label: string;
   onPress: () => void | Promise<void>;
+  /** A second, quieter button next to the primary one (e.g. "Undo" beside
+   *  "Add region"). Same run-once-then-dismiss behaviour as the primary. */
+  secondary?: { label: string; onPress: () => void | Promise<void> };
 }
 
 interface ConfirmOptions {
@@ -105,7 +108,7 @@ interface FeedbackInternal {
   toastMsg: string;
   toastKind: ToastKind;
   toastAction: ToastAction | null;
-  runToastAction: () => void;
+  runToastAction: (which?: "secondary") => void;
   toastAnim: Animated.Value;
   confirmOpts: OpenConfirm | null;
   closeConfirm: (result: boolean | null) => void;
@@ -328,10 +331,10 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   );
 
   /** Runs the toast's action once, then dismisses it. */
-  const runToastAction = useCallback(() => {
+  const runToastAction = useCallback((which?: "secondary") => {
     const cur = toastRef.current.current;
     if (!cur || !cur.action) return;
-    const action = cur.action;
+    const action = which === "secondary" && cur.action.secondary ? cur.action.secondary : cur.action;
     const isUndo = action.label === t("common.undo");
     dispatchToast({ type: "actionRun", id: cur.id });
     const confirmUndone = () => {
@@ -521,7 +524,17 @@ function FeedbackOverlays() {
         <ToastCard
           message={toastMsg}
           kind={toastKind}
-          action={toastAction ? { label: toastAction.label, onPress: runToastAction } : null}
+          action={
+            toastAction
+              ? {
+                  label: toastAction.label,
+                  onPress: () => runToastAction(),
+                  secondary: toastAction.secondary
+                    ? { label: toastAction.secondary.label, onPress: () => runToastAction("secondary") }
+                    : undefined,
+                }
+              : null
+          }
         />
       </Animated.View>
     </View>

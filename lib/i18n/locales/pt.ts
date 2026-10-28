@@ -426,7 +426,8 @@ const pt: TranslationSchema = {
     saveChanges: "Salvar alterações",
     loggedTime: "Data e hora do registro",
     autoInjection: "A dose também foi registrada como aplicação de bolus.",
-    autoInjectionNoSite: "A dose também foi registrada como aplicação de bolus, sem local. Você pode adicionar o local na aba Aplicações.",
+    autoInjectionNoSite: "A dose foi registrada como bolus, sem local. Para adicionar um, toque em Adicionar local.",
+    addSite: "Adicionar local",
     autoInjectionShort: "Registro de bolus criado",
     autoGlucose: "O valor de glicemia que você digitou também foi registrado.",
     correctionTargetNote: "A correção mira o meio da sua faixa-alvo ({{value}} {{unit}}).",
@@ -593,6 +594,8 @@ const pt: TranslationSchema = {
   },
   entryGuard: {
     title: "Salvar mesmo assim?",
+    addSiteToRecord: "Adicionar local a esse registro",
+    saveAnyway: "Salvar mesmo assim",
     recentBasal: "Há um registro basal nas últimas {{h}} h ({{time}}, {{units}} unidades).",
     recentBolus: "Há um registro de bolus nos últimos {{m}} min ({{time}}, {{units}} unidades).",
     recentGlucose: "Há um registro de glicemia nos últimos {{m}} min ({{time}}, {{value}}).",

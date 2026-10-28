@@ -426,7 +426,8 @@ const ja: TranslationSchema = {
     saveChanges: "変更を保存",
     loggedTime: "記録の日時",
     autoInjection: "この量は追加インスリンの注射としても記録しました。",
-    autoInjectionNoSite: "この量は部位なしの追加インスリンの注射としても記録しました。部位は注射タブから追加できます。",
+    autoInjectionNoSite: "この量は部位なしの追加インスリンの注射として記録しました。部位を追加するには「部位を追加」をタップしてください。",
+    addSite: "部位を追加",
     autoInjectionShort: "追加インスリンの記録を作成しました",
     autoGlucose: "入力した血糖値も記録しました。",
     correctionTargetNote: "補正は目標範囲の中央({{value}} {{unit}})を基準にしています。",
@@ -593,6 +594,8 @@ const ja: TranslationSchema = {
   },
   entryGuard: {
     title: "それでも保存しますか？",
+    addSiteToRecord: "その記録に部位を追加",
+    saveAnyway: "それでも保存",
     recentBasal: "直近{{h}}時間に基礎インスリンの記録があります({{time}}、{{units}}単位)。",
     recentBolus: "直近{{m}}分に追加インスリンの記録があります({{time}}、{{units}}単位)。",
     recentGlucose: "直近{{m}}分に血糖値の記録があります({{time}}、{{value}})。",

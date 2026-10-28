@@ -34,6 +34,7 @@ import { isReducedMotionNow } from "../../lib/useReducedMotion";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { DirIcon } from "../../components/DirIcon";
 import { InjectionEditSheet } from "../../components/InjectionEditSheet";
+import { parseEditRequest, pickEditRow } from "../../lib/injectionEditTarget";
 import { useStepperValidity } from "../../components/Stepper";
 import { NumericField } from "../../components/NumericField";
 import { INJECTION_DOSE_BOUNDS } from "../../lib/numericField";
@@ -64,6 +65,7 @@ import {
   getSiteUsageHistory,
   leastRecentlyUsedPoint,
   countInjectionsAfter,
+  getInjection,
   getInjections,
   logInjection,
   deleteInjection,
@@ -151,7 +153,14 @@ export default function InjectionScreen() {
   const insets = useSafeAreaInsets();
   const { width: winWidth } = useWindowDimensions();
   const router = useRouter();
-  const params = useLocalSearchParams<{ compose?: string; from?: string; segment?: string; zoom?: string }>();
+  const params = useLocalSearchParams<{
+    compose?: string;
+    from?: string;
+    segment?: string;
+    zoom?: string;
+    editId?: string;
+    focus?: string;
+  }>();
   const { activeProfile, isProUser, dataVersion, bumpData } = useApp();
   const proCta = useProCta(!isProUser);
   const { confirm, choose, actionSheet, toast } = useFeedback();
@@ -342,6 +351,30 @@ export default function InjectionScreen() {
     router.setParams({ compose: "", from: "" });
   }, [params.compose, params.from, router]);
 
+  // Opens the sheet for one EXISTING row (meal-save toast "Add region", entry
+  // guard "Add region to that entry"). Edits it in place, never logs a new row;
+  // a row that is gone (deleted, undone) just leaves History showing.
+  const openEditById = useCallback(
+    async (id: string) => {
+      try {
+        const row = pickEditRow(id, await getInjection(id), activeProfile?.id);
+        if (row) setEditing(row);
+      } catch (err) {
+        logCrash(err, { screen: "injection", op: "openEditById" });
+      }
+    },
+    [activeProfile?.id]
+  );
+
+  useEffect(() => {
+    const req = parseEditRequest(params);
+    if (!req) return;
+    fromTodayRef.current = false;
+    setSegment("history");
+    router.setParams({ editId: "", focus: "" });
+    if (req.id) void openEditById(req.id);
+  }, [params.editId, params.focus, router, openEditById]);
+
   // Leaving the tab without saving ends the "came from Today" intent, so a
   // later direct visit and save stays in the log.
   useFocusEffect(
@@ -529,6 +562,10 @@ export default function InjectionScreen() {
           entryKind: "injection",
           insulinType,
           entryAtIso: stampNow().toISOString(),
+          onAddSite: (id) => {
+            setSegment("history");
+            void openEditById(id);
+          },
         });
       },
       write: () => {

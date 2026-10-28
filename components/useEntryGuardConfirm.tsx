@@ -16,6 +16,7 @@ import { listRecentSugarLogs } from "../lib/db/logs";
 import { listRecentInjections } from "../lib/db/injections";
 import { listRecentMealLogs } from "../lib/db/logs";
 import { logCrash } from "../lib/analytics";
+import { guardAddSiteOutcome } from "../lib/injectionEditTarget";
 
 export interface EntryGuardRequest {
   entryKind: "glucose" | "meal" | "injection" | "post_meal_timer";
@@ -30,6 +31,10 @@ export interface EntryGuardRequest {
   /** Caller reads this from the DB itself if it already has it; otherwise the
    *  hook fetches the profile's last few hours on its own. */
   recent?: EntryGuardInput["recent"];
+  /** Injection form only: when the matched bolus is a region-less meal-save
+   *  row, the dialog also offers "add region to that entry"; picking it calls
+   *  this with the row id and the pending save is dropped (no second row). */
+  onAddSite?: (injectionId: string) => void;
 }
 
 /**
@@ -104,7 +109,7 @@ export function entryGuardMessageKeys(
  */
 export function useEntryGuardConfirm(): (req: EntryGuardRequest) => Promise<boolean> {
   const { t } = useTranslation();
-  const { confirm } = useFeedback();
+  const { confirm, choose } = useFeedback();
   const { activeProfile } = useApp();
 
   return useCallback(
@@ -158,6 +163,22 @@ export function useEntryGuardConfirm(): (req: EntryGuardRequest) => Promise<bool
         .map(({ key, vars }) => t(key, vars))
         .join("\n");
 
+      const addSiteId = req.onAddSite
+        ? notices.find((n) => n.kind === "recent_bolus" && n.detail?.addSiteToId)?.detail?.addSiteToId
+        : undefined;
+      if (addSiteId && req.onAddSite) {
+        const choice = await choose({
+          title: t("entryGuard.title"),
+          message,
+          confirmLabel: t("entryGuard.addSiteToRecord"),
+          cancelLabel: t("entryGuard.saveAnyway"),
+          icon: "time-outline",
+        });
+        const outcome = guardAddSiteOutcome(choice, addSiteId);
+        if (outcome.openEditId) req.onAddSite(outcome.openEditId);
+        return outcome.save;
+      }
+
       return confirm({
         title: t("entryGuard.title"),
         message,
@@ -167,6 +188,6 @@ export function useEntryGuardConfirm(): (req: EntryGuardRequest) => Promise<bool
         icon: "time-outline",
       });
     },
-    [activeProfile, confirm, t]
+    [activeProfile, confirm, choose, t]
   );
 }
