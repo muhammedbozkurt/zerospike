@@ -775,6 +775,7 @@ const pt: TranslationSchema = {
     healthPermissionBlocked: "O acesso ao {{health}} parece estar bloqueado. As configurações serão abertas para você permitir.",
     healthDeniedStepsIos: "Para permitir, abra o app Saúde, toque na sua foto de perfil, escolha Apps (até o iOS 17: Privacidade e depois Apps), selecione zerospike e ative Glicose no Sangue.",
     healthDeniedStepsAndroid: "Para permitir, abra o Health Connect, vá em Permissões de apps, selecione zerospike e permita a gravação de Glicose no sangue.",
+    healthReadDeniedStepsAndroid: "Para permitir, abra o Health Connect, vá em Permissões de apps, selecione zerospike e permita a leitura de Glicose no sangue.",
     healthOpenApp: "Abrir {{health}}",
     healthPendingWrites: "Aguardando gravação: {{count}}",
     healthRetryNow: "Tentar agora",

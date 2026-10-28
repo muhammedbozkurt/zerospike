@@ -51,6 +51,7 @@ import {
   isWritePermissionBlocked,
 } from "./healthConnect";
 import { healthMock } from "./healthMock";
+import { createImportShare, settleWriteGrant } from "../healthConnectFlow";
 import {
   ANDROID_GLUCOSE_PAGE_SIZE,
   ANDROID_SYNC_ROUND_MAX_SAMPLES,
@@ -486,21 +487,26 @@ export async function requestHealthPermissions(): Promise<boolean> {
  * is silent: nothing is switched on and nothing is reported.
  */
 export async function requestHealthReadWriteAccess(
-  profileId?: string | null
+  profileId?: string | null,
+  /** False once the run that asked was cancelled: a grant that arrives then must not switch the mirror on unannounced. */
+  wanted: () => boolean = () => true
 ): Promise<{ read: boolean; write: boolean; writeEnabled: boolean; newlyEnabled: boolean }> {
   const provider = getProvider();
   if (!provider) return { read: false, write: false, writeEnabled: false, newlyEnabled: false };
   try {
     const wasAuthorized = await provider.isWriteAuthorized();
     const res = await provider.requestReadWritePermissions();
-    let newlyEnabled = false;
-    if (res.write && !wasAuthorized) {
-      const id = profileId ?? (await activeProfileId());
-      if (id) {
+    const newlyEnabled = await settleWriteGrant({
+      write: res.write,
+      wasAuthorized,
+      wanted,
+      enable: async () => {
+        const id = profileId ?? (await activeProfileId());
+        if (!id) return false;
         await setHealthWriteEnabled(true, id);
-        newlyEnabled = true;
-      }
-    }
+        return true;
+      },
+    });
     const writeEnabled = res.write && (await getHealthWriteEnabled(profileId));
     return { read: res.read, write: res.write, writeEnabled, newlyEnabled };
   } catch {
@@ -1932,16 +1938,12 @@ export async function importHealthGlucose(
 ): Promise<SyncResult> {
   // Overlapping triggers (observer burst, task + foreground, double tap) share
   // the one running import for the profile instead of racing the dedup read.
-  const running = importsInFlight.get(profileId);
-  if (running) return running;
-  const run = runImportHealthGlucose(profileId, source).finally(() => {
-    importsInFlight.delete(profileId);
-  });
-  importsInFlight.set(profileId, run);
-  return run;
+  // A run that never settled (a system dialog iOS could not present) must not
+  // be handed to every later caller: past IMPORT_STALE_MS a fresh one starts.
+  return importShare.share(profileId, () => runImportHealthGlucose(profileId, source));
 }
 
-const importsInFlight = new Map<string, Promise<SyncResult>>();
+const importShare = createImportShare<SyncResult>(() => Date.now());
 
 async function runImportHealthGlucose(
   profileId: string,

@@ -95,9 +95,22 @@ import {
   requestHealthReadWriteAccess,
   requestHealthWritePermission,
   setHealthWriteEnabled,
+  isHealthConnectPermissionBlocked,
+  openHealthSettings,
   HEALTH_NAME,
   type SyncResult,
 } from "../../lib/services/health";
+import {
+  createHealthFlow,
+  createRetryQueue,
+  realClock,
+  runConnect,
+  runGuardedImport,
+  switchOff,
+  type FlowSession,
+  type HealthFlow,
+} from "../../lib/healthConnectFlow";
+import { onSurveyRelease, overlayOpen } from "../../lib/feedbackSurvey";
 import { undoNewGlucose } from "../../lib/services/glucoseUndo";
 import { runHealthWriteAsk } from "../../lib/healthWriteAsk";
 import { healthWriteAskSeen, markHealthWriteAskSeen } from "../../lib/services/healthWritePrompt";
@@ -440,6 +453,62 @@ export default function DashboardScreen() {
   // resolves to a real boolean.
   const [cgmOn, setCgmOn] = useState<boolean | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // Health system dialogs wait for the screen to be free (a modal that sent the
+  // person here is still sliding away) and every wait is bounded; see
+  // lib/healthConnectFlow.
+  // Starts false: a screen that mounts under a modal must not read as free.
+  const focusedRef = useRef(false);
+  const flowRef = useRef<HealthFlow | null>(null);
+  if (flowRef.current === null) {
+    flowRef.current = createHealthFlow({
+      isBlocked: () => !focusedRef.current || overlayOpen(),
+      clock: realClock,
+    });
+  }
+  const healthFlow = flowRef.current;
+  const latestRef = useRef({ runSync, toggleCgm });
+  latestRef.current = { runSync, toggleCgm };
+  // A run that found the screen covered for too long asks again once it
+  // clears, but only for the profile that asked and only while that profile's
+  // Health switch is on (a profile switch in between drops it).
+  const retryRef = useRef<ReturnType<typeof createRetryQueue> | null>(null);
+  if (retryRef.current === null) {
+    retryRef.current = createRetryQueue({
+      activeProfileId: () => activeProfileIdRef.current,
+      isFocused: () => focusedRef.current,
+      run: (kind, profileId) => {
+        if (kind === "connect") {
+          void latestRef.current.toggleCgm(true);
+          return;
+        }
+        void readProfileFlag(CGM_KEY, profileId).then((on) => {
+          if (on && activeProfileIdRef.current === profileId) void latestRef.current.runSync(false);
+        });
+      },
+    });
+  }
+  const retryQueue = retryRef.current;
+  const flushRetry = useCallback(() => retryQueue.flush(), [retryQueue]);
+  useFocusEffect(
+    useCallback(() => {
+      focusedRef.current = true;
+      healthFlow.touch();
+      flushRetry();
+      return () => {
+        focusedRef.current = false;
+        healthFlow.touch();
+      };
+    }, [healthFlow, flushRetry])
+  );
+  useEffect(
+    () =>
+      onSurveyRelease(() => {
+        healthFlow.touch();
+        flushRetry();
+      }),
+    [healthFlow, flushRetry]
+  );
+  useEffect(() => () => healthFlow.cancel(), [healthFlow]);
   // undefined = not checked yet, or this platform/build cannot say either way
   // (no native module linked, a query error). The setup row's Widget item
   // stays neutral in that case rather than claiming "not installed".
@@ -973,6 +1042,7 @@ export default function DashboardScreen() {
     // let its toggle read as this profile's own) for one frame before the read
     // below resolves.
     setCgmOn(null);
+    retryQueue.clear();
     (async () => {
       let saved = false;
       try {
@@ -1037,15 +1107,35 @@ export default function DashboardScreen() {
   // but the write-mirror retry is not (same as the foreground AppState
   // trigger above), so it runs here even for a non-Pro profile that still
   // has the write toggle on from an earlier Pro period.
-  async function runSync(announce: boolean): Promise<SyncResult | null> {
+  async function runSync(announce: boolean, shared?: FlowSession): Promise<SyncResult | null> {
     if (!activeProfile) return null;
     void retryPendingHealthWrites(activeProfile.id);
     void retryHealthRecords(activeProfile.id);
-    if (syncing || !isProUser) return null;
-    setSyncing(true);
-    try {
-      const manualBefore = await countNonCgmHealthRows(activeProfile.id).catch(() => null);
-      const res = await importHealthGlucose(activeProfile.id, announce ? "manual" : "foreground");
+    if (!isProUser || (!shared && syncing)) return null;
+    const profileId = activeProfile.id;
+    let manualBefore: number | null = null;
+    // The import may raise the system permission dialog: not before the screen
+    // is free, and a timeout only frees the card (a late result still lands).
+    return runGuardedImport<SyncResult>(
+      healthFlow,
+      {
+        setSyncing,
+        onBlocked: () => {
+          retryQueue.queue("sync", profileId);
+        },
+        run: async () => {
+          manualBefore = await countNonCgmHealthRows(profileId).catch(() => null);
+          return importHealthGlucose(profileId, announce ? "manual" : "foreground");
+        },
+        onResult: (res) => finishSync(res, announce, manualBefore),
+      },
+      shared
+    );
+  }
+
+  async function finishSync(res: SyncResult, announce: boolean, manualBefore: number | null) {
+    if (!activeProfile) return;
+    {
       if (res.status === "ok") void refreshFirstSync(activeProfile.id).then(setSyncDone);
       if (res.inserted > 0) {
         // One event per sync (not per row) to keep health-import volume sane. Its
@@ -1085,16 +1175,33 @@ export default function DashboardScreen() {
           }
           if (firstEmpty) {
             toast(t("dashboard.healthFirstImportEmpty", { health: HEALTH_NAME }), "info");
+          } else if (res.status === "denied") {
+            await offerHealthSettings();
           } else {
             const { msg, tone } = describeSync(res);
             toast(msg, tone);
           }
         }
       }
-      return res;
-    } finally {
-      setSyncing(false);
     }
+  }
+
+  /** Refused access: say where to turn it on and open that place on request. */
+  async function offerHealthSettings() {
+    if (Platform.OS === "android" && isHealthConnectPermissionBlocked("read")) {
+      toast(t("settings.healthPermissionBlocked", { health: HEALTH_NAME }), "info");
+      void openHealthSettings();
+      return;
+    }
+    const open = await confirm({
+      title: t("dashboard.healthDenied", { health: HEALTH_NAME }),
+      message: t(
+        Platform.OS === "ios" ? "settings.healthDeniedStepsIos" : "settings.healthReadDeniedStepsAndroid"
+      ),
+      confirmLabel: t("settings.healthOpenApp", { health: HEALTH_NAME }),
+      cancelLabel: t("common.close"),
+    });
+    if (open) void openHealthSettings();
   }
 
   const unit = activeProfile?.glucose_unit ?? "mgdl";
@@ -1757,38 +1864,60 @@ export default function DashboardScreen() {
   }
 
   async function toggleCgm(next: boolean) {
-    setCgmOn(next);
-    if (activeProfile) await writeProfileFlag(CGM_KEY, activeProfile.id, next);
-    if (!next) return;
-    // Connecting asks for write access in the same system dialog as read; a new
-    // grant switches the mirror on for this profile, a denial stays silent.
-    const access = activeProfile
-      ? await requestHealthReadWriteAccess(activeProfile.id)
-      : null;
-    // Read refused in the combined dialog: opening the read dialog again right
-    // away (importHealthGlucose asks for it) would just repeat the same prompt.
-    if (access && !access.read) {
-      toast(
-        access.newlyEnabled ? writeOnMessage() : t("dashboard.healthDenied", { health: HEALTH_NAME }),
-        "info"
-      );
+    if (!next) {
+      // Off is immediate and final: whatever is still in flight (a permission
+      // request that never came back, an import) is superseded, so a late
+      // answer cannot switch anything back on or leave "Syncing" behind.
+      retryQueue.clear();
+      await switchOff(healthFlow, {
+        setSyncing,
+        setSwitch: setCgmOn,
+        persist: async (on) => {
+          if (activeProfile) await writeProfileFlag(CGM_KEY, activeProfile.id, on);
+        },
+      });
       return;
     }
-    const synced = await runSync(true);
-    if (synced?.status === "ok") {
-      // Connected and the first import went through: the Health funnel step, and
-      // the day-1 nudge (and the Pro welcome step) have nothing left to ask for.
-      logEvent("health_connected", {
-        platform: Platform.OS === "ios" ? "ios" : "android",
-        imported: synced.inserted,
-      });
-      void markProWelcomeStep("health", "done");
-      void cancelTrialDay1Nudge();
-    }
-    if (access?.newlyEnabled && activeProfile) {
-      toast(writeOnMessage(), "success");
-      await healthBackfill.offerOnce(activeProfile.id);
-    }
+    setCgmOn(true);
+    if (activeProfile) await writeProfileFlag(CGM_KEY, activeProfile.id, true);
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
+    await runConnect(healthFlow, {
+      setSyncing,
+      onBlocked: () => {
+        retryQueue.queue("connect", profileId);
+      },
+      // The system dialog cannot be shown over a modal that is still closing
+      // (the Pro welcome sends the person here while it slides away). Connecting
+      // asks for write access in the same dialog as read; a new grant switches
+      // the mirror on for this profile.
+      request: (wanted) => requestHealthReadWriteAccess(profileId, wanted),
+      // Read refused in the combined dialog: opening the read dialog again right
+      // away (importHealthGlucose asks for it) would just repeat the same prompt.
+      onDenied: async (access) => {
+        setCgmOn(false);
+        await writeProfileFlag(CGM_KEY, profileId, false);
+        if (access.newlyEnabled) toast(writeOnMessage(), "info");
+        else await offerHealthSettings();
+      },
+      sync: (session) => runSync(true, session),
+      onConnected: async (synced, access) => {
+        if (synced?.status === "ok") {
+          // Connected and the first import went through: the Health funnel step, and
+          // the day-1 nudge (and the Pro welcome step) have nothing left to ask for.
+          logEvent("health_connected", {
+            platform: Platform.OS === "ios" ? "ios" : "android",
+            imported: synced.inserted,
+          });
+          void markProWelcomeStep("health", "done");
+          void cancelTrialDay1Nudge();
+        }
+        if (access.newlyEnabled) {
+          toast(writeOnMessage(), "success");
+          await healthBackfill.offerOnce(profileId);
+        }
+      },
+    });
   }
 
   // The one Health entry point, shared by the quick-access card and the

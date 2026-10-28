@@ -775,6 +775,7 @@ const ja: TranslationSchema = {
     healthPermissionBlocked: "{{health}}へのアクセスがブロックされているようです。許可できるよう設定を開きます。",
     healthDeniedStepsIos: "許可するには、「ヘルスケア」アプリを開き、プロフィール画像をタップして「App」を選び(iOS 17以前は「プライバシー」の「App」)、zerospikeを選んで「血糖値」をオンにしてください。",
     healthDeniedStepsAndroid: "許可するには、Health Connectを開き、「アプリの権限」でzerospikeを選んで、血糖値の書き込みを許可してください。",
+    healthReadDeniedStepsAndroid: "許可するには、Health Connectを開き、「アプリの権限」でzerospikeを選んで、血糖値の読み取りを許可してください。",
     healthOpenApp: "{{health}}を開く",
     healthPendingWrites: "書き込み待ち: {{count}}件",
     healthRetryNow: "今すぐ再試行",

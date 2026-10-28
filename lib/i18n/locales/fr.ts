@@ -775,6 +775,7 @@ const fr: TranslationSchema = {
     healthPermissionBlocked: "L'accès à {{health}} semble bloqué. Les réglages s'ouvrent pour vous permettre de l'autoriser.",
     healthDeniedStepsIos: "Pour l'autoriser, ouvrez l'app Santé, touchez votre photo de profil, choisissez Apps (jusqu'à iOS 17 : Confidentialité, puis Apps), sélectionnez zerospike et activez Glycémie.",
     healthDeniedStepsAndroid: "Pour l'autoriser, ouvrez Health Connect, allez dans Autorisations des applications, sélectionnez zerospike et autorisez l'écriture de la glycémie.",
+    healthReadDeniedStepsAndroid: "Pour l'autoriser, ouvrez Health Connect, allez dans Autorisations des applications, sélectionnez zerospike et autorisez la lecture de la glycémie.",
     healthOpenApp: "Ouvrir {{health}}",
     healthPendingWrites: "En attente d'écriture : {{count}}",
     healthRetryNow: "Réessayer maintenant",
