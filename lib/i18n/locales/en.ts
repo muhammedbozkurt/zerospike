@@ -115,7 +115,7 @@ const en: TranslationSchema = {
     qTargets: "Your target ranges",
     qTargetsHintTracking: "These are general reference ranges. You can also set your target range together with your doctor.",
     qPostmealHint: "Your target about 2 hours after eating.",
-    qCarbRatio: "Your carb ratio",
+    qCarbRatio: "Your carb ratio (g per 1 unit)",
     qCarbRatioHint: "Grams of carbs covered by 1 unit (set by your care team).",
     qIsf: "Your correction factor (ISF)",
     qIsfHint: "How much 1 unit lowers your glucose (set by your care team).",
@@ -463,7 +463,7 @@ const en: TranslationSchema = {
     setup: {
       title: "Your ratios",
       body: "This screen works from two numbers your care team gave you. Enter them once. They stay in your profile and you can change them anytime in Settings.",
-      carbLabel: "Your carb ratio",
+      carbLabel: "Your carb ratio (g per 1 unit)",
       carbHint: "Grams of carbs covered by 1 unit (set by your care team).",
       isfLabel: "Your correction factor (ISF)",
       isfHint: "How much 1 unit lowers your glucose (set by your care team).",

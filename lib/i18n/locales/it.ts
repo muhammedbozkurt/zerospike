@@ -115,7 +115,7 @@ const it: TranslationSchema = {
     qTargets: "I Suoi intervalli target",
     qTargetsHintTracking: "Sono intervalli di riferimento generali. Può anche definire il Suo intervallo target insieme al Suo medico.",
     qPostmealHint: "Il Suo target circa 2 ore dopo il pasto.",
-    qCarbRatio: "Il Suo rapporto insulina/carboidrati",
+    qCarbRatio: "Il Suo rapporto insulina/carboidrati (g per 1 unità)",
     qCarbRatioHint: "Grammi di carboidrati coperti da 1 unità (lo stabilisce il Suo team di cura).",
     qIsf: "Il Suo fattore di correzione (ISF)",
     qIsfHint: "Di quanto 1 unità abbassa la glicemia (lo stabilisce il Suo team di cura).",
@@ -463,7 +463,7 @@ const it: TranslationSchema = {
     setup: {
       title: "I Suoi rapporti",
       body: "Questa schermata calcola a partire da due valori che Le ha indicato il Suo team di cura. Li inserisca una sola volta: restano nel Suo profilo e può modificarli in qualsiasi momento nelle Impostazioni.",
-      carbLabel: "Il Suo rapporto insulina/carboidrati",
+      carbLabel: "Il Suo rapporto insulina/carboidrati (g per 1 unità)",
       carbHint: "Grammi di carboidrati coperti da 1 unità (lo stabilisce il Suo team di cura).",
       isfLabel: "Il Suo fattore di correzione (ISF)",
       isfHint: "Di quanto 1 unità abbassa la glicemia (lo stabilisce il Suo team di cura).",

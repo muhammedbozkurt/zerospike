@@ -14,9 +14,10 @@ declare const process: { exit: (code: number) => void; cwd: () => string };
 declare const __dirname: string;
 declare function require(id: string): any;
 
-import { calcFiguresAllowed, RATIOS_ENTERED, type CalcSetupProfile } from "../lib/calcSetup";
+import { calcFiguresAllowed, confirmStillCurrent, RATIOS_ENTERED, type CalcSetupProfile, type RatioFields } from "../lib/calcSetup";
+import { createRatioWriter, type RatioPatch, type StoredRatios } from "../lib/ratioWriter";
 import {
-  RATIO_CONFIRM_STARTS_CHECKED,
+  ratioCardChecked,
   confirmCardEmphasized,
   ratioConfirmState,
   ratioFiguresVisible,
@@ -84,10 +85,15 @@ for (const p of [null, base, entered, { ...entered, ratios_confirmed: 0 as const
 }
 
 console.log("3. the confirmation is never given on the user's behalf");
-eq("the starting value is unticked", RATIO_CONFIRM_STARTS_CHECKED, false);
 const sheetSrc = src("app/calculator.tsx");
-ok("the sheet starts and resets through that constant", sheetSrc.includes("useState<boolean>(RATIO_CONFIRM_STARTS_CHECKED)") && sheetSrc.includes("setConfirmed(RATIO_CONFIRM_STARTS_CHECKED)"));
-ok("the sheet ticks only after a write reached the profile", /if \(next && confirmStillCurrent\(ok, sent, fieldsRef\.current\)\) \{\s*setConfirmed\(true\)/.test(sheetSrc) && !/setConfirmed\(true\)/.test(sheetSrc.replace(/if \(next && confirmStillCurrent[\s\S]{0,80}/, "")));
+const full: RatioFields = { breakfast: 8, lunch: 9, dinner: 11, isfMgdl: 45 };
+eq("a fresh unconfirmed profile is never ticked", ratioCardChecked(entered, full, "mgdl"), false);
+eq("a never-entered profile is never ticked", ratioCardChecked(base, full, "mgdl"), false);
+eq("null profile is never ticked", ratioCardChecked(null, full, "mgdl"), false);
+eq("a stored confirmation with the same numbers is ticked", ratioCardChecked(confirmed, full, "mgdl"), true);
+eq("a stored confirmation with other numbers on screen is not", ratioCardChecked(confirmed, { ...full, lunch: 10 }, "mgdl"), false);
+ok("the sheet derives the tick from the stored profile, with no local flag", sheetSrc.includes("ratioCardChecked(profile, fields, unit)") && !/setConfirmed|useState<boolean>\(RATIO/.test(sheetSrc));
+ok("the sheet confirms only through the writer and a successful write", /if \(next && confirmStillCurrent\(ok, sent, fieldsRef\.current\)\) hapticSuccess\(\)/.test(sheetSrc));
 ok("the profile editor starts ticked only from a stored confirmation", src("app/profile-setup.tsx").includes("useState(activeProfile?.ratios_confirmed === 1)"));
 ok("Profile and Targets shows the stored confirmation only", src("app/settings/profile.tsx").includes("checked={activeProfile?.ratios_confirmed === 1 && ratioDraftIsStored}"));
 ok("no card component ticks itself", !/useState/.test(src("components/RatioConfirmCard.tsx")) && !/useState/.test(src("components/RatioStateCard.tsx")));
@@ -141,8 +147,69 @@ for (const l of ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"]) {
   ok(`${l}: no em dash`, !block.includes(String.fromCharCode(8212)));
 }
 const tr = src("lib/i18n/locales/tr.ts");
-ok("tr confirm title and action are the agreed ones", tr.includes('confirmTitle: "Hesaplama için onayınız gerekiyor"') && tr.includes('confirmAction: "Oranları onayla"'));
+ok("tr confirm title and action are the agreed ones", tr.includes('confirmTitle: "Hesaplama için onayınız gerekiyor"') && tr.includes('confirmAction: "Oranları onaylayın"'));
 ok("the agreed confirmation text is untouched", tr.includes('confirm: "Bu oranları diyabet ekibimle belirledim"'));
 
-console.log(`\n${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
+for (const k of ["until", "enterTitle", "enterBody", "confirmTitle", "confirmBody", "confirmAction", "savedReminder"]) {
+  const m = tr.match(new RegExp(`\\n    ${k}: "([^"]+)"`));
+  const text = m ? m[1].replace(/belirlediyseniz|girin|onaylayın/g, "") : "";
+  ok(`tr ${k}: polite plural, no singular imperative`, !!m && !/\b(onayla|gir|belirle)\b/.test(text));
+}
+
+console.log("8. carb ratio labels name the unit; de never says KE-Faktor or BE-Faktor");
+const unitWord: Record<string, string> = { en: "unit", tr: "ünite", de: "Einheit", fr: "unité", es: "unidad", it: "unità", pt: "unidade", ar: "وحدة", ja: "単位" };
+for (const l of ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"]) {
+  const s = src(`lib/i18n/locales/${l}.ts`);
+  const pairs: [string, RegExp][] = [
+    ["onboarding.qCarbRatio", /\n    qCarbRatio: "([^"]+)"/],
+    ["calculator.setup.carbLabel", /\n      carbLabel: "([^"]+)"/],
+  ];
+  for (const [name, re] of pairs) {
+    const m = s.match(re);
+    ok(`${l}: ${name} names the unit`, !!m && /\(.*\)/.test(m[1]) && m[1].includes(unitWord[l]) && /g\b|غرام/.test(m[1]), m ? m[1] : "missing");
+  }
+}
+const de = src("lib/i18n/locales/de.ts");
+ok("de: no KE-Faktor, BE-Faktor, KH-Faktor or KE-Verhältnis anywhere", !/KE-Faktor|BE-Faktor|KH-Faktor|KE-Verhältnis|BE-Verhältnis/.test(de));
+ok("de: the carb ratio is one term, KH-Verhältnis", (de.match(/KH-Verhältnis/g) ?? []).length >= 6);
+ok("es: the carb ratio says ratio, not proporción", !/proporci/i.test(src("lib/i18n/locales/es.ts")));
+
+async function untick(): Promise<void> {
+  console.log("9. tick, untick and re-type against the stored profile");
+  let db: StoredRatios = { carb_ratio_breakfast: 8, carb_ratio_lunch: 9, carb_ratio_dinner: 11, insulin_sensitivity_factor: 45, ratios_confirmed: RATIOS_ENTERED };
+  const w = createRatioWriter({
+    stored: { ...db },
+    persist: async (p: RatioPatch) => {
+      db = { ...db, ...p };
+    },
+    setTimer: () => 0,
+    clearTimer: () => {},
+  });
+  const prof = (): CalcSetupProfile => ({ ...base, ...db });
+  let fields: RatioFields = { ...full };
+  const checked = () => ratioCardChecked(prof(), fields, "mgdl");
+  eq("starts unticked", checked(), false);
+  const sent = fields;
+  const ok1 = await w.confirm(true);
+  ok("the tick write reached the profile", confirmStillCurrent(ok1, sent, fields));
+  eq("after the tick the box shows ticked and the DB holds 1", checked() && db.ratios_confirmed === 1, true);
+  eq("figures are allowed", calcFiguresAllowed(prof()), true);
+  await w.confirm(false);
+  eq("after the untick the DB holds no confirmation", db.ratios_confirmed === 1, false);
+  eq("after the untick the box shows unticked", checked(), false);
+  eq("and figures are gone", calcFiguresAllowed(prof()), false);
+  await w.confirm(true);
+  eq("ticked again", checked(), true);
+  fields = { ...fields, breakfast: 8 };
+  eq("typing the same value again (8, over 8) keeps the tick", checked(), true);
+  fields = { ...fields, breakfast: 9 };
+  w.update(fields);
+  await w.flush();
+  eq("an edit withdraws the confirmation and the box with it", checked(), false);
+  eq("the DB agrees", db.ratios_confirmed === 1, false);
+}
+
+untick().then(() => {
+  console.log(`\n${passed} passed, ${failed} failed`);
+  if (failed > 0) process.exit(1);
+});

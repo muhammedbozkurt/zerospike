@@ -133,6 +133,7 @@ import type {
   LogTag,
   MealSlot,
   SitePoint,
+  UserProfile,
 } from "../lib/db/types";
 import { foodName, SELECTABLE_SITES } from "../lib/db/types";
 import { Segmented } from "../components/ui";
@@ -153,7 +154,7 @@ import { Skeleton } from "../components/Skeleton";
 import { DirIcon } from "../components/DirIcon";
 import { CarbRatioLine } from "../components/CarbRatioLine";
 import {
-  RATIO_CONFIRM_STARTS_CHECKED,
+  ratioCardChecked,
   saveNeedsConfirmReminder,
 } from "../lib/ratioConfirmCard";
 import { useCarbChoiceText } from "../lib/carbDisplayPref";
@@ -462,6 +463,7 @@ function CalcSetupSheet({
   initial,
   prefilled,
   emphasizeConfirm,
+  profile,
 }: {
   visible: boolean;
   /** Put the sheet away; whatever was typed is kept. */
@@ -477,22 +479,22 @@ function CalcSetupSheet({
   prefilled: boolean;
   /** Opened from the "Confirm ratios" button: the confirmation card leads. */
   emphasizeConfirm: boolean;
+  /** The stored profile: the box shows ticked from this, not from local state. */
+  profile: UserProfile | null;
 }) {
   const { t } = useTranslation();
   const [fields, setFields] = useState<RatioFields>(initial);
-  const [confirmed, setConfirmed] = useState<boolean>(RATIO_CONFIRM_STARTS_CHECKED);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const fieldsRef = useRef<RatioFields>(initial);
   const confirmCardRef = useRef<View>(null);
 
   // Every open starts from what the profile holds now, with a writer that
-  // starts from it too. The box always starts unticked.
+  // starts from it too. The box is ticked only by the stored profile.
   useEffect(() => {
     if (!visible) return;
     setFields(initial);
     fieldsRef.current = initial;
-    setConfirmed(RATIO_CONFIRM_STARTS_CHECKED);
     getWriter({ renew: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -501,7 +503,6 @@ function CalcSetupSheet({
     const next = { ...fields, ...patch };
     fieldsRef.current = next;
     setFields(next);
-    setConfirmed(false);
     getWriter()?.update(next);
   }
 
@@ -521,15 +522,11 @@ function CalcSetupSheet({
     }
     // A field edited while the write ran: that edit withdrew the confirmation,
     // so the box stays unticked and the sheet stays open.
-    if (next && confirmStillCurrent(ok, sent, fieldsRef.current)) {
-      setConfirmed(true);
-      hapticSuccess();
-    } else if (!next && ok) {
-      setConfirmed(false);
-    }
+    if (next && confirmStillCurrent(ok, sent, fieldsRef.current)) hapticSuccess();
   }
 
   const complete = ratioFieldsComplete(fields);
+  const confirmed = ratioCardChecked(profile, fields, unit);
   const confirmCard = (
     <View ref={confirmCardRef} collapsable={false} style={{ marginTop: 18 }}>
       <RatioConfirmCard
@@ -2137,6 +2134,7 @@ function CalculatorScreen() {
       initial={setupInitial}
       prefilled={calcSetupPrefilled(activeProfile)}
       emphasizeConfirm={setupEmphasize}
+      profile={activeProfile}
     />
   ) : null;
 

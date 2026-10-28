@@ -428,7 +428,7 @@ section("12. ratios: one atomic confirmation, locked boxes, no silent failures")
   const prof = src("app/settings/profile.tsx");
   ok("ticking builds ONE patch from the draft", writer.includes("ratioConfirmDraftPatch(draft)") && !/enqueue\(\{ ratios_confirmed: 1 \}\)/.test(writer));
   ok("a failed write restores the draft", writer.includes("if (!pending) pending = draft"));
-  ok("the sheet box is locked while the write runs and shows ticked only on success", calc.includes("disabled={!complete || confirming}") && /if \(next && confirmStillCurrent\(ok, sent, fieldsRef\.current\)\) \{\s*setConfirmed\(true\)/.test(calc) && !/setConfirmed\(next\)/.test(calc));
+  ok("the sheet box is locked while the write runs and shows ticked only on success", calc.includes("disabled={!complete || confirming}") && calc.includes("ratioCardChecked(profile, fields, unit)") && !/setConfirmed/.test(calc));
   ok("Profile reports a failed write", /useRatioWriter\(\(\) => \{\s*trackSaveFailed\("profile", "write"\);\s*toast\(t\("common.saveFailed"\), "error"\);\s*\}\)/.test(prof));
   ok("Profile's box is enabled whenever the four numbers are filled (a tick flushes first)", prof.includes("disabled={!ratioFieldsComplete(ratioDraft) || confirming}") && !prof.includes("disabled={!ratioDraftIsStored}"));
   ok("the confirm card shows only when four values wait for the tick", src("lib/ratioConfirmCard.ts").includes("calcSetupPrefilled(profile) ? \"unconfirmed\" : \"none\"") && src("components/CarbRatioLine.tsx").includes("ratioConfirmState(activeProfile)"));

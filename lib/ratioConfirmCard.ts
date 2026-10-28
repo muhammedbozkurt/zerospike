@@ -1,4 +1,10 @@
-import { calcFiguresAllowed, calcSetupPrefilled } from "./calcSetup";
+import type { GlucoseUnit } from "./db/types";
+import {
+  calcFiguresAllowed,
+  calcSetupPrefilled,
+  ratioSetMatchesStored,
+  type RatioFields,
+} from "./calcSetup";
 
 /**
  * What the calculator tells a user about their ratios, decided in one pure place
@@ -41,9 +47,20 @@ export function ratioSetupOpenOptions(state: RatioConfirmState): { emphasizeConf
   return { emphasizeConfirm: state === "unconfirmed" };
 }
 
-/** The confirmation is never given on the user's behalf: the sheet opens with
- *  it off, and only a tap that reaches the profile turns it on. */
-export const RATIO_CONFIRM_STARTS_CHECKED = false as const;
+/**
+ * Whether the confirmation box shows ticked: derived from the stored profile,
+ * never from a local flag, so it is never given on the user's behalf and can
+ * never disagree with the database. Ticked only while the profile holds
+ * ratios_confirmed 1 AND the numbers on screen are the stored ones (an edit
+ * withdraws the confirmation; typing "8," over "8" is not an edit).
+ */
+export function ratioCardChecked(
+  profile: RatioProfile,
+  draft: RatioFields,
+  unit: GlucoseUnit
+): boolean {
+  return !!profile && profile.ratios_confirmed === 1 && ratioSetMatchesStored(profile, draft, unit);
+}
 
 /** The inline line "the calculation is not shown until you confirm". */
 export function showUntilConfirmNote(input: { complete: boolean; checked: boolean }): boolean {

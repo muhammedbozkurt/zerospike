@@ -115,7 +115,7 @@ const ja: TranslationSchema = {
     qTargets: "目標範囲",
     qTargetsHintTracking: "これは一般的な参考範囲です。目標範囲は主治医と一緒に決めることもできます。",
     qPostmealHint: "食事から約2時間後の目標です。",
-    qCarbRatio: "炭水化物比",
+    qCarbRatio: "炭水化物比(1単位あたりg)",
     qCarbRatioHint: "1単位でカバーする炭水化物のグラム数です(医療チームが設定します)。",
     qIsf: "インスリン効果値(ISF)",
     qIsfHint: "1単位で血糖値がどれくらい下がるかです(医療チームが設定します)。",
@@ -463,7 +463,7 @@ const ja: TranslationSchema = {
     setup: {
       title: "数値の設定",
       body: "この画面は、医療チームから伝えられた2つの数値をもとに計算します。一度入力すると、プロフィールに保存され、設定でいつでも変更できます。",
-      carbLabel: "炭水化物比",
+      carbLabel: "炭水化物比(1単位あたりg)",
       carbHint: "1単位でカバーする炭水化物のグラム数です(医療チームが設定します)。",
       isfLabel: "インスリン効果値(ISF)",
       isfHint: "1単位で血糖値がどれくらい下がるかです(医療チームが設定します)。",

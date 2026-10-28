@@ -115,7 +115,7 @@ const pt: TranslationSchema = {
     qTargets: "Suas faixas-alvo",
     qTargetsHintTracking: "Estas são faixas de referência gerais. Você também pode definir sua faixa-alvo junto com seu médico.",
     qPostmealHint: "Seu alvo cerca de 2 horas depois de comer.",
-    qCarbRatio: "Sua razão de carboidratos",
+    qCarbRatio: "Sua razão de carboidratos (g por 1 unidade)",
     qCarbRatioHint: "Gramas de carboidrato cobertas por 1 unidade (definida pela sua equipe de saúde).",
     qIsf: "Seu fator de correção (FSI)",
     qIsfHint: "Quanto 1 unidade baixa sua glicemia (definido pela sua equipe de saúde).",
@@ -463,7 +463,7 @@ const pt: TranslationSchema = {
     setup: {
       title: "Suas razões",
       body: "Esta tela calcula a partir de dois valores que a sua equipe de saúde informou. Informe-os uma só vez. Eles ficam no seu perfil e você pode mudá-los quando quiser em Configurações.",
-      carbLabel: "Sua razão de carboidratos",
+      carbLabel: "Sua razão de carboidratos (g por 1 unidade)",
       carbHint: "Gramas de carboidrato cobertas por 1 unidade (definida pela sua equipe de saúde).",
       isfLabel: "Seu fator de correção (FSI)",
       isfHint: "Quanto 1 unidade baixa sua glicemia (definido pela sua equipe de saúde).",

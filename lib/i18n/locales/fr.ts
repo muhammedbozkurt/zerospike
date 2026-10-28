@@ -115,7 +115,7 @@ const fr: TranslationSchema = {
     qTargets: "Vos plages cibles",
     qTargetsHintTracking: "Ce sont des plages de référence générales. Vous pouvez aussi définir votre plage cible avec votre médecin.",
     qPostmealHint: "Votre objectif environ 2 heures après avoir mangé.",
-    qCarbRatio: "Votre ratio glucidique",
+    qCarbRatio: "Votre ratio glucidique (g pour 1 unité)",
     qCarbRatioHint: "Grammes de glucides couverts par 1 unité (défini par votre équipe soignante).",
     qIsf: "Votre facteur de correction (ISF)",
     qIsfHint: "De combien 1 unité baisse votre glycémie (défini par votre équipe soignante).",
@@ -463,7 +463,7 @@ const fr: TranslationSchema = {
     setup: {
       title: "Vos ratios",
       body: "Cet écran calcule à partir de deux valeurs que votre équipe soignante vous a données. Saisissez-les une seule fois. Elles restent dans votre profil et vous pouvez les modifier à tout moment dans les Réglages.",
-      carbLabel: "Votre ratio glucidique",
+      carbLabel: "Votre ratio glucidique (g pour 1 unité)",
       carbHint: "Grammes de glucides couverts par 1 unité (défini par votre équipe soignante).",
       isfLabel: "Votre facteur de correction (ISF)",
       isfHint: "De combien 1 unité baisse votre glycémie (défini par votre équipe soignante).",

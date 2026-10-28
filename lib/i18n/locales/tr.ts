@@ -113,7 +113,7 @@ const tr = {
     qTargets: "Hedef aralıklarınız",
     qTargetsHintTracking: "Bunlar genel referans aralıklarıdır. Hedef aralığınızı hekiminizle birlikte de belirleyebilirsiniz.",
     qPostmealHint: "Yemekten yaklaşık 2 saat sonraki hedefiniz.",
-    qCarbRatio: "Karbonhidrat oranınız",
+    qCarbRatio: "Karbonhidrat oranınız (1 ünite için g)",
     qCarbRatioHint: "1 ünitenin karşıladığı karbonhidrat gramı (sağlık ekibiniz belirler).",
     qIsf: "Düzeltme faktörünüz (ISF)",
     qIsfHint: "1 ünitenin glukozu ne kadar düşürdüğü (sağlık ekibiniz belirler).",
@@ -335,7 +335,7 @@ const tr = {
     enterBody: "Karbonhidrat oranınızı ve ISF değerinizi, diyabet ekibinizin belirlediği şekilde girin. Hesaplama, onayınızdan sonra görünür.",
     confirmTitle: "Hesaplama için onayınız gerekiyor",
     confirmBody: "Oranlarınızı diyabet ekibinizle belirlediyseniz onaylayın; hesaplama ondan sonra görünür.",
-    confirmAction: "Oranları onayla",
+    confirmAction: "Oranları onaylayın",
     savedReminder: "Oranlar kaydedildi. Hesaplama, onayınızı verene kadar gösterilmez.",
   },
   food: {
@@ -461,7 +461,7 @@ const tr = {
     setup: {
       title: "Oranlarınız",
       body: "Bu ekran, sağlık ekibinizin verdiği iki değerden hesap yapar. Bir kez girmeniz yeterli; profilinizde saklanır ve Ayarlar'dan istediğiniz zaman değiştirebilirsiniz.",
-      carbLabel: "Karbonhidrat oranınız",
+      carbLabel: "Karbonhidrat oranınız (1 ünite için g)",
       carbHint: "1 ünitenin karşıladığı karbonhidrat gramı (sağlık ekibiniz belirler).",
       isfLabel: "Düzeltme faktörünüz (ISF)",
       isfHint: "1 ünitenin glukozu ne kadar düşürdüğü (sağlık ekibiniz belirler).",
