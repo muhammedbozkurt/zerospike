@@ -166,9 +166,11 @@ export function buildZerospikeWidget(
 ): React.JSX.Element {
   const remaining = nextReminderTimeLabel(data);
   const s = sizesFor(size);
+  // Android redraws on its own period only, so a relative age ("4 min ago")
+  // would freeze at its render-time value; the reading's clock time cannot.
   const cgm = cgmWidgetModel(data, Date.now());
   const metaText = cgm
-    ? cgm.ageText
+    ? formatTimeForLang(cgm.readAt, data?.lang ?? "en")
     : data?.avgGlucoseMgdl == null
       ? (data?.labels?.noData ?? "")
       : (data?.labels?.avgWindow ?? "");
@@ -323,7 +325,7 @@ export function buildReadingWidget(
   const at = data?.lastGlucoseAt;
   const cgm = cgmWidgetModel(data, Date.now());
   const timeText = cgm
-    ? cgm.ageText
+    ? formatTimeForLang(cgm.readAt, data?.lang ?? "en")
     : at != null
       ? formatTimeForLang(at, data?.lang ?? "en")
       : "";

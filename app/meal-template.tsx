@@ -470,7 +470,14 @@ function MealTemplateScreen() {
       logEvent("log_added", { kind: "meal" });
       void noteFirstLog("meal");
       hapticSuccess();
-      await runSideStep("postMealReminder", () => schedulePostMealReminder(), reportStep);
+      let timerStartedBySave = false;
+      await runSideStep(
+        "postMealReminder",
+        async () => {
+          timerStartedBySave = (await schedulePostMealReminder()) === "started";
+        },
+        reportStep
+      );
       void noteJournalActivity();
       bumpData();
 
@@ -497,7 +504,7 @@ function MealTemplateScreen() {
               ],
               // The counters are put back verbatim just below; correcting them
               // here as well would be a write with no surviving effect.
-              { settleTemplates: false }
+              { settleTemplates: false, settleTimer: timerStartedBySave }
             );
             await setTemplateUsage(templateId, priorUse, priorAt);
             bumpData();

@@ -728,7 +728,14 @@ export default function FoodScreen() {
         await runSideStep("logEvent", () => logEvent("log_added", { kind: "meal" }), reportStep);
         void runSideStep("noteFirstLog", () => noteFirstLog("meal"), reportStep);
         await runSideStep("hapticSuccess", () => hapticSuccess(), reportStep);
-        await runSideStep("postMealReminder", () => schedulePostMealReminder(), reportStep);
+        let timerStartedBySave = false;
+        await runSideStep(
+          "postMealReminder",
+          async () => {
+            timerStartedBySave = (await schedulePostMealReminder()) === "started";
+          },
+          reportStep
+        );
         void runSideStep("noteJournalActivity", () => noteJournalActivity(), reportStep);
         await runSideStep("bumpData", () => bumpData(), reportStep);
         // One tap wrote a real journal entry with no confirmation and no way back; it
@@ -744,14 +751,17 @@ export default function FoodScreen() {
                   // The countdown this very save armed (schedulePostMealReminder
                   // above) has to go with the record: the same shared post-delete
                   // cleanup every other delete path runs (lib/afterDelete.ts).
-                  await applyAfterDelete([
-                    {
-                      id: meal.id,
-                      profileId: meal.profile_id,
-                      loggedAtMs: new Date(meal.logged_at).getTime(),
-                      templateId: meal.meal_template_id,
-                    },
-                  ]);
+                  await applyAfterDelete(
+                    [
+                      {
+                        id: meal.id,
+                        profileId: meal.profile_id,
+                        loggedAtMs: new Date(meal.logged_at).getTime(),
+                        templateId: meal.meal_template_id,
+                      },
+                    ],
+                    { settleTimer: timerStartedBySave }
+                  );
                   bumpData();
                   toast(t("calculator.undone"), "info");
                 })();
@@ -829,7 +839,14 @@ export default function FoodScreen() {
       // `when` carries the sheet's own time pick straight through: a running
       // timer is left untouched and a backdated pick does not start a fresh one
       // (see decidePostMealAutoStart, lib/postMealTimer.ts).
-      await runSideStep("postMealReminder", () => schedulePostMealReminder(when), reportStep);
+      let timerStartedBySave = false;
+      await runSideStep(
+        "postMealReminder",
+        async () => {
+          timerStartedBySave = (await schedulePostMealReminder(when)) === "started";
+        },
+        reportStep
+      );
       void noteJournalActivity();
       bumpData();
       setConfirmEntry(null);
@@ -853,7 +870,7 @@ export default function FoodScreen() {
               ],
               // The counters are put back verbatim just below; correcting them
               // here as well would be a write with no surviving effect.
-              { settleTemplates: false }
+              { settleTemplates: false, settleTimer: timerStartedBySave }
             );
             await setTemplateUsage(id, priorUse, priorAt);
             bumpData();
@@ -1071,7 +1088,14 @@ export default function FoodScreen() {
       logEvent("log_added", { kind: "meal" });
       void noteFirstLog("meal");
       hapticSuccess();
-      await runSideStep("postMealReminder", () => schedulePostMealReminder(), reportStep);
+      let timerStartedBySave = false;
+      await runSideStep(
+        "postMealReminder",
+        async () => {
+          timerStartedBySave = (await schedulePostMealReminder()) === "started";
+        },
+        reportStep
+      );
       void noteJournalActivity();
       setComposeItems([]);
       setComposeOpen(false);
@@ -1085,14 +1109,17 @@ export default function FoodScreen() {
         onPress: () => {
           void (async () => {
             await deleteMealRecord(meal.id);
-            await applyAfterDelete([
-              {
-                id: meal.id,
-                profileId: meal.profile_id,
-                loggedAtMs: new Date(meal.logged_at).getTime(),
-                templateId: meal.meal_template_id,
-              },
-            ]);
+            await applyAfterDelete(
+              [
+                {
+                  id: meal.id,
+                  profileId: meal.profile_id,
+                  loggedAtMs: new Date(meal.logged_at).getTime(),
+                  templateId: meal.meal_template_id,
+                },
+              ],
+              { settleTimer: timerStartedBySave }
+            );
             bumpData();
             toast(t("calculator.undone"), "info");
           })();

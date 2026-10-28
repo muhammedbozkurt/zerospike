@@ -26,6 +26,7 @@ const AsyncStorage = {
   multiSet: async (pairs: [string, string][]) => {
     for (const [k, v] of pairs) kv.set(k, v);
   },
+  getAllKeys: async () => [...kv.keys()],
   multiRemove: async (keys: string[]) => {
     for (const k of keys) kv.delete(k);
   },
@@ -141,7 +142,7 @@ function routesOf(): string[] {
     .map(([, v]) => v.route ?? "")
     .sort();
 }
-const POSTMEAL_ID = "zerospike-postmeal-reminder";
+const POSTMEAL_ID = "zerospike-postmeal-reminder:p1";
 
 function seedRows(): void {
   rows.length = 0;

@@ -64,15 +64,17 @@ class ZerospikeTileService : TileService() {
 
     private fun glanceLayout(): LayoutElementBuilders.LayoutElement {
         val data = LiveDataStore.load(applicationContext)
-        val mgdl = data?.lastGlucoseMgdl
-        val statusColor = (mgdl?.let { glucoseColorFor(it, data?.band) } ?: Ink.Muted).toArgb()
-        val reading = data?.lastGlucoseDisplay?.takeIf { it.isNotBlank() } ?: "--"
+        val mgdl = data?.readingMgdl()
+        val statusColor = data.readingColor(System.currentTimeMillis()).toArgb()
+        val reading = data?.readingDisplay()?.takeIf { it.isNotBlank() } ?: "--"
+        val sensorHeading = data?.cgmHeading()
 
         val column = LayoutElementBuilders.Column.Builder()
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
             .addContent(
                 styledText(
-                    text = data?.labels?.lastReading?.takeIf { it.isNotBlank() }
+                    text = sensorHeading
+                        ?: data?.labels?.lastReading?.takeIf { it.isNotBlank() }
                         ?: getString(R.string.last_reading_label),
                     sizeSp = 13f,
                     weight = LayoutElementBuilders.FONT_WEIGHT_MEDIUM,
@@ -99,6 +101,19 @@ class ZerospikeTileService : TileService() {
                     color = Ink.Muted.toArgb()
                 )
             )
+            // The tile is a static layout redrawn every FRESHNESS_MS, so the age
+            // of a sensor value is its clock time, which cannot go stale.
+            val readAt = data?.readingAt()
+            if (data?.activeCgm != null && readAt != null) {
+                column.addContent(
+                    styledText(
+                        text = clockTime(readAt),
+                        sizeSp = 12f,
+                        weight = LayoutElementBuilders.FONT_WEIGHT_NORMAL,
+                        color = Ink.Muted.toArgb()
+                    )
+                )
+            }
         } else {
             column.addContent(
                 styledText(

@@ -60,6 +60,70 @@ export function postMealWindowForProfile(
 }
 
 /**
+ * Storage layout of the countdown, one timer PER PROFILE.
+ *
+ * Until 2.3.7 the countdown lived in three device-wide keys, so a second
+ * profile could cancel, overwrite or silently skip the first one's timer. A
+ * timer now lives under keys suffixed with its owner's id; the old keys are
+ * only ever read by the one-time move (planPostMealMigration).
+ */
+export const POSTMEAL_LEGACY_END_KEY = "zerospike.postMealTimerEnd";
+export const POSTMEAL_LEGACY_START_KEY = "zerospike.postMealTimerStart";
+export const POSTMEAL_LEGACY_PROFILE_KEY = "zerospike.postMealTimerProfile";
+export const POSTMEAL_END_KEY_PREFIX = `${POSTMEAL_LEGACY_END_KEY}.`;
+export const POSTMEAL_START_KEY_PREFIX = `${POSTMEAL_LEGACY_START_KEY}.`;
+
+export function postMealTimerKeys(profileId: string): { end: string; start: string } {
+  return {
+    end: `${POSTMEAL_END_KEY_PREFIX}${profileId}`,
+    start: `${POSTMEAL_START_KEY_PREFIX}${profileId}`,
+  };
+}
+
+/** The owner encoded in a per-profile end key, or null for any other key
+ *  (including the legacy one, which has no trailing dot). */
+export function postMealOwnerFromEndKey(key: string): string | null {
+  if (!key.startsWith(POSTMEAL_END_KEY_PREFIX)) return null;
+  const id = key.slice(POSTMEAL_END_KEY_PREFIX.length);
+  return id.length > 0 ? id : null;
+}
+
+/** What to do with the three legacy keys. */
+export type PostMealMigrationPlan =
+  /** No legacy timer stored. */
+  | { kind: "none" }
+  /** Legacy keys exist but hold no usable end: just delete them. */
+  | { kind: "drop" }
+  /** A timer is stored but nobody can be named as its owner yet (no recorded
+   *  owner and no resolvable active profile): leave everything untouched and
+   *  try again on the next read. */
+  | { kind: "defer" }
+  /** Move the single stored timer to its owner. The owner is the recorded one;
+   *  a timer from before ownership was recorded belongs to the active profile,
+   *  exactly as the old "whoever is looking" rule treated it. */
+  | { kind: "move"; ownerId: string; startedAt: number; endsAt: number };
+
+export function planPostMealMigration(input: {
+  legacyEnd: string | null;
+  legacyStart: string | null;
+  legacyOwner: string | null;
+  activeProfileId: string | null;
+}): PostMealMigrationPlan {
+  const hasAny = input.legacyEnd != null || input.legacyStart != null || input.legacyOwner != null;
+  if (!hasAny) return { kind: "none" };
+  const endsAt = input.legacyEnd == null ? NaN : parseInt(input.legacyEnd, 10);
+  if (!Number.isFinite(endsAt)) return { kind: "drop" };
+  const ownerId = input.legacyOwner || input.activeProfileId;
+  if (!ownerId) return { kind: "defer" };
+  const start = input.legacyStart == null ? NaN : parseInt(input.legacyStart, 10);
+  const startedAt =
+    Number.isFinite(start) && start < endsAt
+      ? start
+      : endsAt - POST_MEAL_WINDOW_MIN * 60_000;
+  return { kind: "move", ownerId, startedAt, endsAt };
+}
+
+/**
  * The post-meal window, in minutes: ALWAYS the default the dashboard card
  * shows and the "I started eating" button arms.
  *
@@ -489,6 +553,42 @@ export function decidePostMealAfterMealDelete(input: {
     isPostMealOwnMeal(ms, input.startedAt)
   );
   return stillOwned ? "keep" : "end";
+}
+
+/** What moving a meal's time does to the running countdown. */
+export type PostMealAfterMealTimeEdit =
+  /** The countdown was never this meal's, or is still some meal's: untouched. */
+  | { kind: "keep" }
+  /** The countdown follows its own meal: re-anchor it to the meal's new moment
+   *  (it ends `window` after it, exactly as a fresh "restart for this meal"). */
+  | { kind: "retime"; anchorMs: number };
+
+/**
+ * The rule for EDITING a meal's time while a countdown runs: the countdown that
+ * belongs to a meal (isPostMealOwnMeal) travels with it. Without this the
+ * anchor stays at the old moment, the card asks to log the very meal that
+ * exists, the reminder lands relative to a time the record no longer has, and
+ * a later delete reads the meal as "not this countdown's" and leaves a
+ * countdown for nothing.
+ *
+ * Kept (not retimed) when the edit is small enough that the meal is still the
+ * countdown's own, when the meal was never its own, or when ANOTHER meal still
+ * is - the same "still has a meal to be about" reasoning as the delete rule.
+ */
+export function decidePostMealAfterMealTimeEdit(input: {
+  startedAt: number;
+  oldMealMs: number;
+  newMealMs: number;
+  /** logged_at (epoch ms) of the OTHER meals near the anchor, edited one excluded. */
+  otherMealsMs: readonly number[];
+}): PostMealAfterMealTimeEdit {
+  const { startedAt, oldMealMs, newMealMs } = input;
+  if (!Number.isFinite(oldMealMs) || !Number.isFinite(newMealMs)) return { kind: "keep" };
+  if (oldMealMs === newMealMs) return { kind: "keep" };
+  if (!isPostMealOwnMeal(oldMealMs, startedAt)) return { kind: "keep" };
+  if (isPostMealOwnMeal(newMealMs, startedAt)) return { kind: "keep" };
+  if (input.otherMealsMs.some((ms) => isPostMealOwnMeal(ms, startedAt))) return { kind: "keep" };
+  return { kind: "retime", anchorMs: newMealMs };
 }
 
 export function postMealCardActions(input: {

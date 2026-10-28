@@ -65,6 +65,11 @@ class MainActivity : ComponentActivity() {
         LiveDataStore.load(applicationContext)
         setContent { ZerospikeWearApp() }
     }
+
+    override fun onResume() {
+        super.onResume()
+        LiveDataStore.resumeTick.value = System.currentTimeMillis()
+    }
 }
 
 @Composable
@@ -92,12 +97,16 @@ private fun GlanceScreen(listState: TransformingLazyColumnState, contentPadding:
     // Read once at first composition, not on a running clock: Play WO-V4
     // forbids a self-ticking counter on screen. This value does not refresh
     // again while the same Activity instance is alive.
-    val now = remember { System.currentTimeMillis() }
+    // It is re-measured when a new snapshot lands and when the screen comes back
+    // to the foreground (resumeTick), so a sensor value's age and its 20 minute
+    // fade cannot stay frozen at the first composition.
+    val resumeTick = LiveDataStore.resumeTick.value
+    val now = remember(data, resumeTick) { System.currentTimeMillis() }
 
-    val mgdl = data?.lastGlucoseMgdl
-    val statusColor = mgdl?.let { glucoseColorFor(it, data?.band) } ?: Ink.Muted
-    val reading = data?.lastGlucoseDisplay?.takeIf { it.isNotBlank() } ?: "--"
-    val measuredAt = data?.lastGlucoseAt
+    val mgdl = data?.readingMgdl()
+    val statusColor = data.readingColor(now)
+    val reading = data?.readingDisplay()?.takeIf { it.isNotBlank() } ?: "--"
+    val measuredAt = data?.readingAt()
 
     // A round screen clips its corners, so the content column is kept inside the
     // inscribed area rather than the bounding box. 11% a side leaves the longest
@@ -144,7 +153,8 @@ private fun GlanceScreen(listState: TransformingLazyColumnState, contentPadding:
         ) {
             item {
                 CaptionText(
-                    text = data?.labels?.lastReading?.takeIf { it.isNotBlank() }
+                    text = data?.cgmHeading()
+                        ?: data?.labels?.lastReading?.takeIf { it.isNotBlank() }
                         ?: stringResource(id = R.string.last_reading_label),
                     color = Ink.Muted
                 )

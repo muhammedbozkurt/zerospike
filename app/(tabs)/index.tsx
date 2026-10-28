@@ -41,6 +41,8 @@ import {
   startPostMealTimer,
   openExactTimingSettings,
   restartPostMealTimerAt,
+  restorePostMealWindow,
+  cancelLowFollowup,
   scheduleLowFollowup,
   lowFollowupThresholdMgdl,
   getPostMealTimerState,
@@ -58,6 +60,7 @@ import {
   postMealReminderPreview,
   postMealElapsedFraction,
   postMealWindowForProfile,
+  postMealWindowRestorable,
   POST_MEAL_WINDOW_MIN,
   type PostMealCardActions,
   type PostMealTimerWindow,
@@ -590,8 +593,11 @@ export default function DashboardScreen() {
   const glucoseUnitRef = useRef(activeProfile?.glucose_unit ?? "mgdl");
   glucoseUnitRef.current = activeProfile?.glucose_unit ?? "mgdl";
 
+  // The reading the pending 15-minute re-measure reminder was set for.
+  const lowFollowupLogIdRef = useRef<string | null>(null);
+
   const refreshPostMealTimer = useCallback(async () => {
-    setPostMealTimer(await getPostMealTimerState());
+    setPostMealTimer(await getPostMealTimerState(activeProfileIdRef.current ?? undefined));
   }, []);
 
   /**
@@ -606,7 +612,7 @@ export default function DashboardScreen() {
         listReminders(),
         getNotificationPrefs(),
         getNotificationPermission(),
-        getPostMealTimerState(),
+        getPostMealTimerState(activeProfileIdRef.current ?? undefined),
       ]);
       const alarmKitAvailable = isAlarmKitAvailable();
       const owned = postMealWindowForProfile(timer, activeProfileIdRef.current);
@@ -711,20 +717,11 @@ export default function DashboardScreen() {
     useCallback(() => () => setFilter("all"), [])
   );
 
-  // Refresh the shared live-surface snapshot (next reminder + last glucose) so
-  // the notification/Live Activity/widget/watch layer reads current data.
-  //
-  // Deliberately NOT part of load(): load widens its SQL window as the user
-  // scrolls the journal, and riding along with it meant scrolling to the bottom
-  // of the list recomputed the snapshot and asked WidgetKit / the Android widget
-  // / the paired watch to redraw. Scroll position is not news for a widget. This
-  // fires on what actually changes the numbers: the profile, its unit, and data.
+  // The shared live-surface snapshot (widget, lock screen, watch) is refreshed
+  // on every data change by AppContext, which is never frozen; a tab that is
+  // blurred does not run effects, so it cannot be the trigger.
   const profileId = activeProfile?.id;
   const glucoseUnit = activeProfile?.glucose_unit ?? "mgdl";
-  useEffect(() => {
-    if (!profileId) return;
-    void syncLiveData(profileId, glucoseUnit);
-  }, [profileId, glucoseUnit, dataVersion]);
 
   // An install that logged before first_log existed must not report its next
   // entry as a first one; this runs once and is a no-op after that.
@@ -780,7 +777,7 @@ export default function DashboardScreen() {
         // Profile lock (B): a post-meal reminder tap only opens the 2h sheet
         // when the running timer is actually this profile's own - a legacy
         // timer with no recorded owner still opens it (see the card below).
-        const timer = await getPostMealTimerState();
+        const timer = await getPostMealTimerState(activeProfile.id);
         if (timer && timer.profileId != null && timer.profileId !== activeProfile.id) {
           // Say so rather than dying silently: the notification, the widget or
           // the alarm that led here is real, it just belongs to whoever was
@@ -805,7 +802,7 @@ export default function DashboardScreen() {
         // own duration pill opens. A countdown already running for THIS profile
         // needs nothing - the card below is already showing it.
         const running = postMealWindowForProfile(
-          await getPostMealTimerState(),
+          await getPostMealTimerState(activeProfile.id),
           activeProfile.id
         );
         if (running == null) setDurationSheetOpen(true);
@@ -1428,7 +1425,7 @@ export default function DashboardScreen() {
   const onPostMealElapsed = useCallback(() => {
     setPostMealTimer(null);
     void (async () => {
-      await completePostMealTimer();
+      await completePostMealTimer(activeProfileIdRef.current ?? undefined);
       // The countdown was on the widget, the watch face and the "next" line
       // too: restartPostMealForEntry already refreshes all three, and ending
       // one has to do the same or those surfaces keep counting to a moment
@@ -1564,7 +1561,7 @@ export default function DashboardScreen() {
       // still read as "nothing running" here and get silently overwritten
       // (startPostMealTimer itself always renews, it never refuses).
       const runningNow = postMealWindowForProfile(
-        await getPostMealTimerState(),
+        await getPostMealTimerState(activeProfile?.id),
         activeProfile?.id ?? null
       );
       if (runningNow) {
@@ -1721,12 +1718,34 @@ export default function DashboardScreen() {
     void noteFirstLog("glucose");
     void noteLog();
     hapticSuccess();
+    // The countdown a "now" 2-hour reading ends below, kept so Undo can put it
+    // back where it was (same anchor, same span) instead of leaving the
+    // reading gone AND the countdown gone.
+    let endedTimer: PostMealTimerWindow | null = null;
     const savedUndo = {
       label: t("common.undo"),
       onPress: () => {
-        void undoNewGlucose(addedSugar.id)
-          .catch((err) => logCrash(err, { screen: "dashboard", op: "undoGlucose" }))
-          .finally(() => bumpData());
+        void (async () => {
+          try {
+            await undoNewGlucose(addedSugar.id);
+            // The 15-minute re-measure reminder was set for THIS reading.
+            if (lowFollowupLogIdRef.current === addedSugar.id) {
+              lowFollowupLogIdRef.current = null;
+              await cancelLowFollowup();
+            }
+            if (endedTimer != null && postMealWindowRestorable(endedTimer, Date.now())) {
+              await restorePostMealWindow(endedTimer);
+              await refreshPostMealTimer();
+              await refreshNextReminder();
+              const id = activeProfileIdRef.current;
+              if (id) void syncLiveData(id, glucoseUnitRef.current);
+            }
+          } catch (err) {
+            logCrash(err, { screen: "dashboard", op: "undoGlucose" });
+          } finally {
+            bumpData();
+          }
+        })();
       },
     };
     // NOTHING is armed here. A reading is a measurement, not a meal: logging a
@@ -1741,7 +1760,8 @@ export default function DashboardScreen() {
       if (isNow) {
         // Early completion: the 2-hour reading is logged, so the pending nudge
         // is no longer needed. Cancel it and clear the countdown.
-        await cancelPostMealTimer();
+        endedTimer = await getPostMealTimerState(activeProfileIdRef.current ?? undefined);
+        await cancelPostMealTimer(activeProfileIdRef.current ?? undefined);
         setPostMealTimer(null);
       }
       const status = classifyGlucose(value, "post_meal_2h", activeProfile);
@@ -1769,7 +1789,7 @@ export default function DashboardScreen() {
     bumpData();
     // A sheet that never reported its close must not swallow the follow-ups: carry on after the cap.
     await sheetGate.whenClear();
-    const followupShown = isNow ? await maybeOfferLowFollowup(value) : false;
+    const followupShown = isNow ? await maybeOfferLowFollowup(value, addedSugar.id) : false;
     // Not on top of the low-reading follow-up sheet.
     const isLow = classifyGlucose(value, period, activeProfile) === "low";
     const healthAsked = isLow ? false : await maybeAskHealthWrite(addedSugar);
@@ -1832,7 +1852,7 @@ export default function DashboardScreen() {
   // Neutral follow-up: after the user LOGS a reading below their own profile's
   // low threshold, offer (never force) a 15-minute re-measure reminder and a
   // shortcut to reach an emergency contact. No diagnosis, no automatic alert.
-  async function maybeOfferLowFollowup(mgdl: number): Promise<boolean> {
+  async function maybeOfferLowFollowup(mgdl: number, logId: string): Promise<boolean> {
     const prefs = await getNotificationPrefs();
     if (!prefs.enabled || !prefs.lowFollowup) return false;
     // UX#1: one low threshold, not two that could disagree - always the active
@@ -1849,6 +1869,7 @@ export default function DashboardScreen() {
           icon: "alarm-outline",
           onPress: async () => {
             const ok = await scheduleLowFollowup();
+            if (ok) lowFollowupLogIdRef.current = logId;
             toast(
               ok ? t("dashboard.lowFollowSet") : t("dashboard.toklukNeedsPerm"),
               ok ? "success" : "info"
@@ -1983,7 +2004,7 @@ export default function DashboardScreen() {
 
   async function cancelEatingTimer() {
     const previous = postMealTimerForProfile;
-    await cancelPostMealTimer();
+    await cancelPostMealTimer(activeProfile?.id);
     setPostMealTimer(null);
     await refreshNextReminder();
     if (activeProfile) void syncLiveData(activeProfile.id, glucoseUnit);

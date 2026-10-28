@@ -79,6 +79,29 @@ export function cgmLiveFields(
   return cgm ? { mode, cgm } : { mode };
 }
 
+/**
+ * What the "next reminder" computation may offer a surface in a sensor mode:
+ * the same set the app itself schedules. Measurement reminders the user has not
+ * opted back in read as switched off (the withCgmPause rule of
+ * lib/cgm/reminderMode.ts), and the post-meal end is withheld because a sensor
+ * mode arms nothing to ring there (notifications.ts schedulePostMealAt). The
+ * countdown itself is a separate LiveData field and is unaffected.
+ */
+export function widgetUpcomingInputs<T extends { id: string; type: string; enabled: number }>(
+  mode: LiveCgmMode,
+  rows: readonly T[],
+  optIn: ReadonlySet<string>,
+  postMealEndsAt: number | null
+): { rows: T[]; postMealEndsAt: number | null } {
+  if (mode === "manual") return { rows: [...rows], postMealEndsAt };
+  return {
+    rows: rows.map((r) =>
+      r.type === "glucose" && !optIn.has(r.id) ? { ...r, enabled: 0 } : r
+    ),
+    postMealEndsAt: null,
+  };
+}
+
 /** Newest sensor row of a profile (at most one). Reads idx_sugar_cgm. */
 export async function loadCgmReadings(profileId: string): Promise<CgmReading[]> {
   const { getDb } = await import("../db/index");
@@ -124,6 +147,10 @@ export interface CgmWidgetModel {
   ageText: string;
   stale: boolean;
   ageMin: number;
+  /** epoch ms of the reading. A widget bitmap that cannot redraw by the clock
+   *  (Android) shows this as a clock time, which stays true however long the
+   *  bitmap sits, where `ageText` would freeze at its render-time value. */
+  readAt: number;
 }
 
 interface CgmWidgetSource {
@@ -149,6 +176,7 @@ export function cgmWidgetModel(
     ageText: cgmAgeText(ageMin, data.labels),
     stale,
     ageMin,
+    readAt: cgm.at,
   };
 }
 

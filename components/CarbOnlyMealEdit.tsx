@@ -7,7 +7,11 @@ import { useTranslation } from "react-i18next";
 import { useApp } from "../lib/store/AppContext";
 import { deleteMealLog, getMealLog, updateMealLog } from "../lib/db/logs";
 import { captureDeletion, restoreDeletion } from "../lib/db/undo";
-import { applyAfterDeleteFromSnapshot, undoAfterDelete } from "../lib/afterDelete";
+import {
+  applyAfterDeleteFromSnapshot,
+  undoAfterDelete,
+} from "../lib/afterDelete";
+import { settlePostMealTimerAfterMealTimeEdit } from "../lib/mealTimeEditTimer";
 import { logCrash, logEvent } from "../lib/analytics";
 import { parseGramText, sanitizeNumberText } from "../lib/numberInput";
 import { carbOnlyAmountError, carbOnlyPatch, parseCarbGrams } from "../lib/mealRoute";
@@ -60,6 +64,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [prefillIso, setPrefillIso] = useState<string | null>(null);
+  const [mealProfileId, setMealProfileId] = useState<string | null>(null);
 
   function failLoad() {
     toast(t("common.saveFailed"), "error");
@@ -82,6 +87,7 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
         setNote(log.personal_note ?? "");
         setLoggedAt(new Date(log.logged_at));
         setPrefillIso(new Date(log.logged_at).toISOString());
+        setMealProfileId(log.profile_id);
         setReady(true);
       } catch (err) {
         logCrash(err, { screen: "carbOnlyMeal", step: "load" });
@@ -129,6 +135,13 @@ export function CarbOnlyMealEdit({ mealLogId }: { mealLogId: string }) {
           loggedAtIso: iso !== prefillIso ? iso : null,
         })
       );
+      if (iso !== prefillIso && prefillIso != null && mealProfileId != null) {
+        await settlePostMealTimerAfterMealTimeEdit({
+          profileId: mealProfileId,
+          oldLoggedAtMs: new Date(prefillIso).getTime(),
+          newLoggedAtMs: new Date(iso).getTime(),
+        });
+      }
       logEvent("log_edited", { kind: "meal" });
       hapticSuccess();
       bumpData();

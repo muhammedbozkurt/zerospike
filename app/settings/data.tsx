@@ -368,8 +368,8 @@ export default function DataSettings() {
     await clearAllLogs(activeProfile.id);
     // The countdown was armed for a meal in the history that was just erased:
     // leaving it running would ring for a record the user asked to be gone.
-    const runningTimer = await getPostMealTimerState();
-    if (runningTimer?.profileId === activeProfile.id) await cancelPostMealTimer();
+    const runningTimer = await getPostMealTimerState(activeProfile.id);
+    if (runningTimer?.profileId === activeProfile.id) await cancelPostMealTimer(activeProfile.id);
     bumpData();
     toast(t("settings.clearLogsDone", { name: displayProfileName(activeProfile, t) }), "success");
   }
@@ -396,7 +396,7 @@ export default function DataSettings() {
     await revokeHealthRecordsBeforeDelete(activeProfile.id);
     // Read BEFORE the delete: afterwards there is no way to tell whether the
     // countdown belonged to the profile that just went.
-    const runningTimer = await getPostMealTimerState();
+    const runningTimer = await getPostMealTimerState(activeProfile.id);
     // The stored Nightscout address and token go with the profile. Cleared and
     // let idle BEFORE the delete: a sync still running would insert rows for a
     // profile that is gone.
@@ -410,7 +410,7 @@ export default function DataSettings() {
     // Its owner no longer exists, so nothing can ever act on it again: the
     // alarm, the notification, the stored end and the lock-screen card all go.
     if (runningTimer?.profileId === activeProfile.id) {
-      await cancelPostMealTimer();
+      await cancelPostMealTimer(activeProfile.id);
     }
     // The app cannot stay pointed at a row that no longer exists: every screen
     // would read an empty history and write logs keyed to a deleted profile.

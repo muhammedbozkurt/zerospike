@@ -1,11 +1,13 @@
 package com.greeneyeapp.zerospike.wear
 
+import android.text.format.DateFormat
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
+import java.util.Date
 
 /**
  * Single SHORT_TEXT complication: the last logged reading with its unit as the
@@ -26,11 +28,11 @@ class ZerospikeComplicationService : SuspendingComplicationDataSourceService() {
         if (request.complicationType != ComplicationType.SHORT_TEXT) return null
 
         val data = LiveDataStore.load(applicationContext)
-        val hasReading = data != null && data.lastGlucoseMgdl != null
+        val hasReading = data != null && data.readingMgdl() != null
         // SHORT_TEXT is a handful of characters wide on most watch faces, so the
         // empty state is the same dash the app screen shows, not a sentence that
         // every face would truncate. The full wording stays in the description.
-        val reading = data?.lastGlucoseDisplay?.takeIf { it.isNotBlank() } ?: "--"
+        val reading = data?.readingDisplay()?.takeIf { it.isNotBlank() } ?: "--"
 
         val builder = ShortTextComplicationData.Builder(
             text = PlainComplicationText.Builder(reading).build(),
@@ -43,9 +45,16 @@ class ZerospikeComplicationService : SuspendingComplicationDataSourceService() {
             ).build()
         )
         if (hasReading) {
-            builder.setTitle(
-                PlainComplicationText.Builder(unitLabelOf(data?.unit)).build()
-            )
+            // A sensor value can be old with nothing on a watch face to say so, so
+            // its title is the clock time it was read at; a hand-logged one keeps
+            // the unit.
+            val sensor = data?.activeCgm
+            val title = if (sensor != null) {
+                DateFormat.getTimeFormat(applicationContext).format(Date(sensor.at))
+            } else {
+                unitLabelOf(data?.unit)
+            }
+            builder.setTitle(PlainComplicationText.Builder(title).build())
         }
         return builder.build()
     }

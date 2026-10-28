@@ -383,6 +383,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataVersion]);
 
+  // Refresh the shared live-surface snapshot (widget, lock screen, watch, the
+  // next-reminder line) on EVERY data change, from the one place that is never
+  // frozen. It used to run in the dashboard tab's own effect, and a blurred tab
+  // does not run effects (freezeOnBlur): a calculator save or an edit in the
+  // full journal bumped the version while the dashboard slept, so the surfaces
+  // kept the old value until the tab was opened again. Scroll position is not
+  // news for a widget, so only the profile, its unit and the data version key it.
+  const liveProfileId = activeProfile?.id;
+  const liveUnit = activeProfile?.glucose_unit;
+  useEffect(() => {
+    if (!ready || !liveProfileId || !liveUnit) return;
+    void import("../services/liveData").then((m) => m.syncLiveData(liveProfileId, liveUnit));
+  }, [ready, liveProfileId, liveUnit, dataVersion]);
+
   const value = useMemo<AppState>(
     () => ({
       ready,
