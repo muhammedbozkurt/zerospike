@@ -351,6 +351,13 @@ async function main() {
     // sensor rows through the union sort, so it gets twice the budget (the gate
     // runs this under load).
     ok("journal feed (twins) under 200 ms", twinFeedMs < 200, `${twinFeedMs.toFixed(1)} ms`);
+    // The dashboard's "this week" read: 7 days, hand-entered rows only, LIMIT 3000.
+    const weekArgs = journalFeedArgs("P", 3000, { start: NOW - 7 * 86_400_000, end: NOW }) as never[];
+    const weekSql = journalFeedSql(true, false, { cgm: "exclude" });
+    const weekMs = time(() => (db.prepare(weekSql).all(...weekArgs) as unknown[]).length);
+    ok("dashboard week range (exclude, 7 d, limit 3000) under 100 ms", weekMs < 100, `${weekMs.toFixed(1)} ms`);
+    const weekPlan = (db.prepare("EXPLAIN QUERY PLAN " + weekSql).all(...weekArgs) as { detail: string }[]).map((r) => r.detail).join(" | ");
+    ok("week range: no full scan of sugar_logs", !/SCAN s(?! USING)|SCAN sugar_logs(?! USING)|SCAN tw(?! USING)/.test(weekPlan), weekPlan);
     const doseMs = time(() => dose(db, NOW - 86_400_000).length);
     ok("dose path 24 h under 100 ms", doseMs < 100, `${doseMs.toFixed(1)} ms`);
     const ptsMs = time(() => (db.prepare(glucosePointsSql(true, "manual")).all("P", iso(start), iso(NOW)) as unknown[]).length);
@@ -364,7 +371,7 @@ async function main() {
       const p = plan(sql, ...(args as unknown[]));
       ok(`${name}: no full scan of sugar_logs`, !/SCAN s(?! USING)|SCAN sugar_logs(?! USING)|SCAN tw(?! USING)/.test(p), p);
     }
-    console.log(`  (feed ${feedMs.toFixed(1)} ms, twins feed ${twinFeedMs.toFixed(1)} ms, dose ${doseMs.toFixed(1)} ms, points ${ptsMs.toFixed(1)} ms)`);
+    console.log(`  (week ${weekMs.toFixed(1)} ms, feed ${feedMs.toFixed(1)} ms, twins feed ${twinFeedMs.toFixed(1)} ms, dose ${doseMs.toFixed(1)} ms, points ${ptsMs.toFixed(1)} ms)`);
   }
 
   console.log(`${passed} passed, ${failed} failed`);

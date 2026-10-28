@@ -140,7 +140,7 @@ check("ring line value comes from pct(): tr %92, en 92%, de 92 %", () => {
 check("source contract: index.tsx builds the share with pct() and uses the pure helpers", () => {
   const src = read("app/(tabs)/index.tsx");
   assert.match(src, /ringShareLine", \{ share: isolateLtr\(pct\(todayShare\)\) \}/);
-  assert.match(src, /bosDurumKarari\(\{ loaded: homeLoaded, entries: entries\.length, cgm: cgmActive \}\)/);
+  assert.match(src, /bosDurumKarari\(\{\s*loaded: homeLoaded,\s*entries: entries\.length,\s*cgm: cgmActive,\s*sensorData: sensorSeen === true,?\s*\}\)/);
   assert.match(src, /usesTwoColumn\(homeState, isTwoCol\)/);
   assert.match(src, /fraction=\{todayShare != null \? todayShare \/ 100 : 0\}/);
   assert.match(src, /<WelcomeCard/);

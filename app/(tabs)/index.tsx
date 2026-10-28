@@ -90,6 +90,7 @@ import { useProCta } from "../../lib/proCta";
 import { syncLiveData } from "../../lib/services/liveData";
 import {
   importHealthGlucose,
+  getHealthConnectStatus,
   writeGlucoseToHealthIfEnabled,
   getHealthWriteEnabled,
   hasHealthProvider,
@@ -124,7 +125,7 @@ import { useHealthAvailable, useHealthConnectStatus } from "../../lib/services/h
 import { connectHealthSync } from "../../lib/cgm/connectSync";
 import { healthImportAllowed } from "../../lib/cgm/importPolicy";
 import { decideFlagRefresh } from "../../lib/cgm/flagRefresh";
-import { cgmChoiceGate, HEALTH_CONNECT_PLAY_URL } from "../../lib/cgm/sourceAvailability";
+import { cgmChoiceGate, cgmChoiceGateNow, HEALTH_CONNECT_PLAY_URL, type CgmChoiceGate } from "../../lib/cgm/sourceAvailability";
 import { consecutiveLogDays } from "../../lib/insights";
 import { noteLog, maybeRequestReview, noteStreakAndMaybeReview, crossedStreak7 } from "../../lib/services/review";
 import {
@@ -135,6 +136,7 @@ import {
 } from "../../lib/services/firstLog";
 import { cgmActivitySinceIso, firstStepPlan } from "../../lib/homeFirstStep";
 import { getCgmMode } from "../../lib/cgm/state";
+import { hasCgmReadings } from "../../lib/db/cgmSql";
 import { getGlucoseOptIn, withCgmPause } from "../../lib/cgm/reminderMode";
 import { HEALTH_IMPORT_FLAG, readProfileFlag, writeProfileFlag } from "../../lib/profileFlag";
 import { listCgmActivity } from "../../lib/db/sugarRange";
@@ -378,6 +380,11 @@ export default function DashboardScreen() {
   // journal (they count toward "days in a row") and the first-sync tick.
   const [cgmDates, setCgmDates] = useState<string[]>([]);
   const [syncDone, setSyncDone] = useState(false);
+  // A manual profile can hold sensor readings the stats feed leaves out (null =
+  // not read yet): without this it would read as a brand-new, empty profile.
+  // Keyed by profile so a switch never shows the previous profile's answer.
+  const [sensorState, setSensorState] = useState<{ id: string; seen: boolean } | null>(null);
+  const sensorSeen = sensorState && sensorState.id === activeProfile?.id ? sensorState.seen : null;
   const firstPlan = firstStepPlan(dataMode, syncDone);
   // Store-screenshot only: zerospike://?shot=cgm opens this screen in sensor mode
   // over a demo curve; any dashboard link without it puts the profile back to
@@ -736,6 +743,28 @@ export default function DashboardScreen() {
   useEffect(() => {
     if (profileId) void seedFirstLogFlags();
   }, [profileId]);
+
+  // Does a MANUAL profile hold sensor readings at all? One index probe. A sensor
+  // profile needs no answer: its layout is its own.
+  useEffect(() => {
+    if (!profileId) return;
+    if (cgmActive) {
+      setSensorState({ id: profileId, seen: true });
+      return;
+    }
+    let alive = true;
+    void hasCgmReadings(profileId)
+      .then((seen) => {
+        if (alive) setSensorState({ id: profileId, seen });
+      })
+      .catch((err) => {
+        logCrash(err, { screen: "dashboard", load: "sensorSeen" });
+        if (alive) setSensorState({ id: profileId, seen: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [profileId, cgmActive, dataVersion]);
 
   // Sensor days for the streak, and the first-sync tick; both read only on a
   // sensor mode, so a manual profile does no extra work here.
@@ -1943,10 +1972,7 @@ export default function DashboardScreen() {
     }
     // Health Connect missing or waiting for a Play update: there is no dialog
     // to raise, say what is needed instead of a refusal the person never made.
-    if (hcGate !== "ready") {
-      notifyHealthGate();
-      return;
-    }
+    if (!(await healthGateOpen())) return;
     setCgmOn(true);
     if (!activeProfile) return;
     const profileId = activeProfile.id;
@@ -2004,19 +2030,29 @@ export default function DashboardScreen() {
     // The persisted preference has not resolved yet (card is still its
     // skeleton, not a Pressable) - nothing to act on either way.
     if (cgmOn == null) return;
-    if (hcGate !== "ready") {
-      notifyHealthGate();
-      return;
-    }
-    if (cgmOn) void runSync(true);
-    else void toggleCgm(true);
+    void (async () => {
+      if (!(await healthGateOpen())) return;
+      if (cgmOn) void runSync(true);
+      else void toggleCgm(true);
+    })();
+  }
+
+  /** Health Connect usable right now? The cached gate may predate an install or
+   *  update the person just made, so a closed one is asked again before it blocks
+   *  the tap; a gate that stays closed says why and opens the Play listing. */
+  async function healthGateOpen(): Promise<boolean> {
+    if (hcGate === "ready") return true;
+    const fresh = await cgmChoiceGateNow(Platform.OS, getHealthConnectStatus);
+    if (fresh === "ready") return true;
+    notifyHealthGate(fresh);
+    return false;
   }
 
   /** Android without a usable Health Connect: tell which of the two it is and
    *  open its Play listing (install or update). */
-  function notifyHealthGate() {
+  function notifyHealthGate(gate: CgmChoiceGate) {
     toast(
-      t(hcGate === "update" ? "dashboard.healthNeedsUpdate" : "dashboard.healthUnavailable", {
+      t(gate === "update" ? "dashboard.healthNeedsUpdate" : "dashboard.healthUnavailable", {
         health: HEALTH_NAME,
       }),
       "info"
@@ -2243,11 +2279,16 @@ export default function DashboardScreen() {
   // existing user, sit there while the hero ring and week strip popped in on
   // top of it a moment later and shoved everything down. See HeroSkeleton /
   // WeekSkeleton below for what fills that gap instead.
-  const homeLoaded = loaded && dataModeReady;
-  const homeState = bosDurumKarari({ loaded: homeLoaded, entries: entries.length, cgm: cgmActive });
+  const homeLoaded = loaded && dataModeReady && sensorSeen !== null;
+  const homeState = bosDurumKarari({
+    loaded: homeLoaded,
+    entries: entries.length,
+    cgm: cgmActive,
+    sensorData: sensorSeen === true,
+  });
   const isFirstRun = homeState === "welcome";
-  const isExistingUser = homeLoaded && (entries.length > 0 || cgmActive);
-  const hasAnyLog = homeLoaded && (entries.length > 0 || cgmActive);
+  const isExistingUser = homeLoaded && (entries.length > 0 || cgmActive || sensorSeen === true);
+  const hasAnyLog = homeLoaded && (entries.length > 0 || cgmActive || sensorSeen === true);
 
   const startSteps: {
     key: string;
@@ -2366,6 +2407,12 @@ export default function DashboardScreen() {
           unless the store reports a running trial. */}
       <TrialCard />
 
+      {/* The one-time "switch to CGM mode?" question, on either layout below: a
+          manual profile that already holds sensor readings is the one it is for. */}
+      {homeLoaded && activeProfile ? (
+        <CgmSwitchOffer profileId={activeProfile.id} mode={dataMode} dataVersion={dataVersion} />
+      ) : null}
+
       {!homeLoaded ? (
         // Unknown yet whether this is a first run or an existing user: neither
         // shell is correct to show, so a same-sized placeholder holds the hero
@@ -2384,13 +2431,6 @@ export default function DashboardScreen() {
               it fell on) as a small line underneath. Still gated on
               `lastGlucose` existing at all: with no reading EVER logged this
               stays out of the way for the FirstRunGuide branch above. */}
-          {activeProfile ? (
-            <CgmSwitchOffer
-              profileId={activeProfile.id}
-              mode={dataMode}
-              dataVersion={dataVersion}
-            />
-          ) : null}
           {cgmActive && activeProfile ? (
             // A sensor profile's hero: the same ring, the curve under it, the
             // last reading with its age. Never drawn for a manual profile.

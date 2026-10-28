@@ -146,7 +146,8 @@ async function main(): Promise<void> {
     ok("data sources dims it too", ds.includes('dimmed: hcGate !== "ready"'));
     const dash = read("app/(tabs)/index.tsx");
     ok("the card says an update is needed", dash.includes('"dashboard.healthNeedsUpdate"'));
-    ok("a tap with a missing HC never reaches the permission request", /if \(hcGate !== "ready"\) \{\s*notifyHealthGate\(\);\s*return;\s*\}\s*setCgmOn\(true\);/.test(dash));
+    ok("a tap with a missing HC never reaches the permission request", /if \(!\(await healthGateOpen\(\)\)\) return;\s*setCgmOn\(true\);/.test(dash));
+    ok("and the dashboard asks for a fresh status first, not its cached gate", dash.includes("cgmChoiceGateNow(Platform.OS, getHealthConnectStatus)") && /void \(async \(\) => \{\s*if \(!\(await healthGateOpen\(\)\)\) return;/.test(dash));
     eq("no permission sheet was raised by any of this", hc.requestCalls, 0);
   }
 

@@ -1,7 +1,9 @@
 import type { TranslationSchema } from "./tr";
 
 // The cgmInsights day counts carry Arabic's own plural forms (i18next v3 suffixes
-// _3 for 3-10, _4 for 11-99, _5 for 100 and up): "7 أيام", "14 يومًا", "100 يوم".
+// for the CLDR categories: _3 few = n%100 in 3-10, _4 many = n%100 in 11-99,
+// _5 other = 100-102, 200-202 ...): "7 أيام", "14 يومًا", "100 يوم". 0, 1 and 2
+// fall back to the base key.
 // The other languages have one form, so these keys exist here only.
 const ar: TranslationSchema & { cgmInsights: Record<string, string> } = {
   common: {

@@ -27,6 +27,8 @@ import { csvDelimiterFor } from "../lib/exportLimits";
 import { coverageLine } from "../lib/cgm/basisText";
 import { setActiveLang } from "../lib/lang";
 import { inTargetBand, VERY_HIGH_MGDL } from "../lib/glucose";
+import { bosDurumKarari } from "../lib/homeEmpty";
+import { CGM_ANY_SQL } from "../lib/db/cgmSql";
 
 let passed = 0;
 let failed = 0;
@@ -92,6 +94,36 @@ console.log("A-8. the week tiles come from a 7 day range");
   ok("the dashboard reads the week as a range", /getJournal\(activeProfile\.id, lang, WEEK_FEED_LIMIT, \{ start: weekEnd - WEEK_MS, end: weekEnd \}/.test(idx));
   ok("the week loop walks that read, not the 300 window", /for \(const e of weekEntries\)/.test(idx));
   ok("no week test left in the newest-N loop", !/inWeek/.test(idx));
+}
+
+console.log("a manual profile with only sensor data is not a new one");
+{
+  const db = makeDb();
+  const now = Date.parse("2026-10-28T12:00:00.000Z");
+  const ins = db.prepare(
+    `INSERT INTO sugar_logs (id, profile_id, glucose_level_mgdl, period_tag, source, logged_at, tags, source_app, external_id, is_cgm) VALUES (?, 'p1', ?, 'unset', 'health', ?, '[]', 'com.dexcom.G7', ?, 1)`
+  );
+  for (let i = 0; i < 40; i++) ins.run(`c${i}`, 110 + (i % 20), new Date(now - i * 5 * 60_000).toISOString(), `x${i}`);
+  const feed = (cgm: "exclude" | "twins") =>
+    (db.prepare(journalFeedSql(false, false, { cgm })).all(...(journalFeedArgs("p1", 300) as never[])) as unknown[]).length;
+  eq("the stats feed (exclude) is empty for a sensor-only profile", feed("exclude"), 0);
+  ok("and was not empty under the old twins feed", feed("twins") > 0);
+  ok("the probe finds the sensor rows", db.prepare(CGM_ANY_SQL).get("p1") != null);
+  eq("and nothing for a profile without any", db.prepare(CGM_ANY_SQL).get("p2") ?? null, null);
+  const plan = (db.prepare("EXPLAIN QUERY PLAN " + CGM_ANY_SQL).all("p1") as { detail: string }[]).map((r) => r.detail).join(" | ");
+  ok(`the probe uses idx_sugar_cgm, no scan (${plan})`, /idx_sugar_cgm/.test(plan) && !/SCAN sugar_logs(?! USING)/.test(plan));
+
+  eq("empty feed, no sensor data: welcome", bosDurumKarari({ loaded: true, entries: 0, cgm: false, sensorData: false }), "welcome");
+  eq("empty feed, sensor data on a manual profile: not welcome", bosDurumKarari({ loaded: true, entries: 0, cgm: false, sensorData: true }), "normal");
+  eq("still loading while the feed has not landed", bosDurumKarari({ loaded: false, entries: 0, sensorData: true }), "loading");
+  eq("entries alone still make it normal", bosDurumKarari({ loaded: true, entries: 3 }), "normal");
+
+  const dash = read("app/(tabs)/index.tsx");
+  const offerAt = dash.indexOf("<CgmSwitchOffer");
+  eq("the offer is drawn once", dash.split("<CgmSwitchOffer").length - 1, 1);
+  ok("and above the welcome / existing split, so both layouts have it", offerAt > 0 && offerAt < dash.indexOf("{!homeLoaded ? ("));
+  ok("the home state is told about the sensor data", dash.includes("sensorData: sensorSeen === true"));
+  ok("the home waits for that answer before choosing a layout", dash.includes("loaded && dataModeReady && sensorSeen !== null"));
 }
 
 console.log("250 rule on every surface");

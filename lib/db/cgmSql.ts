@@ -32,6 +32,17 @@ export async function countCgmReadingsSince(
   return row?.c ?? 0;
 }
 
+/** Placeholders: profile_id. One index probe (idx_sugar_cgm), not a count. */
+export const CGM_ANY_SQL = "SELECT 1 AS x FROM sugar_logs WHERE profile_id = ? AND is_cgm = 1 LIMIT 1;";
+
+/** Whether this profile has EVER received a sensor reading, in any mode. A manual
+ *  profile whose only data came from a sensor is not an empty one. */
+export async function hasCgmReadings(profileId: string): Promise<boolean> {
+  const { getDb } = await import("./index");
+  const db = await getDb();
+  return (await db.getFirstAsync<{ x: number }>(CGM_ANY_SQL, [profileId])) != null;
+}
+
 /** Sensor readings this profile received in the last 24 hours. */
 export async function countCgmReadingsLast24h(
   profileId: string,

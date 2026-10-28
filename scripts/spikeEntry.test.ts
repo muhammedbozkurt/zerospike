@@ -34,7 +34,7 @@ const lineOf = (needle: string): number => {
 };
 const cardLine = lineOf("loaded && hasAnyLog && spikeConfigured");
 check("card condition requires at least one log", /loaded && hasAnyLog && spikeConfigured && !isScreenshotMode\(\)/.test(home));
-check("hasAnyLog means entries exist (or a sensor profile)", /const hasAnyLog = homeLoaded && \(entries\.length > 0 \|\| cgmActive\);/.test(home));
+check("hasAnyLog means entries exist (or a sensor profile)", /const hasAnyLog = homeLoaded && \(entries\.length > 0 \|\| cgmActive \|\| sensorSeen === true\);/.test(home));
 check("card after glucose ring", cardLine > lineOf("dashboard.todayAvgLabel") && lineOf("dashboard.todayAvgLabel") > 0);
 check("card after weekly boxes", cardLine > lineOf("<SegmentedStat"));
 check("card after post-meal countdown", cardLine > lineOf("<PostMealCountdown\n"));
