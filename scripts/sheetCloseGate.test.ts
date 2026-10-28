@@ -112,6 +112,7 @@ async function main(): Promise<void> {
     const at = (needle: string) => src.indexOf(needle);
     const open = at("sheetGate.markOpen()");
     const wait = at("await sheetGate.whenClear()");
+    ok("a timed-out wait does not return", !/if \(!\(await sheetGate\.whenClear\(\)\)\) return/.test(src));
     ok("gate marked open", open > 0);
     ok("gate waited on", wait > open);
     ok("wait precedes the low follow-up sheet", wait < at("await maybeOfferLowFollowup(value)"));

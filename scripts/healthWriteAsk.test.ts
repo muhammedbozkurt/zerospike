@@ -63,7 +63,11 @@ async function main(): Promise<void> {
     const src = readFileSync("app/(tabs)/index.tsx", "utf8");
     const ask = src.indexOf("async function maybeAskHealthWrite");
     const body = src.slice(ask, src.indexOf("async function maybeOfferLowFollowup"));
-    ok("no mark before the dialog", !/await markHealthWriteAskSeen\(\);/.test(body));
+    const marks = body.match(/markHealthWriteAskSeen/g) ?? [];
+    ok("mark referenced exactly once in the ask", marks.length === 1);
+    ok("the one mark is the answered path only", /markAsked:\s*markHealthWriteAskSeen,/.test(body));
+    const abandonWire = body.match(/onAbandon[^\n]*/g) ?? [];
+    ok("onAbandon is passed through untouched", abandonWire.every((l) => /^onAbandon,?$/.test(l.trim()) || /^onAbandon\) =>$/.test(l.trim())));
     ok("goes through runHealthWriteAsk", body.includes("runHealthWriteAsk("));
     const fb = readFileSync("components/Feedback.tsx", "utf8");
     ok("Feedback reports abandonment", fb.includes("abandonCb.current?.()") && fb.includes("cb?.()"));

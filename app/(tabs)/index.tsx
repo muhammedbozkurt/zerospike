@@ -1658,7 +1658,8 @@ export default function DashboardScreen() {
       toast(t("calculator.savedRecord"), "success", savedUndo);
     }
     bumpData();
-    if (!(await sheetGate.whenClear())) return;
+    // A sheet that never reported its close must not swallow the follow-ups: carry on after the cap.
+    await sheetGate.whenClear();
     const followupShown = isNow ? await maybeOfferLowFollowup(value) : false;
     // Not on top of the low-reading follow-up sheet.
     const isLow = classifyGlucose(value, period, activeProfile) === "low";
