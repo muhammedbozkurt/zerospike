@@ -847,6 +847,7 @@ const ar: TranslationSchema = {
     waiting: "بانتظار CGM",
     waitingBody: "ستظهر القراءات هنا فور وصولها.",
     manualBasis: "إدخال يدوي",
+    manualBasisA11y: "متوسط اليوم محسوب من قراءات أُدخلت يدويًا",
     watching: "CGM يتابع",
     offerTitle: "هل تريد التبديل إلى وضع CGM؟",
     offerBody: "تم العثور على قراءات CGM في {{store}}. هل تريد التبديل إلى وضع CGM؟",

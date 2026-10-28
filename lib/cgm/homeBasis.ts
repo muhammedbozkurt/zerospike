@@ -1,8 +1,8 @@
 /**
  * Which readings the sensor home card's average and ring are computed from.
- * Same rule and same threshold as Insights (selectGlucoseBasis): with enough
- * sensor coverage of today so far the sensor readings are the day, otherwise
- * the hand-entered ones are. Pure and dependency-free so it runs under plain
+ * Same threshold as Insights (selectGlucoseBasis), but the fallback set is the
+ * hand-entered readings only: with enough sensor coverage of today so far the
+ * sensor readings are the day, otherwise the hand-entered ones are. Pure and dependency-free so it runs under plain
  * Node (scripts/cgmHomeBasis.test.ts).
  */
 import type { CgmRangeStats } from "../db/cgmCurveSql";

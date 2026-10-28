@@ -125,7 +125,7 @@ const NOT_LOADED: CgmWindow = {
 
 /**
  * The sensor data behind the home curve and ring: the window's rows, the newest
- * readings, today's and the week's totals. Four small indexed reads, issued
+ * readings, today's and the week's totals. Six small indexed reads (window, newest, today sensor, week, today hand-entered, today sensor times), issued
  * together and refreshed on an import, a mode change, a data change and a slow
  * timer. Free accounts only ever ask for 3, 6 or 12 hours, all inside the free
  * 24 hours, so no Pro check is needed here.

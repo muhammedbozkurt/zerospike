@@ -12,9 +12,10 @@ import { recentDayRanges } from "../cgm/curve";
 import { notSensorTwinSql } from "./cgmSql";
 
 /** Placeholders: profile_id, since (ISO), until (ISO). Sensor AND hand-entered
- *  readings, so the curve can mark the manual ones on the same axis. */
-export const CGM_WINDOW_SQL =
-  "SELECT logged_at, glucose_level_mgdl, is_cgm FROM sugar_logs WHERE profile_id = ? AND logged_at >= ? AND logged_at <= ? ORDER BY logged_at;";
+ *  readings, so the curve can mark the manual ones on the same axis. A
+ *  non-sensor row that only mirrors a sensor stream is left out (the journal's
+ *  "twins" rule), or it would be drawn as a hollow manual dot. */
+export const CGM_WINDOW_SQL = `SELECT s.logged_at, s.glucose_level_mgdl, s.is_cgm FROM sugar_logs s WHERE s.profile_id = ? AND s.logged_at >= ? AND s.logged_at <= ? AND (s.is_cgm = 1 OR ${notSensorTwinSql("s")}) ORDER BY s.logged_at;`;
 
 /** Placeholders: profile_id. The newest sensor reading. */
 export const CGM_LATEST_SQL =

@@ -15,6 +15,7 @@ import {
   CGM_MANUAL_RANGE_STATS_SQL,
   CGM_RANGE_STATS_SQL,
   CGM_SENSOR_TIMES_SQL,
+  CGM_WINDOW_SQL,
   rangeStatsArgs,
   toRangeStats,
   windowArgs,
@@ -199,6 +200,21 @@ console.log("8. in-range share for manual readings");
   const c = card(db);
   eq("count", c.stats.count, 4);
   eq("share of readings in the target band", todayRangeShare(c.stats.count, c.stats.inRange), 50);
+}
+
+console.log("9. the curve window leaves a sensor mirror out, keeps the typed reading");
+{
+  const db = makeDb();
+  sensor(db, NOW - 20 * 60_000, 130);
+  mirror(db, NOW - 20 * 60_000 + 5_000, 130);
+  typed(db, NOW - 10 * 60_000, 105);
+  const rows = db
+    .prepare(CGM_WINDOW_SQL)
+    .all(...windowArgs("p1", NOW - 3 * 3600_000, NOW)) as { glucose_level_mgdl: number; is_cgm: number }[];
+  eq("window rows: the sensor row and the typed 105 only", rows.map((r) => [r.glucose_level_mgdl, r.is_cgm]), [
+    [130, 1],
+    [105, 0],
+  ]);
 }
 
 console.log(failed === 0 ? `all ${passed} checks passed` : `${failed} FAILED, ${passed} passed`);

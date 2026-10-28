@@ -231,6 +231,7 @@ console.log("G. the SQL on a scratch database (real v29 columns and indexes)");
     id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, glucose_level_mgdl INTEGER NOT NULL,
     period_tag TEXT NOT NULL DEFAULT 'manual', source TEXT NOT NULL DEFAULT 'manual',
     logged_at TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]', healthkit_uuid TEXT);
+    CREATE TABLE meal_logs (id TEXT PRIMARY KEY NOT NULL, profile_id TEXT NOT NULL, sugar_log_id TEXT);
     CREATE INDEX idx_sugar_profile ON sugar_logs (profile_id, logged_at DESC);`);
   for (const c of V29_COLUMNS) db.exec(`ALTER TABLE sugar_logs ADD COLUMN ${c.name} ${c.type};`);
   for (const sql of V29_INDEXES) db.exec(sql);
