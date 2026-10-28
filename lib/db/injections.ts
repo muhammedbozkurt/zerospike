@@ -294,6 +294,13 @@ export async function updateInjection(
     fields.push("insulin_product_other = ?");
     values.push(productOther);
   }
+  // A row turned into basal is no longer a meal's bolus: the calculator's
+  // ownership marks go, or deleting the meal would delete the user's basal and
+  // the journal feed would hide it (lib/db/journalSql.ts).
+  if (patch.insulin_type === "basal") {
+    fields.push("meal_log_id = NULL");
+    fields.push("source = CASE WHEN source = 'calculator' THEN 'manual' ELSE source END");
+  }
 
   if (fields.length > 0) {
     await db.runAsync(

@@ -45,6 +45,30 @@ export function prefillDose(mealDose: number, row: BolusRowSnapshot | null): num
   return bolus && bolus.dose_units != null ? bolus.dose_units : mealDose;
 }
 
+export interface LinkedReadingMoveInput {
+  /** The user moved the meal's time picker. */
+  loggedAtChanged: boolean;
+  readingLoggedAt: string;
+  /** The meal's logged_at as stored before this edit. */
+  mealStoredLoggedAt: string;
+  /** Other meals that point at the same reading. */
+  otherMealsOnReading: number;
+}
+
+/**
+ * Whether a meal's time correction also moves the reading it is linked to.
+ * Only a reading that belongs to this meal alone and was stamped at the meal's
+ * own instant (the calculator writes both with one timestamp) follows the
+ * picker. A reading logged minutes apart, or shared with another meal, is a
+ * measurement of its own: moving it would corrupt the other meal's baseline.
+ */
+export function shouldMoveLinkedReading(input: LinkedReadingMoveInput): boolean {
+  if (!input.loggedAtChanged || input.otherMealsOnReading > 0) return false;
+  const reading = Date.parse(input.readingLoggedAt);
+  const meal = Date.parse(input.mealStoredLoggedAt);
+  return Number.isFinite(reading) && reading === meal;
+}
+
 export function mealEditPlan(input: MealEditPlanInput): MealEditPlan {
   const { showsDose, dose, prefilledDose, mealStored, loggedAtIso, loggedAtChanged } = input;
   const bolus = ownBolusRow(input.bolus);

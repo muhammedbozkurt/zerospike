@@ -626,6 +626,20 @@ export async function listRecentMealLogs(
   }));
 }
 
+/** How many OTHER meals point at the same reading (a reading logged minutes
+ *  before two meals is shared by both, see findMatchingSugarLog). */
+export async function countOtherMealsOnSugarLog(
+  sugarLogId: string,
+  exceptMealId: string
+): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM meal_logs WHERE sugar_log_id = ? AND id <> ?;",
+    [sugarLogId, exceptMealId]
+  );
+  return row?.n ?? 0;
+}
+
 /**
  * Deletes a meal AND the bolus row the calculator wrote for it.
  *
@@ -639,7 +653,7 @@ export async function listRecentMealLogs(
 export async function deleteMealLog(id: string): Promise<void> {
   const db = await getDb();
   const boluses = await db.getAllAsync<RemovedHealthRecord>(
-    "DELETE FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator' RETURNING id, health_uuid AS uuid;",
+    "DELETE FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator' AND insulin_type = 'bolus' RETURNING id, health_uuid AS uuid;",
     [id]
   );
   const mealLink = await db.getFirstAsync<{ health_uuid: string | null }>(

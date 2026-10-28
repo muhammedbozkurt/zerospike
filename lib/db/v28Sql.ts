@@ -68,3 +68,11 @@ export const V28_CREATE: string[] = [
 /** Moves a profile's import floor forward (never back). */
 export const V28_UPSERT_FLOOR = `INSERT INTO health_import_floor (profile_id, floor_at) VALUES (?, ?)
   ON CONFLICT (profile_id) DO UPDATE SET floor_at = MAX(floor_at, excluded.floor_at);`;
+
+/** Forgets ONE tombstone of a reading (the latest). The delete trigger writes one
+ *  per delete, so taking the delete back removes the one it wrote and leaves any
+ *  older tombstone of the same time and value alone. */
+export const V28_DELETE_ONE_TOMBSTONE = `DELETE FROM health_import_tombstones WHERE rowid = (
+  SELECT MAX(rowid) FROM health_import_tombstones
+   WHERE profile_id = ? AND logged_at = ? AND glucose_level_mgdl = ?
+);`;

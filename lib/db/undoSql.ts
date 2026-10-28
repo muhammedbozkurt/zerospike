@@ -17,6 +17,21 @@ export interface DeletionSnapshot {
    *  deletes only, see captureDeletion in lib/db/undo.ts). Empty/undefined for
    *  every other kind. */
   linkedMealIds?: string[];
+  /** A deleted food's dependants (captureFoodDeletion): the favorite and portion
+   *  rows its ON DELETE CASCADE removes, and the meals its ON DELETE SET NULL
+   *  unlinked, so undo can put every one of them back. */
+  favorites?: Row[];
+  portions?: Row[];
+  foodMeals?: FoodMealLink[];
+}
+
+/** One meal that pointed at a deleted food. `original` is its custom_food_name
+ *  before the delete, `current` the name the delete left on it (the food's own
+ *  name when it had none, so the meal keeps a label once food_id is gone). */
+export interface FoodMealLink {
+  mealId: string;
+  original: string | null;
+  current: string | null;
 }
 
 /**
@@ -25,7 +40,13 @@ export interface DeletionSnapshot {
  * scripts/undoDelete.test.ts).
  */
 export type RestoreStep =
-  | { op: "insert"; table: "foods" | "meal_logs" | "sugar_logs" | "injection_logs" | "med_logs"; rows: Row[] }
+  | {
+      op: "insert";
+      table: "foods" | "food_portions" | "favorites" | "meal_logs" | "sugar_logs" | "injection_logs" | "med_logs";
+      rows: Row[];
+    }
+  | { op: "clearHealthTombstones"; items: { profileId: string; loggedAt: string; mgdl: number }[] }
+  | { op: "relinkMealsToFood"; foodId: string; items: FoodMealLink[] }
   | { op: "relinkMealsToSugar"; sugarLogId: string; mealIds: string[] }
   | { op: "restoreMealDoses"; items: { mealId: string; dose: number }[] };
 
@@ -60,10 +81,28 @@ function stripRecordUuid(row: Row): Row {
 export function planRestoreSteps(snap: DeletionSnapshot): RestoreStep[] {
   const steps: RestoreStep[] = [];
   if (snap.foods && snap.foods.length > 0) steps.push({ op: "insert", table: "foods", rows: snap.foods });
+  // Dependants of a food come back right after it: their foreign keys point at it.
+  if (snap.portions && snap.portions.length > 0) steps.push({ op: "insert", table: "food_portions", rows: snap.portions });
+  if (snap.favorites && snap.favorites.length > 0) steps.push({ op: "insert", table: "favorites", rows: snap.favorites });
+  const foodId = snap.foods?.[0]?.id;
+  if (snap.foodMeals && snap.foodMeals.length > 0 && foodId != null) {
+    steps.push({ op: "relinkMealsToFood", foodId: String(foodId), items: snap.foodMeals });
+  }
   if (snap.meals && snap.meals.length > 0) steps.push({ op: "insert", table: "meal_logs", rows: snap.meals.map(stripRecordUuid) });
   if (snap.sugar && snap.sugar.length > 0) {
     steps.push({ op: "insert", table: "sugar_logs", rows: snap.sugar.map(stripHealthUuid) });
   }
+  // Deleting an imported reading wrote a tombstone (schema v28) that keeps the
+  // import from bringing it back. Restoring the row retires that tombstone, or a
+  // later source-side re-write of the sample would be refused for good.
+  const tombstones: { profileId: string; loggedAt: string; mgdl: number }[] = [];
+  for (const row of snap.sugar ?? []) {
+    const mgdl = Number(row.glucose_level_mgdl);
+    if (row.source === "health" && row.profile_id != null && row.logged_at != null && Number.isFinite(mgdl)) {
+      tombstones.push({ profileId: String(row.profile_id), loggedAt: String(row.logged_at), mgdl });
+    }
+  }
+  if (tombstones.length > 0) steps.push({ op: "clearHealthTombstones", items: tombstones });
   const sugarLogId = snap.sugar?.[0]?.id;
   if (snap.linkedMealIds && snap.linkedMealIds.length > 0 && sugarLogId != null) {
     steps.push({

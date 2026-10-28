@@ -2,6 +2,7 @@ import { getDb } from "./index";
 import { emitInjectionSaved, emitMealSaved } from "./healthRecordHooks";
 import { getMealLog } from "./logs";
 import { getInjection } from "./injections";
+import { V28_DELETE_ONE_TOMBSTONE } from "./v28Sql";
 import { planRestoreSteps, type DeletionSnapshot, type Row } from "./undoSql";
 
 export type { DeletionSnapshot, Row, RestoreStep } from "./undoSql";
@@ -80,20 +81,41 @@ export async function captureDeletion(
   return {
     meals: await db.getAllAsync<Row>("SELECT * FROM meal_logs WHERE id = ?;", [id]),
     injections: await db.getAllAsync<Row>(
-      "SELECT * FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator';",
+      "SELECT * FROM injection_logs WHERE meal_log_id = ? AND source = 'calculator' AND insulin_type = 'bolus';",
       [id]
     ),
   };
 }
 
-/** Captures a custom food row so deleting it from the catalogue is undoable. */
-export async function captureFoodDeletion(id: string): Promise<DeletionSnapshot> {
+/**
+ * Captures a deletable food (custom, or a cached barcode result) with everything
+ * its delete takes along: favorites and portion presets (ON DELETE CASCADE) and
+ * the link of every meal logged with it (ON DELETE SET NULL). `name` is the label
+ * deleteFood stamps on meals that had no name of their own, so the snapshot knows
+ * which name to expect when it re-links them.
+ */
+export async function captureFoodDeletion(id: string, name: string): Promise<DeletionSnapshot> {
   const db = await getDb();
-  return {
-    foods: await db.getAllAsync<Row>(
-      "SELECT * FROM foods WHERE id = ? AND is_custom = 1;",
+  const label = name.trim();
+  const [foods, portions, favorites, meals] = await Promise.all([
+    db.getAllAsync<Row>("SELECT * FROM foods WHERE id = ? AND (is_custom = 1 OR source = 'off');", [id]),
+    db.getAllAsync<Row>("SELECT * FROM food_portions WHERE food_id = ?;", [id]),
+    db.getAllAsync<Row>("SELECT * FROM favorites WHERE food_id = ?;", [id]),
+    db.getAllAsync<{ id: string; custom_food_name: string | null }>(
+      "SELECT id, custom_food_name FROM meal_logs WHERE food_id = ?;",
       [id]
     ),
+  ]);
+  if (foods.length === 0) return { foods };
+  return {
+    foods,
+    portions,
+    favorites,
+    foodMeals: meals.map((m) => ({
+      mealId: m.id,
+      original: m.custom_food_name,
+      current: m.custom_food_name?.trim() ? m.custom_food_name : label || m.custom_food_name,
+    })),
   };
 }
 
@@ -111,6 +133,19 @@ export async function restoreDeletion(snap: DeletionSnapshot): Promise<void> {
         await db.runAsync(
           "UPDATE meal_logs SET insulin_dose_units = ? WHERE id = ? AND insulin_dose_units = 0;",
           [item.dose, item.mealId]
+        );
+      }
+    } else if (step.op === "clearHealthTombstones") {
+      for (const item of step.items) {
+        await db.runAsync(V28_DELETE_ONE_TOMBSTONE, [item.profileId, item.loggedAt, item.mgdl]);
+      }
+    } else if (step.op === "relinkMealsToFood") {
+      // `food_id IS NULL AND custom_food_name IS current`: only a meal the delete
+      // unlinked and nobody has renamed or re-pointed since is put back.
+      for (const item of step.items) {
+        await db.runAsync(
+          "UPDATE meal_logs SET food_id = ?, custom_food_name = ? WHERE id = ? AND food_id IS NULL AND custom_food_name IS ?;",
+          [step.foodId, item.original, item.mealId, item.current]
         );
       }
     } else {
