@@ -114,7 +114,7 @@ export function CgmDaySheet({
             label={t("proCta.upgrade")}
             onPress={() => {
               onClose();
-              router.push({ pathname: "/paywall", params: { reason: "insights" } });
+              router.push({ pathname: "/paywall", params: { reason: "cgmHistory" } });
             }}
           />
         </View>

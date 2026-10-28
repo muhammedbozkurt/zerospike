@@ -263,7 +263,7 @@ function NightscoutPanel({
               icon="sparkles-outline"
               label={t("nightscout.modeLabel")}
               value={t("nightscout.proTag")}
-              onPress={() => router.push({ pathname: "/paywall", params: { reason: "health" } })}
+              onPress={() => router.push({ pathname: "/paywall", params: { reason: "nightscout" } })}
             />
           </View>
         ) : null}
@@ -488,7 +488,7 @@ export default function DataSourcesScreen() {
     if (next === "nightscout") {
       if (!nightscoutAllowed(isProUser)) {
         hapticWarning();
-        router.push({ pathname: "/paywall", params: { reason: "health" } });
+        router.push({ pathname: "/paywall", params: { reason: "nightscout" } });
         return;
       }
       if (!nightscoutAvailable()) {

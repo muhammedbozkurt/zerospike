@@ -47,7 +47,9 @@ function WinbackScreen() {
   const navigation = useNavigation();
   const exit = useMemo(() => createWinbackExit(logEvent), []);
   useThemeRemountLock();
-  const { refreshPro } = useApp();
+  const { refreshPro, isProUser } = useApp();
+  // Read once at open: a purchase made here turns Pro on mid-screen, and that must not redirect away from the welcome.
+  const [proAtOpen] = useState(isProUser);
   const { toast } = useFeedback();
   const { width } = useWindowDimensions();
   // Same cap as OfferCard's own cardWidth, so the bottom band (CTA + decline +
@@ -59,10 +61,12 @@ function WinbackScreen() {
   // without that handoff looks one up itself.
   const [offer, setOffer] = useState<WinbackOffer | null>(() => winbackOfferFromParams(routeParams));
   const [busy, setBusy] = useState(false);
+  // A payment held for approval: the CTA stays off so the parent gets no second request.
+  const [awaitingApproval, setAwaitingApproval] = useState(false);
   const acceptingRef = useRef(false);
 
   useEffect(() => {
-    if (offer) return;
+    if (offer || proAtOpen) return;
     let alive = true;
     getWinbackOffer()
       .then((o) => alive && setOffer(o))
@@ -86,7 +90,7 @@ function WinbackScreen() {
   }, []);
 
   useEffect(() => {
-    if (!offer) return;
+    if (!offer || proAtOpen) return;
     if (offer.hasRealDiscount) {
       exit.viewed();
       logEvent("winback_view");
@@ -110,24 +114,28 @@ function WinbackScreen() {
   }
 
   async function accept() {
-    if (acceptingRef.current || busy || !offer?.hasRealDiscount) return;
+    if (acceptingRef.current || busy || awaitingApproval || !offer?.hasRealDiscount) return;
     acceptingRef.current = true;
     setBusy(true);
     try {
       const res = await purchaseWinback(offer);
       await refreshPro();
       const feedback = purchaseToastFor(res);
-      logEvent("purchase_result", {
-        result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
-        product: "downsell_annual",
-        reason: "direct",
-        variant: "default",
-        trial: false,
-        paywall_version: PAYWALL_VERSION,
-        source: offer.source === "apple" ? "apple_winback" : "downsell",
-        detail:
-          res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
-      });
+      if (res.error === "pending") setAwaitingApproval(true);
+      // A payment held for approval reports nothing until it is approved.
+      if (res.error !== "pending") {
+        logEvent("purchase_result", {
+          result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
+          product: "downsell_annual",
+          reason: "direct",
+          variant: "default",
+          trial: false,
+          paywall_version: PAYWALL_VERSION,
+          source: offer.source === "apple" ? "apple_winback" : "downsell",
+          detail:
+            res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
+        });
+      }
       if (res.ok) {
         exit.purchased();
         logEvent("downsell_accept", { trigger: "winback" });
@@ -156,7 +164,7 @@ function WinbackScreen() {
   }
 
   // A winback with no real discount must never appear.
-  if (offer && !offer.hasRealDiscount) return <Redirect href="/(tabs)" />;
+  if (proAtOpen || (offer && !offer.hasRealDiscount)) return <Redirect href="/(tabs)" />;
 
   const loading = offer === null;
 
@@ -216,7 +224,7 @@ function WinbackScreen() {
           <View style={{ width: bottomColWidth, alignSelf: "center" }}>
             <GradientCTA
               label={t("winback.cta", { percent: isolateLtr(pct(offer!.savingsPercent)) })}
-              disabled={busy}
+              disabled={busy || awaitingApproval}
               onPress={accept}
             />
             <Button

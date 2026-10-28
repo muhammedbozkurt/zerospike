@@ -9,7 +9,9 @@
  * - a cancelled store sheet is silent and only the downsell gate may leave;
  * - a successful purchase stays `done` (spinner, CTA locked) until the screen
  *   is gone, so the welcome transition cannot be double-fired;
- * - a failure toasts once and leaves the same plan selected for a retry.
+ * - a failure toasts once and leaves the same plan selected for a retry;
+ * - a payment the store holds for approval (Ask to Buy) is not a failure: one
+ *   info message, no retry, and the later approval is settled by the app root.
  *
  * The screen (app/paywall.tsx) supplies the side effects; lib/paywallPurchase
  * supplies the state machine and the outcome plan.
@@ -40,6 +42,8 @@ export interface PurchaseFlowDeps<R extends PurchaseOutcomeLike> {
   onSuccess(plan: PaywallPlan, res: R): Promise<void>;
   /** The store sheet was cancelled: runs the downsell gate; may navigate. */
   onCancelled(plan: PaywallPlan): Promise<void>;
+  /** The store holds the payment for approval: one info message. */
+  onPending(plan: PaywallPlan, res: R): void;
   /** A real failure: one short message. `res` is null for a thrown error. */
   onFailed(plan: PaywallPlan, res: R | null, err?: unknown): void;
   /** Something threw AFTER the purchase went through (settle, navigation). */
@@ -81,6 +85,9 @@ export function createPurchaseFlow<R extends PurchaseOutcomeLike>(deps: Purchase
           // Held busy through the gate lookup, released after it.
           last = "cancelled";
           await deps.onCancelled(plan);
+        } else if (outcome.awaitApproval) {
+          last = "pending";
+          deps.onPending(plan, res);
         } else {
           last = "failed";
           deps.onFailed(plan, res);
@@ -99,7 +106,9 @@ export function createPurchaseFlow<R extends PurchaseOutcomeLike>(deps: Purchase
         // stays locked through the welcome transition (unmount resets it).
         if (state !== "done") {
           dispatch(last);
-          if (last !== "settled") dispatch("settled");
+          // A pending payment keeps its own state (the CTA waits); anything
+          // else settles back to idle.
+          if (last !== "settled" && last !== "pending") dispatch("settled");
         }
       }
       return "ran";

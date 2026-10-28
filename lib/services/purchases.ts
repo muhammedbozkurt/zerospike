@@ -12,6 +12,7 @@ import {
 } from "../winbackOffer";
 import { mapEntitlement } from "../thanks/map";
 import type { ThanksEntitlement } from "../thanks/detect";
+import type { TrialVerdict } from "../trialSettle";
 
 /**
  * RevenueCat purchases layer.
@@ -44,6 +45,9 @@ const PLAN_KEY = "zerospike.proPlan";
 const RC_ERR_CANCELLED = "1";
 const RC_ERR_ALREADY_PURCHASED = "6";
 const RC_ERR_ALREADY_IN_USE = "7";
+// Ask to Buy (iOS) and a pending Play payment: the store has not charged yet and
+// may approve later, so it is neither a failure nor a success.
+const RC_ERR_PAYMENT_PENDING = "20";
 
 // INTRO_ELIGIBILITY_STATUS (same by-value reasoning). Only ELIGIBLE promises a
 // trial: UNKNOWN is RevenueCat saying it cannot tell, and its own guidance is to
@@ -262,6 +266,10 @@ async function applyCustomerInfoNow(info: unknown): Promise<boolean> {
       logEvent("entitlement_lost", { period_type: periodType });
     }
     await writeFacts(null);
+    // The plan note belongs to an entitlement that no longer exists.
+    await AsyncStorage.removeItem(PLAN_KEY).catch((err) =>
+      logCrash(err, { service: "purchases", op: "dropPlan" })
+    );
   }
   // Gated on a trial having been seen (or Pro having just lapsed) so a free or
   // paying user's every foreground refresh does not touch the notification stack.
@@ -274,8 +282,170 @@ async function applyCustomerInfoNow(info: unknown): Promise<boolean> {
   if (trialStatusOf(ent).active && (ent as any).willRenew === false) {
     dropTrialReminder();
   }
+  if (active) await flipPendingToApproved(ent);
   setStoreStatus("ok");
   return active;
+}
+
+// ── Pending payment (Ask to Buy, Play pending) ──────────────────────────────
+
+/**
+ * A purchase the store left pending is remembered on the device. When Pro later
+ * shows up through ANY store read (RevenueCat's push, a foreground refresh, the
+ * next launch), applyCustomerInfoNow turns the note into "approved" and tells the
+ * listeners; the app root then settles it exactly once: Pro welcome, the trial's
+ * events and its ending reminder. The note is only a hand-over, never the
+ * entitlement itself, so it cannot unlock anything.
+ */
+const PENDING_KEY = "zerospike.pendingPurchase";
+/** Ask to Buy lapses after a day and a Play pending payment after three; a week is a safe ceiling. */
+export const PENDING_PURCHASE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PENDING_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+interface PendingNote {
+  plan: PlanId;
+  /** settled: events and reminder are done, only the welcome is still owed. */
+  state: "pending" | "approved" | "settled";
+  at: number;
+  trial: boolean;
+  trialEndsAt: number | null;
+  trialDaysLeft: number | null;
+  /**
+   * The store product that was bought (iOS productIdentifier, Android
+   * "product:basePlan"). The downsell and the Android winback buy a product that
+   * is not PRO_PRODUCTS[plan], so the match runs on this; notes written before it
+   * existed fall back to the plan's own product.
+   */
+  productId?: string | null;
+}
+
+async function readPendingNote(): Promise<PendingNote | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PENDING_KEY);
+    if (!raw) return null;
+    const n = JSON.parse(raw);
+    const plan = n?.plan;
+    if (plan !== "monthly" && plan !== "annual" && plan !== "lifetime") return null;
+    if (typeof n.at !== "number" || Date.now() - n.at > PENDING_PURCHASE_TTL_MS) return null;
+    return {
+      plan,
+      state: n.state === "approved" || n.state === "settled" ? n.state : "pending",
+      at: n.at,
+      trial: n.trial === true,
+      trialEndsAt: typeof n.trialEndsAt === "number" ? n.trialEndsAt : null,
+      trialDaysLeft: typeof n.trialDaysLeft === "number" ? n.trialDaysLeft : null,
+      productId: typeof n.productId === "string" && n.productId ? n.productId : null,
+    };
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "readPending" });
+    return null;
+  }
+}
+
+async function writePendingNote(note: PendingNote | null): Promise<void> {
+  try {
+    if (note) await AsyncStorage.setItem(PENDING_KEY, JSON.stringify(note));
+    else await AsyncStorage.removeItem(PENDING_KEY);
+  } catch (err) {
+    logCrash(err, { service: "purchases", op: "writePending" });
+  }
+}
+
+const approvalListeners = new Set<() => void>();
+
+/**
+ * Pro that shows up while a payment is pending is the pending purchase only when
+ * it is the same product, bought after the note was written, and not a family
+ * share. A restore, an offer code, a second device or a shared plan arriving in
+ * that week is somebody else's purchase and must not open the welcome.
+ */
+function pendingMatchesEntitlement(note: PendingNote, ent: unknown): boolean {
+  const e = ent as any;
+  const id = String(e?.productIdentifier ?? "").split(":")[0];
+  const want = (note.productId ?? PRO_PRODUCTS[note.plan].productId).split(":")[0];
+  if (id !== want) return false;
+  if (String(e?.ownershipType ?? "").toUpperCase() === "FAMILY_SHARED") return false;
+  // Known limit: the same product reaching this device within the week from an
+  // offer code or another device cannot be told apart from the approval.
+  // The store stamps the purchase with its own clock, so the device clock gets slack.
+  return boughtSince(ent, note.at - PENDING_CLOCK_SKEW_MS);
+}
+
+async function flipPendingToApproved(ent: unknown): Promise<void> {
+  const note = await readPendingNote();
+  if (!note || note.state !== "pending") return;
+  if (!pendingMatchesEntitlement(note, ent)) return;
+  const trial = trialStatusOf(ent);
+  await writePendingNote({
+    ...note,
+    state: "approved",
+    trial: trial.active,
+    trialEndsAt: trial.expiresAt,
+    trialDaysLeft: trial.daysLeft,
+  });
+  approvalListeners.forEach((l) => l());
+}
+
+/** Fires when a pending payment turned into Pro. Pair it with takeApprovedPurchase. */
+export function subscribePurchaseApproval(listener: () => void): () => void {
+  approvalListeners.add(listener);
+  return () => {
+    approvalListeners.delete(listener);
+  };
+}
+
+/** What a later-approved purchase turned out to be, in the shape trialSettleAction reads. */
+export interface ApprovedPurchase {
+  plan: PlanId;
+  trial: TrialVerdict;
+}
+
+let takingApproval: Promise<ApprovedPurchase | null> | null = null;
+
+/**
+ * Hands the approved purchase over ONCE and forgets it, so the welcome and the
+ * reminder cannot run twice (two callers in the same tick share one read).
+ * Null when nothing was approved since the last call.
+ */
+export function takeApprovedPurchase(): Promise<ApprovedPurchase | null> {
+  if (takingApproval) return takingApproval;
+  const run = (async (): Promise<ApprovedPurchase | null> => {
+    const note = await readPendingNote();
+    if (!note || note.state !== "approved") return null;
+    // Kept as "settled" until the welcome is really shown (ackWelcomeShown), so
+    // an app killed before it opens still owes it on the next launch.
+    await writePendingNote({ ...note, state: "settled" });
+    const trial: TrialVerdict = note.trial
+      ? { kind: "started", endsAt: note.trialEndsAt, daysLeft: note.trialDaysLeft }
+      : { kind: "none" };
+    return { plan: note.plan, trial };
+  })();
+  takingApproval = run;
+  const release = () => {
+    takingApproval = null;
+  };
+  run.then(release, release);
+  return run;
+}
+
+/** True while an approved purchase's welcome has not been shown yet. */
+export async function welcomeOwed(): Promise<boolean> {
+  return (await readPendingNote())?.state === "settled";
+}
+
+/** The welcome opened: the hand-over note has done its job. */
+export async function ackWelcomeShown(): Promise<void> {
+  if ((await readPendingNote())?.state === "settled") await writePendingNote(null);
+}
+
+/**
+ * A fresh attempt supersedes an earlier pending one: the attempt's own result
+ * settles the screen. A settled note is not an attempt's: it goes only with
+ * ackWelcomeShown or its ttl.
+ */
+async function dropPendingNote(): Promise<void> {
+  const note = await readPendingNote();
+  if (note && note.state !== "settled") await writePendingNote(null);
 }
 
 /**
@@ -479,8 +649,11 @@ export async function getPlan(): Promise<PlanId | null> {
     try {
       const info = await fetchCustomerInfo();
       const ent = info?.entitlements?.active?.[ENTITLEMENT_ID];
+      // The store answered and there is no Pro: a plan remembered from an
+      // earlier purchase (since refunded, lapsed or cancelled) no longer holds.
+      if (!ent) return null;
       // Android subscription ids carry a base plan, e.g. "zerospike_pro:monthly".
-      const id = (ent?.productIdentifier ?? "").split(":")[0];
+      const id = (ent.productIdentifier ?? "").split(":")[0];
       if (id === PRO_PRODUCTS.lifetime.productId) return "lifetime";
       if (id === PRO_PRODUCTS.annual.productId) return "annual";
       if (id === PRO_PRODUCTS.monthly.productId) return "monthly";
@@ -554,7 +727,7 @@ export async function isDuringTrial(): Promise<boolean> {
 }
 
 /** Why a purchase attempt did not activate Pro. */
-export type PurchaseErrorClass = "cancelled" | "alreadyOwned" | "storeError";
+export type PurchaseErrorClass = "cancelled" | "alreadyOwned" | "storeError" | "pending";
 
 /**
  * Outcome of a purchase attempt.
@@ -568,6 +741,8 @@ export type PurchaseErrorClass = "cancelled" | "alreadyOwned" | "storeError";
  *               already yours" instead of "purchased". An error that arrives
  *               after the store took the payment is a plain success instead.
  * - `error`     failure classification when `!ok` (null on success).
+ *               "pending" is Ask to Buy / a pending Play payment: not charged
+ *               yet, so not a failure; Pro opens by itself once it is approved.
  */
 export interface PurchaseOutcome {
   ok: boolean;
@@ -627,11 +802,24 @@ function boughtSince(ent: unknown, sinceMs: number): boolean {
 async function classifyAndRecover(
   e: any,
   plan: PlanId,
-  startedAt: number
+  startedAt: number,
+  productId: string | null = null
 ): Promise<PurchaseOutcome> {
   const code = e?.code;
   if (Boolean(e?.userCancelled) || code === RC_ERR_CANCELLED) {
     return { ok: false, cancelled: true, recovered: false, error: "cancelled" };
+  }
+  if (code === RC_ERR_PAYMENT_PENDING) {
+    await writePendingNote({
+      plan,
+      state: "pending",
+      at: Date.now(),
+      trial: false,
+      trialEndsAt: null,
+      trialDaysLeft: null,
+      productId,
+    });
+    return { ok: false, cancelled: false, recovered: false, error: "pending" };
   }
   const alreadyOwned =
     code === RC_ERR_ALREADY_PURCHASED || code === RC_ERR_ALREADY_IN_USE;
@@ -665,6 +853,8 @@ export async function purchasePro(
     return OK_OUTCOME;
   }
   const startedAt = Date.now();
+  await dropPendingNote();
+  let boughtId: string | null = null;
   try {
     await ensureConfigured();
     const Purchases = rc();
@@ -682,6 +872,7 @@ export async function purchasePro(
     if (!pkg) {
       return { ok: false, cancelled: false, recovered: false, error: "storeError" };
     }
+    boughtId = pkg.product?.identifier ?? null;
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
     if (ok) {
@@ -695,7 +886,7 @@ export async function purchasePro(
       error: ok ? null : "storeError",
     };
   } catch (e: any) {
-    return classifyAndRecover(e, plan, startedAt);
+    return classifyAndRecover(e, plan, startedAt, boughtId);
   }
 }
 
@@ -725,11 +916,27 @@ export async function trialAfterPurchase(res: PurchaseOutcome): Promise<TrialAft
   return { kind: "started", endsAt: status.expiresAt, daysLeft: status.daysLeft };
 }
 
-export type RestoreResult = "restored" | "none" | "error";
+/**
+ * - `slow` the store has not answered yet (on iOS typically an Apple ID sign-in
+ *          still open). That is not a connection error: the request keeps
+ *          running and, when it lands, Pro opens through the usual refresh.
+ */
+export type RestoreResult = "restored" | "none" | "error" | "slow";
+
+/** iOS asks for the Apple ID password and often 2FA during a restore, so it gets a minute. */
+export function restoreTimeoutMs(os: string): number {
+  return os === "ios" ? 60000 : 20000;
+}
+
+class TimeoutError extends Error {
+  constructor() {
+    super("timeout");
+  }
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    const timer = setTimeout(() => reject(new TimeoutError()), ms);
     p.then(
       (v) => {
         clearTimeout(timer);
@@ -752,12 +959,25 @@ export async function restore(): Promise<RestoreResult> {
   if (DEBUG_MOCK_PURCHASES) {
     return (await AsyncStorage.getItem(PRO_KEY)) === "true" ? "restored" : "none";
   }
+  // A restore is never the pending purchase being approved. Only the pending
+  // note goes; an approved or settled one is a real purchase's hand-over.
+  if ((await readPendingNote())?.state === "pending") await writePendingNote(null);
+  let request: Promise<any> | null = null;
   try {
     await ensureConfigured();
-    const info: any = await withTimeout(rc().restorePurchases(), 20000);
+    request = rc().restorePurchases() as Promise<any>;
+    const info: any = await withTimeout(request, restoreTimeoutMs(Platform.OS));
     const active = await applyCustomerInfo(info);
     return active ? "restored" : "none";
   } catch (err) {
+    if (err instanceof TimeoutError) {
+      // The request is still running: whatever it brings back is kept.
+      void request?.then(
+        (late) => applyCustomerInfo(late),
+        () => undefined
+      );
+      return "slow";
+    }
     noteStoreFailure("restore", err);
     return "error";
   }
@@ -1155,6 +1375,8 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
     return OK_OUTCOME;
   }
   const startedAt = Date.now();
+  await dropPendingNote();
+  let boughtId: string | null = null;
   try {
     await ensureConfigured();
     const Purchases = rc();
@@ -1167,6 +1389,7 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
     if (!target) {
       return { ok: false, cancelled: false, recovered: false, error: "storeError" };
     }
+    boughtId = target.product?.identifier ?? null;
     const { customerInfo } = await Purchases.purchasePackage(target);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
     if (ok) {
@@ -1180,12 +1403,14 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
       error: ok ? null : "storeError",
     };
   } catch (e: any) {
-    return classifyAndRecover(e, "annual", startedAt);
+    return classifyAndRecover(e, "annual", startedAt, boughtId);
   }
 }
 
 async function purchaseAppleWinBack(offerId: string): Promise<PurchaseOutcome> {
   const startedAt = Date.now();
+  await dropPendingNote();
+  let boughtId: string | null = null;
   try {
     await ensureConfigured();
     const Purchases = rc();
@@ -1195,6 +1420,7 @@ async function purchaseAppleWinBack(offerId: string): Promise<PurchaseOutcome> {
     if (!annual || !target) {
       return { ok: false, cancelled: false, recovered: false, error: "storeError" };
     }
+    boughtId = annual.pkg.product?.identifier ?? null;
     const { customerInfo } = await Purchases.purchasePackageWithWinBackOffer(annual.pkg, target);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
     if (ok) {
@@ -1203,7 +1429,7 @@ async function purchaseAppleWinBack(offerId: string): Promise<PurchaseOutcome> {
     }
     return { ok, cancelled: false, recovered: false, error: ok ? null : "storeError" };
   } catch (e: any) {
-    return classifyAndRecover(e, "annual", startedAt);
+    return classifyAndRecover(e, "annual", startedAt, boughtId);
   }
 }
 

@@ -946,6 +946,19 @@ const tr = {
     addedWithInvalid: "{{added}} kişi eklendi, {{invalid}} numara geçersiz",
     invalidNumbers: "{{n}} numara geçersiz",
   },
+  purchasePending: {
+    toast: "Ödemeniz onay bekliyor. Onaylandığında Pro kendiliğinden açılır.",
+    cta: "Onay bekleniyor",
+    restoreSlow: "Geri yükleme her zamankinden uzun sürüyor. Mağazanın istediği girişi tamamlayın; bittiğinde Pro kendiliğinden açılır.",
+  },
+  paywallReason: {
+    nightscoutTitle: "Nightscout bağlantısı Pro ile açılır",
+    nightscoutBody: "Pro ile kendi Nightscout sunucunuzdaki ölçümler günlüğünüze otomatik eklenir. Mevcut kayıtlarınız her zaman kalır.",
+    carbEstimateTitle: "Bugünkü besin tahminlerinizi kullandınız",
+    carbEstimateBody: "Pro günlük sınırı yükseltir. Tahmin, günlüğünüz için yalnızca bir başlangıç noktasıdır.",
+    cgmHistoryTitle: "Sensör eğrisinin geçmiş günleri Pro ile açılır",
+    cgmHistoryBody: "Son 24 saat her zaman ücretsizdir. Pro, önceki günlerin eğrilerini açar.",
+  },
   proCta: {
     trial: "{{days}} gün ücretsiz deneyin",
     upgrade: "Pro'ya geçin",

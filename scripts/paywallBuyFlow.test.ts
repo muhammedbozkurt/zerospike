@@ -90,6 +90,7 @@ function makeEnv(opts: { discount?: boolean; holdOffer?: boolean } = {}) {
     onCancelled: async () => {
       await ctl.requestAfterCancel({ plan: planRef.plan, isPro: false });
     },
+    onPending: () => void log.push("pending"),
     onFailed: (_p, _r, err) => void toasts.push(err ? "thrown" : "error"),
     onPostPurchaseError: () => void log.push("postError"),
     onState: (s) => void states.push(s),

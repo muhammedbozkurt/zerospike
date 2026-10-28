@@ -58,6 +58,8 @@ function DownsellScreen() {
   const { toast } = useFeedback();
   const [offer, setOffer] = useState<DownsellOffer | null>(null);
   const [busy, setBusy] = useState(false);
+  // A payment held for approval: the CTA stays off so the parent gets no second request.
+  const [awaitingApproval, setAwaitingApproval] = useState(false);
   const recordedRef = useRef(false);
 
   useEffect(() => {
@@ -116,23 +118,27 @@ function DownsellScreen() {
   }
 
   async function accept() {
-    if (busy || !offer?.hasRealDiscount) return;
+    if (busy || awaitingApproval || !offer?.hasRealDiscount) return;
     setBusy(true);
     try {
       const res = await purchaseDownsell();
       await refreshPro();
       const feedback = purchaseToastFor(res);
-      logEvent("purchase_result", {
-        result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
-        product: "downsell_annual",
-        reason: "direct",
-        variant: "default",
-        trial: false,
-        paywall_version: PAYWALL_VERSION,
-        source: "downsell",
-        detail:
-          res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
-      });
+      if (res.error === "pending") setAwaitingApproval(true);
+      // A payment held for approval reports nothing until it is approved.
+      if (res.error !== "pending") {
+        logEvent("purchase_result", {
+          result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
+          product: "downsell_annual",
+          reason: "direct",
+          variant: "default",
+          trial: false,
+          paywall_version: PAYWALL_VERSION,
+          source: "downsell",
+          detail:
+            res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
+        });
+      }
       if (res.ok) {
         logEvent("downsell_accept", { trigger });
         logEvent("purchase_completed", {
@@ -215,7 +221,7 @@ function DownsellScreen() {
 
               <GradientCTA
                 label={t("downsell.acceptCta")}
-                disabled={busy}
+                disabled={busy || awaitingApproval}
                 onPress={accept}
                 style={{ width: "100%", maxWidth: 420, alignSelf: "center" }}
               />

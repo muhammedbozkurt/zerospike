@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BackHandler,
   KeyboardAvoidingView,
@@ -11,7 +11,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { onboardingBackAction } from "../lib/onboardingGate";
 import { useTranslation } from "react-i18next";
 
 import { useApp } from "../lib/store/AppContext";
@@ -733,7 +734,7 @@ export default function OnboardingScreen() {
     hapticSelect();
     setMeasureDenied(false);
     if (measureNeedsPro(picked) && !nightscoutAllowed(isProUser)) {
-      router.push({ pathname: "/paywall", params: { reason: "health" } });
+      router.push({ pathname: "/paywall", params: { reason: "nightscout" } });
       return;
     }
     if (picked !== "cgm") {
@@ -775,16 +776,22 @@ export default function OnboardingScreen() {
   // returns to the welcome phase, later steps go back one step. Welcome keeps
   // the system default; the reveal swallows it so a back press cannot leave
   // onboarding unfinished.
-  useEffect(() => {
-    if (Platform.OS !== "android" || (phase !== "quiz" && phase !== "reveal")) return;
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (phase === "reveal") return true;
-      if (stepIdxClamped === 0) setPhase("welcome");
-      else back();
-      return true;
-    });
-    return () => sub.remove();
-  }, [phase, stepIdxClamped]);
+  // Registered only while this screen is focused: a paywall or the Pro welcome
+  // opened on top owns the press, and the quiz must not swallow it.
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "android") return;
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        const action = onboardingBackAction({ focused: true, phase, stepIdx: stepIdxClamped });
+        if (action === "ignore") return false;
+        if (action === "toWelcome") setPhase("welcome");
+        else if (action === "previousStep") back();
+        return true;
+      });
+      return () => sub.remove();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phase, stepIdxClamped])
+  );
 
   // Single-select steps apply the answer then auto-advance (guarded so a fast
   // double-tap cannot skip two steps).

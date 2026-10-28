@@ -948,6 +948,19 @@ const de: TranslationSchema = {
     addedWithInvalid: "{{added}} Kontakte hinzugefügt, {{invalid}} Nummern ungültig",
     invalidNumbers: "{{n}} Nummern ungültig",
   },
+  purchasePending: {
+    toast: "Ihre Zahlung wartet auf Freigabe. Sobald sie freigegeben ist, wird Pro automatisch freigeschaltet.",
+    cta: "Wartet auf Freigabe",
+    restoreSlow: "Die Wiederherstellung dauert länger als üblich. Schließen Sie eine vom Store verlangte Anmeldung ab; danach wird Pro automatisch freigeschaltet.",
+  },
+  paywallReason: {
+    nightscoutTitle: "Die Nightscout-Verbindung gehört zu Pro",
+    nightscoutBody: "Mit Pro werden die Messwerte Ihres eigenen Nightscout-Servers automatisch in Ihr Tagebuch übernommen. Ihre vorhandenen Einträge bleiben immer erhalten.",
+    carbEstimateTitle: "Sie haben die heutigen Mahlzeitenschätzungen aufgebraucht",
+    carbEstimateBody: "Pro erhöht das Tageslimit. Eine Schätzung ist nur ein Ausgangspunkt für Ihr Tagebuch.",
+    cgmHistoryTitle: "Frühere Tage der Sensorkurve gehören zu Pro",
+    cgmHistoryBody: "Die letzten 24 Stunden sind immer kostenlos. Pro schaltet die Kurven früherer Tage frei.",
+  },
   proCta: {
     trial: "{{days}} Tage kostenlos testen",
     upgrade: "Auf Pro upgraden",

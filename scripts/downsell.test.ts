@@ -127,6 +127,16 @@ function makeNav() {
   return { log, nav: { closePaywall: () => void log.push("back"), openDownsell: () => void log.push("downsell") } };
 }
 
+/** The decision as the paywall lives it: the 7-day stamp is written when the screen opens, not when it is decided. */
+async function decideOpening(
+  deps: PaywallExitDeps,
+  input: { plan: string; isPro: boolean }
+): Promise<"downsell" | "exit"> {
+  const n = makeNav();
+  await createPaywallExitController(deps, n.nav).requestExit(input);
+  return n.log.includes("downsell") ? "downsell" : "exit";
+}
+
 async function main(): Promise<void> {
   console.log("zerospike downsellGate test");
 
@@ -387,54 +397,54 @@ async function main(): Promise<void> {
   {
     const store = { state: initialDownsellState };
     const s1 = makeDeps({ store, now: NOW });
-    eq("session 1: first exit -> downsell", await decidePaywallExit(s1.deps, { plan: "annual", isPro: false }), "downsell");
+    eq("session 1: first exit -> downsell", await decideOpening(s1.deps, { plan: "annual", isPro: false }), "downsell");
     eq("the date is stamped at once (one write)", s1.calls.stamps, 1);
     eq("stamp keeps the lifetime count untouched", store.state.count, 0);
     eq("stamp carries the time", store.state.lastShownAt, NOW);
 
     // Profile > "Try Pro" > paywall > close, in the same session.
-    eq("same session, second exit -> exit", await decidePaywallExit(s1.deps, { plan: "annual", isPro: false }), "exit");
+    eq("same session, second exit -> exit", await decideOpening(s1.deps, { plan: "annual", isPro: false }), "exit");
 
     // App relaunched an hour later: fresh session flag, same persisted state.
     const s2 = makeDeps({ store, now: NOW + HOUR });
-    eq("new session 1 h later -> exit (persisted date)", await decidePaywallExit(s2.deps, { plan: "annual", isPro: false }), "exit");
+    eq("new session 1 h later -> exit (persisted date)", await decideOpening(s2.deps, { plan: "annual", isPro: false }), "exit");
     ok("blocked before any store lookup", s2.calls.getOffer === 0);
     ok("and the session slot is handed back", !s2.deps.session.isReserved());
 
     const s3 = makeDeps({ store, now: NOW + DOWNSELL_REARM_MS - 1000 });
-    eq("new session just under 7 days -> exit", await decidePaywallExit(s3.deps, { plan: "annual", isPro: false }), "exit");
+    eq("new session just under 7 days -> exit", await decideOpening(s3.deps, { plan: "annual", isPro: false }), "exit");
 
     const s4 = makeDeps({ store, now: NOW + DOWNSELL_REARM_MS });
-    eq("new session at 7 days -> one more downsell", await decidePaywallExit(s4.deps, { plan: "annual", isPro: false }), "downsell");
+    eq("new session at 7 days -> one more downsell", await decideOpening(s4.deps, { plan: "annual", isPro: false }), "downsell");
   }
 
   section("R. the screen's own record (accept or decline alike) and the lifetime total of 2");
   {
     const store = { state: initialDownsellState };
     const d1 = makeDeps({ store });
-    await decidePaywallExit(d1.deps, { plan: "annual", isPro: false });
+    await decideOpening(d1.deps, { plan: "annual", isPro: false });
     // downsell.tsx records the show once the discount is confirmed: accept and decline both come after it.
     store.state = applyDownsellShown(store.state, "inapp", NOW);
     eq("record after the stamp keeps one show", store.state.count, 1);
     eq("and the same date", store.state.lastShownAt, NOW);
 
     const d2 = makeDeps({ store, now: NOW + 2 * DAY });
-    eq("2 days later, declined or accepted alike -> exit", await decidePaywallExit(d2.deps, { plan: "annual", isPro: false }), "exit");
+    eq("2 days later, declined or accepted alike -> exit", await decideOpening(d2.deps, { plan: "annual", isPro: false }), "exit");
 
     const d3 = makeDeps({ store, now: NOW + 8 * DAY });
-    eq("8 days later -> second show", await decidePaywallExit(d3.deps, { plan: "annual", isPro: false }), "downsell");
+    eq("8 days later -> second show", await decideOpening(d3.deps, { plan: "annual", isPro: false }), "downsell");
     store.state = applyDownsellShown(store.state, "inapp", NOW + 8 * DAY);
     eq("lifetime total is now 2", store.state.count, DOWNSELL_MAX_SHOWS);
 
     const d4 = makeDeps({ store, now: NOW + 400 * DAY });
-    eq("a year later, still never a third", await decidePaywallExit(d4.deps, { plan: "annual", isPro: false }), "exit");
+    eq("a year later, still never a third", await decideOpening(d4.deps, { plan: "annual", isPro: false }), "exit");
   }
 
   section("S. a stamped offer that never reached the screen's record still starts the window");
   {
     const store = { state: initialDownsellState };
     const a = makeDeps({ store });
-    await decidePaywallExit(a.deps, { plan: "annual", isPro: false });
+    await decideOpening(a.deps, { plan: "annual", isPro: false });
     // The user closed the screen before it could record (or the 2nd fetch had no discount).
     const b = makeDeps({ store, now: NOW + 3 * DAY });
     eq("count 0 but stamped: still blocked", await decidePaywallExit(b.deps, { plan: "annual", isPro: false }), "exit");

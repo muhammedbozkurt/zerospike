@@ -47,12 +47,15 @@ import { logCrash, logEvent } from "../lib/analytics";
 import { initSupabaseSink, setAnalyticsIsPro } from "../lib/analytics/supabaseSink";
 import { getWinbackOffer, watchEntitlement } from "../lib/services/purchases";
 import { winbackOfferToParams } from "../lib/winbackOffer";
+import { winbackMayOpen, winbackTransition } from "../lib/winbackDue";
 import { clearPaywallTrial, refreshPaywallTrialOnce } from "../lib/proCta";
 import { winbackAlreadyShown, markWinbackShown, sessionOffer } from "../lib/services/downsell";
 import { holdSurvey } from "../lib/feedbackSurvey";
 import { CancelSurveyHost } from "../components/feedback/CancelSurveyHost";
 import { WhatsNewHost } from "../components/WhatsNewSheet";
 import { ThanksHost } from "../components/ThanksSheet";
+import { ProApprovalHost } from "../components/ProApprovalHost";
+import { isHomeRoute, needsOnboardingRedirect } from "../lib/onboardingGate";
 import { hasSeenAlarmTour, markAlarmTourSeen } from "../lib/services/alarmTour";
 import { shouldOpenAlarmTour } from "../lib/alarmSelect";
 import {
@@ -595,36 +598,58 @@ function RootNavigator() {
   }, [ready, onboarded, isProUser]);
 
   // One-time winback: when the Pro entitlement is lost, offer the discounted
-  // annual once (only if a real discount is configured).
+  // annual once (only if a real discount is configured). It opens only on the
+  // app's home: a lapse noticed while SOS, the calculator, a scan or a tour is
+  // open waits for the home screen instead of landing on top of it.
+  const [winbackDue, setWinbackDue] = useState(false);
+  const surveyHold = useRef<(() => void) | null>(null);
+  const homeNow = isHomeRoute(segments[0]);
+  const proNowRef = useRef(isProUser);
+  proNowRef.current = isProUser;
   useEffect(() => {
     if (!ready) return;
     const prev = prevProRef.current;
     prevProRef.current = isProUser;
-    if (prev === true && isProUser === false) {
+    const move = winbackTransition(prev, isProUser);
+    if (move === "regained") {
+      // Pro is back before the offer opened: nothing is owed, and the survey's
+      // hold must not outlive the offer it was waiting behind.
+      setWinbackDue(false);
+      surveyHold.current?.();
+      surveyHold.current = null;
+    } else if (move === "lost") {
       // The cancellation survey (components/feedback) follows the same loss; the
       // winback is a paid offer and goes first, so the survey waits until this
       // has decided whether to open it (and, if it does, until it is closed).
-      const releaseSurvey = holdSurvey();
-      (async () => {
-        try {
-          if (await winbackAlreadyShown()) return;
-          // One discount screen per session: a paywall exit or day-7 offer
-          // that already holds the slot wins, and the winback stays unspent.
-          if (!sessionOffer.reserve()) return;
-          const found = await getWinbackOffer();
-          const params = winbackOfferToParams(found);
-          if (params) {
-            await markWinbackShown();
-            router.push({ pathname: "/winback", params });
-          } else {
-            sessionOffer.release();
-          }
-        } finally {
-          releaseSurvey();
-        }
-      })();
+      surveyHold.current?.();
+      surveyHold.current = holdSurvey();
+      setWinbackDue(true);
     }
-  }, [ready, isProUser, router]);
+  }, [ready, isProUser]);
+  useEffect(() => {
+    if (!winbackMayOpen({ ready, due: winbackDue, home: homeNow, isPro: isProUser })) return;
+    setWinbackDue(false);
+    const releaseSurvey = surveyHold.current ?? (() => {});
+    surveyHold.current = null;
+    (async () => {
+      try {
+        if (await winbackAlreadyShown()) return;
+        // One discount screen per session: a paywall exit or day-7 offer
+        // that already holds the slot wins, and the winback stays unspent.
+        if (!sessionOffer.reserve()) return;
+        const found = await getWinbackOffer();
+        const params = winbackOfferToParams(found);
+        if (params && !proNowRef.current) {
+          await markWinbackShown();
+          router.push({ pathname: "/winback", params });
+        } else {
+          sessionOffer.release();
+        }
+      } finally {
+        releaseSurvey();
+      }
+    })();
+  }, [ready, winbackDue, homeNow, isProUser, router]);
 
   // ── Route gate: decided during RENDER, never in an effect ──────────────────
   // An effect-driven redirect can only run AFTER the wrong screen has already
@@ -634,16 +659,12 @@ function RootNavigator() {
   // always decided on the same frame the route is known.
   const root = segments[0];
   const inOnboarding = root === "onboarding";
-  // 2.3.4: onboarding no longer hands off to the paywall (it completes and
-  // goes straight to the dashboard - app/onboarding.tsx), and completeOnboarding
-  // already runs before that, so `onboarded` is true by the time any of these
-  // three routes can be reached today. Left permissive rather than tightened:
-  // not fully verified against every deep-link/notification path, and being
-  // wrong here would misroute a fresh install.
-  const inOnboardingPaywall =
-    root === "paywall" || root === "downsell" || root === "winback";
-  const needsOnboarding =
-    ready && !onboarded && !inOnboarding && !inOnboardingPaywall;
+  // The sale routes (paywall, downsell, winback, pro-welcome) are let through
+  // while onboarding is open: the quiz itself opens the paywall for Nightscout,
+  // and a purchase there ends on the welcome, which must not be redirected away
+  // (lib/onboardingGate). Left permissive rather than tightened for the
+  // deep-link and notification paths that were not all verified.
+  const needsOnboarding = needsOnboardingRedirect({ ready, onboarded, root });
   // Screenshot mode completes onboarding itself (an AsyncStorage write before the
   // state flip), so on a genuinely fresh launch this gate can still see
   // onboarded=false on the same commit. Don't redirect away from the deep-link
@@ -864,6 +885,7 @@ function RootNavigator() {
     <CancelSurveyHost root={root} />
     <WhatsNewHost root={root} />
     <ThanksHost root={root} />
+    <ProApprovalHost root={root} />
     {needsOnboarding && !screenshotPending ? (
       <Redirect href="/onboarding" />
     ) : null}

@@ -6,6 +6,7 @@
  *   idle --press--> purchasing --success--> done --settled--> idle
  *                              --cancelled--> idle        (silent)
  *                              --failed-----> failed      (short message, retry)
+ *                              --pending----> pending     (waiting for approval, no retry)
  *   failed --press--> purchasing (same plan stays selected)
  *   idle|failed --restoreStart--> restoring --settled--> idle
  *
@@ -13,13 +14,14 @@
  * the double-tap guard, and "busy" is also what blocks a user close.
  */
 
-export type PurchaseUiState = "idle" | "purchasing" | "restoring" | "failed" | "done";
+export type PurchaseUiState = "idle" | "purchasing" | "restoring" | "failed" | "pending" | "done";
 
 export type PurchaseUiEvent =
   | "press"
   | "success"
   | "cancelled"
   | "failed"
+  | "pending"
   | "restoreStart"
   | "planChanged"
   | "settled";
@@ -29,13 +31,15 @@ export function purchaseUiReduce(state: PurchaseUiState, event: PurchaseUiEvent)
     case "press":
       return state === "idle" || state === "failed" ? "purchasing" : state;
     case "restoreStart":
-      return state === "idle" || state === "failed" ? "restoring" : state;
+      return state === "idle" || state === "failed" || state === "pending" ? "restoring" : state;
     case "success":
       return state === "purchasing" ? "done" : state;
     case "cancelled":
       return state === "purchasing" ? "idle" : state;
     case "failed":
       return state === "purchasing" ? "failed" : state;
+    case "pending":
+      return state === "purchasing" ? "pending" : state;
     case "planChanged":
       return state === "failed" ? "idle" : state;
     case "settled":
@@ -53,12 +57,15 @@ export function purchaseUiAcceptsPress(state: PurchaseUiState): boolean {
   return state === "idle" || state === "failed";
 }
 
-export type PurchaseOutcomeLike = { ok: boolean; cancelled?: boolean };
+export type PurchaseOutcomeLike = { ok: boolean; cancelled?: boolean; error?: string | null };
 
-/** Which event a finished store call is. A cancel is never a failure. */
-export function purchaseOutcomeEvent(res: PurchaseOutcomeLike): "success" | "cancelled" | "failed" {
+/** Which event a finished store call is. A cancel and a pending payment are never failures. */
+export function purchaseOutcomeEvent(
+  res: PurchaseOutcomeLike
+): "success" | "cancelled" | "pending" | "failed" {
   if (res.ok) return "success";
-  return res.cancelled ? "cancelled" : "failed";
+  if (res.cancelled) return "cancelled";
+  return res.error === "pending" ? "pending" : "failed";
 }
 
 /** What the screen does with each outcome, as data the test can pin. */
@@ -69,6 +76,8 @@ export interface PurchaseOutcomePlan {
   runDownsellGate: boolean;
   /** The paywall closes and the Pro welcome opens. */
   openWelcome: boolean;
+  /** The payment awaits approval: an info message, the CTA waits, Pro opens later by itself. */
+  awaitApproval: boolean;
 }
 
 export function purchaseOutcomePlan(res: PurchaseOutcomeLike): PurchaseOutcomePlan {
@@ -77,26 +86,30 @@ export function purchaseOutcomePlan(res: PurchaseOutcomeLike): PurchaseOutcomePl
     toast: event !== "cancelled",
     runDownsellGate: event === "cancelled",
     openWelcome: event === "success",
+    awaitApproval: event === "pending",
   };
 }
 
 export type PaywallPlan = "monthly" | "annual" | "lifetime";
 
 /** Which template the pinned CTA uses. */
-export type PaywallCtaKind = "retry" | "trial" | "annual" | "monthly" | "lifetime" | "generic";
+export type PaywallCtaKind = "pending" | "retry" | "trial" | "annual" | "monthly" | "lifetime" | "generic";
 
 /**
  * The CTA follows the SELECTED plan: a trial label only for the annual plan
  * with a store-reported trial, the price-carrying templates only when the store
  * gave that plan a price (a missing price never renders as an empty hole), and
- * "try again" after a failed purchase until the next press or plan change.
+ * "try again" after a failed purchase until the next press or plan change, and
+ * "waiting for approval" while the store holds a payment (no second request).
  */
 export function paywallCtaKind(i: {
   plan: PaywallPlan;
   annualTrial: boolean;
   hasPrice: boolean;
   failed: boolean;
+  pending?: boolean;
 }): PaywallCtaKind {
+  if (i.pending) return "pending";
   if (i.failed) return "retry";
   if (i.plan === "annual" && i.annualTrial) return "trial";
   if (!i.hasPrice) return "generic";

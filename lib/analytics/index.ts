@@ -49,6 +49,9 @@ export type PaywallViewSource =
   | "insights"
   | "export"
   | "settings"
+  | "nightscout"
+  | "carbEstimate"
+  | "cgmHistory"
   | (string & {});
 
 type AnalyticsSink = (name: string, params?: AnalyticsParams) => void;

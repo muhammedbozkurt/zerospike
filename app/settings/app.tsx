@@ -158,6 +158,7 @@ export default function AppSettings() {
       await refreshPro();
       if (result === "restored") toast(t("paywall.restored"), "success");
       else if (result === "none") toast(t("paywall.nothingToRestore"), "info");
+      else if (result === "slow") toast(t("purchasePending.restoreSlow"), "info");
       else toast(t("paywall.restoreFailed"), "error");
     } finally {
       setRestoring(false);

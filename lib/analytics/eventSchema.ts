@@ -201,7 +201,12 @@ const FOLDED_VALUES: Readonly<
   paywall_view: { source: { rotation: "feature" }, context: { rotation: "feature" } },
   paywall_dismiss: { source: { rotation: "feature" } },
   purchase_completed: { source: { rotation: "feature" } },
-  purchase_result: { reason: { rotation: "feature" } },
+  // The three feature-specific paywall reasons are the older reasons they used
+  // to share (the closed PAYWALL_REASONS set the server validates), so the
+  // purchase funnel keeps one series.
+  purchase_result: {
+    reason: { rotation: "feature", nightscout: "health", carbEstimate: "spike", cgmHistory: "insights" },
+  },
   spike_action_tap: { action: { open_injection_map: "open_feature" } },
 };
 

@@ -169,9 +169,9 @@ section("G. outcomes: cancel is silent and runs the downsell gate, error toasts,
   eq("success", purchaseOutcomeEvent({ ok: true }), "success");
   eq("cancel", purchaseOutcomeEvent({ ok: false, cancelled: true }), "cancelled");
   eq("error", purchaseOutcomeEvent({ ok: false }), "failed");
-  eq("success plan", purchaseOutcomePlan({ ok: true }), { toast: true, runDownsellGate: false, openWelcome: true });
-  eq("cancel plan: no message, gate runs, no welcome", purchaseOutcomePlan({ ok: false, cancelled: true }), { toast: false, runDownsellGate: true, openWelcome: false });
-  eq("error plan: message, no gate", purchaseOutcomePlan({ ok: false }), { toast: true, runDownsellGate: false, openWelcome: false });
+  eq("success plan", purchaseOutcomePlan({ ok: true }), { toast: true, runDownsellGate: false, openWelcome: true, awaitApproval: false });
+  eq("cancel plan: no message, gate runs, no welcome", purchaseOutcomePlan({ ok: false, cancelled: true }), { toast: false, runDownsellGate: true, openWelcome: false, awaitApproval: false });
+  eq("error plan: message, no gate", purchaseOutcomePlan({ ok: false }), { toast: true, runDownsellGate: false, openWelcome: false, awaitApproval: false });
   ok("new purchase or trial always opens the welcome", shouldOpenWelcomeAfterPurchase({ recovered: false, stepsLeft: false }));
   ok("recovered purchase with nothing left does not", !shouldOpenWelcomeAfterPurchase({ recovered: true, stepsLeft: false }));
   ok("recovered purchase with a step left does", shouldOpenWelcomeAfterPurchase({ recovered: true, stepsLeft: true }));
