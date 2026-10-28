@@ -23,8 +23,17 @@ import {
   HEALTH_RETURN_WINDOW_MS,
   PRO_WELCOME_STEPS,
   applyStepStatus,
+  SPARK_COUNT,
+  celebrationPlan,
   healthImportDays,
   incompleteCount,
+  leaveThen,
+  showConnectData,
+  showReminderStep,
+  sparkSpecs,
+  welcomeExitTarget,
+  welcomeFeatures,
+  welcomeLinksOpen,
   incompleteSteps,
   parseProWelcomeState,
   serializeProWelcomeState,
@@ -233,6 +242,98 @@ section("I. wiring: the welcome opens from the paywall and the dashboard");
     "Settings lists the welcome for any Pro user with steps left, trial or not",
     /isProUser && stepsLeft != null && stepsLeft > 0/.test(settings) && !/isProUser && onTrial/.test(settings)
   );
+}
+
+section("K. pure helpers of the celebration design");
+{
+  eq("Health device: Insights, PDF, CGM, Health sync", welcomeFeatures(true), ["insights", "pdf", "cgm", "health"]);
+  eq("no Health: the fourth slot is Spike, never a Health claim", welcomeFeatures(false), ["insights", "pdf", "cgm", "spike"]);
+  ok("connect shows while Health is not connected", showConnectData({}, true));
+  ok("connect hides once Health is done (sync on mirrors to done)", !showConnectData(withHealthMirror({}, true), true));
+  ok("connect hides where Health does not exist", !showConnectData({}, false));
+  ok("a skipped Health step still offers the connect", showConnectData({ health: "skipped" }, true));
+  ok("the reminder shortcut hides once done", !showReminderStep({ reminders: "done" }) && showReminderStep({}));
+
+  const full = celebrationPlan(false);
+  ok("normal motion: animate with the full burst", full.animate && full.sparks === SPARK_COUNT);
+  const still = celebrationPlan(true);
+  ok("Reduce Motion: static emblem, no sparks", !still.animate && still.sparks === 0);
+
+  const specs = sparkSpecs();
+  eq("one spec per spark", specs.length, SPARK_COUNT);
+  eq("deterministic", JSON.stringify(sparkSpecs()), JSON.stringify(specs));
+  ok("the burst stays inside the 250dp stage", specs.every((x) => x.distance + x.size / 2 < 125));
+  ok("every spark has a finite angle and a delay inside the burst", specs.every((x) => Number.isFinite(x.angle) && x.delayMs >= 0 && x.delayMs < 400));
+  ok("mixed shapes and tones", new Set(specs.map((x) => x.shape)).size === 2 && new Set(specs.map((x) => x.tone)).size === 4);
+  eq("a zero count draws nothing", sparkSpecs(0).length, 0);
+}
+
+section("L. every button that leaves the welcome dismisses it first");
+{
+  const calls: string[] = [];
+  const nav = (canBack: boolean) => ({
+    canGoBack: () => canBack,
+    back: () => void calls.push("back"),
+    push: (h: string) => void calls.push("push " + h),
+  });
+  leaveThen(nav(true), "/insights");
+  eq("with a screen underneath: back, then push", calls.splice(0), ["back", "push /insights"]);
+  leaveThen(nav(false), "/settings/reminders");
+  eq("welcome as the root: no back (it would be a no-op), still pushes", calls.splice(0), ["push /settings/reminders"]);
+
+  const screen = src("app/pro-welcome.tsx");
+  const direct = screen.match(/router\.push\(/g) ?? [];
+  // The only direct pushes allowed: inside the goTo adapter and the reopen after a Health connect.
+  ok("no navigation button pushes straight onto the modal", direct.length === 2, `found ${direct.length} router.push(`);
+  ok("insights and reminders go through goTo", /goTo\("\/insights"\)/.test(screen) && /goTo\("\/settings\/reminders"\)/.test(screen));
+  ok("goTo is the dismiss-first helper", /function goTo\([^)]*\) \{\s*leaveThen\(/.test(screen));
+  ok("each step is recorded before leaving", screen.indexOf('markProWelcomeStep("insights"') < screen.indexOf('goTo("/insights")') && screen.indexOf('markProWelcomeStep("reminders"') < screen.indexOf('goTo("/settings/reminders")'));
+}
+
+section("M. celebration wiring");
+{
+  const screen = src("app/pro-welcome.tsx");
+  const hero = src("components/ProCelebration.tsx");
+  ok("title is a header", /accessibilityRole="header"[\s\S]{0,120}proWelcome\.title/.test(screen));
+  ok("success haptic once on open", /hapticSuccess\(\)/.test(screen));
+  ok("the hero is hidden from screen readers", /accessibilityElementsHidden/.test(hero) && /no-hide-descendants/.test(hero));
+  ok("Reduce Motion reads both the app hook and reanimated", /useReducedMotion\(\)/.test(hero) && /useReanimatedReducedMotion\(\)/.test(hero) && /celebrationPlan\(/.test(hero));
+  ok("sparks render only when animating", /plan\.animate \? specs\.map/.test(hero));
+  ok("no looping animation", !/withRepeat/.test(hero));
+  ok("no font shrinking on the welcome", !/adjustsFontSizeToFit/.test(screen) && !/adjustsFontSizeToFit/.test(hero));
+  ok("connect only when not connected", /connectOpen \|\| reminderOpen/.test(screen) && /showConnectData\(state, healthAvailable\)/.test(screen));
+}
+
+section("N. onboarding not finished: the welcome returns to the quiz, no deep links");
+{
+  eq("done: the tab stack", welcomeExitTarget(true), "/(tabs)");
+  eq("not done: back to onboarding, never the gated tab stack", welcomeExitTarget(false), "/onboarding");
+  ok("links (Insights, reminders, Health connect) only after onboarding", welcomeLinksOpen(true) && !welcomeLinksOpen(false));
+  const screen = src("app/pro-welcome.tsx");
+  ok("the close fallback uses the exit target", /router\.replace\(welcomeExitTarget\(onboarded\)\)/.test(screen) && !/router\.replace\("\/\(tabs\)"\)/.test(screen));
+  ok("connect, reminders and the Insights link are all gated on linksOpen", /linksOpen && showConnectData/.test(screen) && /linksOpen && showReminderStep/.test(screen) && /id === "insights" && linksOpen/.test(screen));
+}
+
+section("O. the welcome never opens on its own at launch");
+{
+  const fsx = require("fs") as { readdirSync: (p: string, o: { withFileTypes: true }) => { name: string; isDirectory: () => boolean }[] };
+  const sites: string[] = [];
+  const walk = (rel: string) => {
+    for (const e of fsx.readdirSync(nodePath.join(ROOT, rel), { withFileTypes: true })) {
+      const r = rel + "/" + e.name;
+      if (e.isDirectory()) walk(r);
+      else if (/\.(ts|tsx)$/.test(e.name) && /["']\/pro-welcome["']/.test(src(r))) sites.push(r);
+    }
+  };
+  for (const d of ["app", "lib", "components"]) walk(d);
+  eq(
+    "only purchase results and explicit taps reach /pro-welcome",
+    sites.sort(),
+    ["app/downsell.tsx", "app/paywall.tsx", "app/pro-welcome.tsx", "app/settings/app.tsx", "app/winback.tsx", "components/TrialCard.tsx"].sort()
+  );
+  ok("the launch layout never navigates to it", !/pro-welcome["']\)|pathname: "\/pro-welcome"/.test(src("app/_layout.tsx")));
+  ok("Settings and the dashboard card are plain presses", /onPress=\{\(\) => router\.push\("\/pro-welcome"\)\}/.test(src("app/settings/app.tsx")) && /onPress=\{\(\) => router\.push\("\/pro-welcome"\)\}/.test(src("components/TrialCard.tsx")));
+  ok("the paywall opens it inside the purchase success path", /leaveWith\(\(\) => router\.replace\("\/pro-welcome"\)\)/.test(src("app/paywall.tsx")));
 }
 
 (async () => {
