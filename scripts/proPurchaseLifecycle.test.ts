@@ -555,6 +555,118 @@ async function main(): Promise<void> {
     }
   }
 
+  section("B2-R. downsell and winback approvals settle on their own product; clock skew; settled notes");
+  {
+    const withOffer = {
+      current: offering.current,
+      all: {
+        downsell: {
+          availablePackages: [
+            { packageType: "ANNUAL", product: { identifier: "zerospike_pro_annual_offer", price: 29.99, priceString: "$29.99", currencyCode: "USD", introPrice: { price: 19.99, priceString: "$19.99" } } },
+          ],
+        },
+      },
+    };
+    const androidOffer = {
+      current: offering.current,
+      all: {
+        downsell: {
+          availablePackages: [
+            { packageType: "ANNUAL", product: { identifier: "zerospike_pro_annual_offer:annual-offer", price: 29.99, priceString: "$29.99", currencyCode: "USD", introPrice: { price: 19.99, priceString: "$19.99" } } },
+          ],
+        },
+      },
+    };
+    const proNow = (id: string, extra: Record<string, unknown> = {}) => {
+      const a = active(id, "NORMAL", 365);
+      Object.assign((a.entitlements.active as any).pro, extra);
+      return a;
+    };
+    const pendingThrow = async () => {
+      throw { code: "20", message: "pending" };
+    };
+    // R5: the downsell on iOS and on Android, and the winback that buys it.
+    const cases: [string, string, string, (P: typeof PurchasesApi) => Promise<any>][] = [
+      ["downsell ios", "ios", "zerospike_pro_annual_offer", (P) => P.purchaseDownsell()],
+      ["downsell android", "android", "zerospike_pro_annual_offer:annual-offer", (P) => P.purchaseDownsell()],
+      ["winback(downsell) android", "android", "zerospike_pro_annual_offer:annual-offer", (P) => P.purchaseWinback({ hasRealDiscount: true, source: "downsell", discountedPriceString: "$19.99", standardPriceString: "$29.99", savingsPercent: 33, appleOfferId: null } as any)],
+    ];
+    for (const [name, os, pid, buy] of cases) {
+      rnStub.Platform.OS = os;
+      const P = load();
+      rc.offerings = () => (os === "android" ? androidOffer : withOffer);
+      rc.customerInfo = () => inactive();
+      rc.purchase = pendingThrow;
+      const res = await buy(P);
+      eq(`${name}: pending`, res.error, "pending");
+      await sleep(2);
+      rc.customerInfo = () => proNow(pid, { latestPurchaseDate: new Date().toISOString() });
+      await P.verifyProWithStore();
+      const approved = await P.takeApprovedPurchase();
+      eq(`${name}: approved once as annual`, approved?.plan, "annual");
+      eq(`${name}: not handed over twice (one purchase_completed)`, await P.takeApprovedPurchase(), null);
+      ok(`${name}: the welcome is owed`, await P.welcomeOwed());
+      // The standard annual product is not this purchase.
+      const Q = load();
+      rc.offerings = () => (os === "android" ? androidOffer : withOffer);
+      rc.customerInfo = () => inactive();
+      rc.purchase = pendingThrow;
+      await buy(Q);
+      rc.customerInfo = () => proNow("zerospike_pro_annual", { latestPurchaseDate: new Date().toISOString() });
+      await Q.verifyProWithStore();
+      eq(`${name}: another product is still not it`, await Q.takeApprovedPurchase(), null);
+    }
+    rnStub.Platform.OS = "ios";
+    // A note from before productId was recorded falls back to the plan's product.
+    {
+      const P = load();
+      store.set("zerospike.pendingPurchase", JSON.stringify({ plan: "annual", state: "pending", at: Date.now() - 1000, trial: false, trialEndsAt: null, trialDaysLeft: null }));
+      rc.customerInfo = () => proNow("zerospike_pro_annual", { latestPurchaseDate: new Date().toISOString() });
+      await P.verifyProWithStore();
+      eq("an old note without a product id still matches the plan's product", (await P.takeApprovedPurchase())?.plan, "annual");
+    }
+    // R9: the device clock is ahead of the store by a minute, so the store's date is before the note's.
+    {
+      const P = load();
+      rc.offerings = () => offering;
+      rc.customerInfo = () => inactive();
+      rc.purchase = pendingThrow;
+      await P.purchasePro("annual");
+      rc.customerInfo = () => proNow("zerospike_pro_annual", { latestPurchaseDate: new Date(Date.now() - 60_000).toISOString() });
+      await P.verifyProWithStore();
+      eq("R9: a store date 1 minute behind the device still counts", (await P.takeApprovedPurchase())?.plan, "annual");
+      const Q = load();
+      rc.customerInfo = () => inactive();
+      await Q.purchasePro("annual");
+      rc.customerInfo = () => proNow("zerospike_pro_annual", { latestPurchaseDate: new Date(Date.now() - 10 * 60_000).toISOString() });
+      await Q.verifyProWithStore();
+      eq("a purchase 10 minutes older than the note is still not it", await Q.takeApprovedPurchase(), null);
+    }
+    // R7: a settled note survives a new attempt and a restore; restore does drop a pending one.
+    {
+      const P = load();
+      rc.offerings = () => offering;
+      rc.customerInfo = () => inactive();
+      rc.purchase = pendingThrow;
+      await P.purchasePro("annual");
+      await sleep(2);
+      rc.customerInfo = () => proNow("zerospike_pro_annual", { latestPurchaseDate: new Date().toISOString() });
+      await P.verifyProWithStore();
+      await P.takeApprovedPurchase();
+      ok("R7: welcome owed", await P.welcomeOwed());
+      rc.purchase = async () => {
+        throw { code: "1", userCancelled: true };
+      };
+      await P.purchasePro("monthly");
+      ok("R7: a new purchase attempt keeps the settled note", await P.welcomeOwed());
+      rc.restore = async () => proNow("zerospike_pro_annual");
+      await P.restore();
+      ok("R7: restore keeps it too", await P.welcomeOwed());
+      await P.ackWelcomeShown();
+      ok("R7: only the ack clears it", (await P.welcomeOwed()) === false);
+    }
+  }
+
   section("B2-6a. the note outlives the hand-over until the welcome is shown");
   {
     const P = load();

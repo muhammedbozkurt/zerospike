@@ -300,6 +300,7 @@ async function applyCustomerInfoNow(info: unknown): Promise<boolean> {
 const PENDING_KEY = "zerospike.pendingPurchase";
 /** Ask to Buy lapses after a day and a Play pending payment after three; a week is a safe ceiling. */
 export const PENDING_PURCHASE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PENDING_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 interface PendingNote {
   plan: PlanId;
@@ -309,6 +310,13 @@ interface PendingNote {
   trial: boolean;
   trialEndsAt: number | null;
   trialDaysLeft: number | null;
+  /**
+   * The store product that was bought (iOS productIdentifier, Android
+   * "product:basePlan"). The downsell and the Android winback buy a product that
+   * is not PRO_PRODUCTS[plan], so the match runs on this; notes written before it
+   * existed fall back to the plan's own product.
+   */
+  productId?: string | null;
 }
 
 async function readPendingNote(): Promise<PendingNote | null> {
@@ -326,6 +334,7 @@ async function readPendingNote(): Promise<PendingNote | null> {
       trial: n.trial === true,
       trialEndsAt: typeof n.trialEndsAt === "number" ? n.trialEndsAt : null,
       trialDaysLeft: typeof n.trialDaysLeft === "number" ? n.trialDaysLeft : null,
+      productId: typeof n.productId === "string" && n.productId ? n.productId : null,
     };
   } catch (err) {
     logCrash(err, { service: "purchases", op: "readPending" });
@@ -353,9 +362,13 @@ const approvalListeners = new Set<() => void>();
 function pendingMatchesEntitlement(note: PendingNote, ent: unknown): boolean {
   const e = ent as any;
   const id = String(e?.productIdentifier ?? "").split(":")[0];
-  if (id !== PRO_PRODUCTS[note.plan].productId) return false;
+  const want = (note.productId ?? PRO_PRODUCTS[note.plan].productId).split(":")[0];
+  if (id !== want) return false;
   if (String(e?.ownershipType ?? "").toUpperCase() === "FAMILY_SHARED") return false;
-  return boughtSince(ent, note.at);
+  // Known limit: the same product reaching this device within the week from an
+  // offer code or another device cannot be told apart from the approval.
+  // The store stamps the purchase with its own clock, so the device clock gets slack.
+  return boughtSince(ent, note.at - PENDING_CLOCK_SKEW_MS);
 }
 
 async function flipPendingToApproved(ent: unknown): Promise<void> {
@@ -425,9 +438,14 @@ export async function ackWelcomeShown(): Promise<void> {
   if ((await readPendingNote())?.state === "settled") await writePendingNote(null);
 }
 
-/** A fresh attempt supersedes an earlier pending one: the attempt's own result settles the screen. */
+/**
+ * A fresh attempt supersedes an earlier pending one: the attempt's own result
+ * settles the screen. A settled note is not an attempt's: it goes only with
+ * ackWelcomeShown or its ttl.
+ */
 async function dropPendingNote(): Promise<void> {
-  if (await readPendingNote()) await writePendingNote(null);
+  const note = await readPendingNote();
+  if (note && note.state !== "settled") await writePendingNote(null);
 }
 
 /**
@@ -784,7 +802,8 @@ function boughtSince(ent: unknown, sinceMs: number): boolean {
 async function classifyAndRecover(
   e: any,
   plan: PlanId,
-  startedAt: number
+  startedAt: number,
+  productId: string | null = null
 ): Promise<PurchaseOutcome> {
   const code = e?.code;
   if (Boolean(e?.userCancelled) || code === RC_ERR_CANCELLED) {
@@ -798,6 +817,7 @@ async function classifyAndRecover(
       trial: false,
       trialEndsAt: null,
       trialDaysLeft: null,
+      productId,
     });
     return { ok: false, cancelled: false, recovered: false, error: "pending" };
   }
@@ -834,6 +854,7 @@ export async function purchasePro(
   }
   const startedAt = Date.now();
   await dropPendingNote();
+  let boughtId: string | null = null;
   try {
     await ensureConfigured();
     const Purchases = rc();
@@ -851,6 +872,7 @@ export async function purchasePro(
     if (!pkg) {
       return { ok: false, cancelled: false, recovered: false, error: "storeError" };
     }
+    boughtId = pkg.product?.identifier ?? null;
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
     if (ok) {
@@ -864,7 +886,7 @@ export async function purchasePro(
       error: ok ? null : "storeError",
     };
   } catch (e: any) {
-    return classifyAndRecover(e, plan, startedAt);
+    return classifyAndRecover(e, plan, startedAt, boughtId);
   }
 }
 
@@ -937,9 +959,9 @@ export async function restore(): Promise<RestoreResult> {
   if (DEBUG_MOCK_PURCHASES) {
     return (await AsyncStorage.getItem(PRO_KEY)) === "true" ? "restored" : "none";
   }
-  // A restore is never the pending purchase being approved. A settled note stays:
-  // its welcome is still owed.
-  if (!(await welcomeOwed())) await dropPendingNote();
+  // A restore is never the pending purchase being approved. Only the pending
+  // note goes; an approved or settled one is a real purchase's hand-over.
+  if ((await readPendingNote())?.state === "pending") await writePendingNote(null);
   let request: Promise<any> | null = null;
   try {
     await ensureConfigured();
@@ -1354,6 +1376,7 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
   }
   const startedAt = Date.now();
   await dropPendingNote();
+  let boughtId: string | null = null;
   try {
     await ensureConfigured();
     const Purchases = rc();
@@ -1366,6 +1389,7 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
     if (!target) {
       return { ok: false, cancelled: false, recovered: false, error: "storeError" };
     }
+    boughtId = target.product?.identifier ?? null;
     const { customerInfo } = await Purchases.purchasePackage(target);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
     if (ok) {
@@ -1379,13 +1403,14 @@ export async function purchaseDownsell(): Promise<PurchaseOutcome> {
       error: ok ? null : "storeError",
     };
   } catch (e: any) {
-    return classifyAndRecover(e, "annual", startedAt);
+    return classifyAndRecover(e, "annual", startedAt, boughtId);
   }
 }
 
 async function purchaseAppleWinBack(offerId: string): Promise<PurchaseOutcome> {
   const startedAt = Date.now();
   await dropPendingNote();
+  let boughtId: string | null = null;
   try {
     await ensureConfigured();
     const Purchases = rc();
@@ -1395,6 +1420,7 @@ async function purchaseAppleWinBack(offerId: string): Promise<PurchaseOutcome> {
     if (!annual || !target) {
       return { ok: false, cancelled: false, recovered: false, error: "storeError" };
     }
+    boughtId = annual.pkg.product?.identifier ?? null;
     const { customerInfo } = await Purchases.purchasePackageWithWinBackOffer(annual.pkg, target);
     const ok = Boolean(customerInfo?.entitlements?.active?.[ENTITLEMENT_ID]);
     if (ok) {
@@ -1403,7 +1429,7 @@ async function purchaseAppleWinBack(offerId: string): Promise<PurchaseOutcome> {
     }
     return { ok, cancelled: false, recovered: false, error: ok ? null : "storeError" };
   } catch (e: any) {
-    return classifyAndRecover(e, "annual", startedAt);
+    return classifyAndRecover(e, "annual", startedAt, boughtId);
   }
 }
 
