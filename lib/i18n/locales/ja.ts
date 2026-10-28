@@ -846,6 +846,7 @@ const ja: TranslationSchema = {
   cgmHome: {
     waiting: "CGMを待っています",
     waitingBody: "測定値が届くと、ここに表示されます。",
+    manualBasis: "手入力",
     watching: "CGMで記録中",
     offerTitle: "CGMモードに切り替えますか？",
     offerBody: "{{store}}でCGMの測定値が見つかりました。CGMモードに切り替えますか？",

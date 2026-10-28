@@ -844,6 +844,7 @@ const tr = {
   cgmHome: {
     waiting: "CGM bekleniyor",
     waitingBody: "Okumalar geldiğinde burada görünecek.",
+    manualBasis: "Elle girilen",
     watching: "CGM izliyor",
     offerTitle: "CGM moduna geçilsin mi?",
     offerBody: "{{store}} içinde CGM okumaları bulundu. CGM moduna geçilsin mi?",

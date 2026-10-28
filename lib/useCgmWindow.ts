@@ -15,11 +15,14 @@ import { getCgmMode, type CgmMode } from "./cgm/state";
 import {
   getCgmDaySummaries,
   getCgmLatest,
+  getCgmManualRangeStats,
   getCgmRangeStats,
+  getCgmSensorTimes,
   getCgmWindowRows,
   type CgmDaySummary,
   type CgmRangeStats,
 } from "./db/cgmCurveSql";
+import { pickHomeCardToday, type HomeCardSource } from "./cgm/homeBasis";
 import type { TargetBand } from "./agpChart";
 
 /** Per-profile AsyncStorage base (`<base>.<profileId>`, lib/profileScopedKeys.ts). */
@@ -98,7 +101,12 @@ export interface CgmWindow {
   rows: CurveRow[];
   /** Newest sensor reading, whatever its age. */
   latest: { atMs: number; mgdl: number } | null;
+  /** Today's figures: the sensor's, or the hand-entered ones when the sensor
+   *  covers too little of today (see todaySource). */
   today: CgmRangeStats;
+  todaySource: HomeCardSource;
+  /** No reading at all today, sensor or hand-entered. */
+  todayEmpty: boolean;
   week: CgmRangeStats;
 }
 
@@ -110,6 +118,8 @@ const NOT_LOADED: CgmWindow = {
   rows: [],
   latest: null,
   today: EMPTY_STATS,
+  todaySource: "cgm",
+  todayEmpty: true,
   week: EMPTY_STATS,
 };
 
@@ -161,12 +171,21 @@ export function useCgmWindow(input: {
       getCgmLatest(profileId),
       getCgmRangeStats(profileId, band, dayStart.getTime(), nowMs + 60_000),
       getCgmRangeStats(profileId, band, nowMs - 7 * 24 * HOUR_MS, nowMs + 60_000),
+      getCgmManualRangeStats(profileId, band, dayStart.getTime(), nowMs + 60_000),
+      getCgmSensorTimes(profileId, dayStart.getTime(), nowMs + 60_000),
     ])
-      .then(([windowRows, latestRows, today, week]) => {
+      .then(([windowRows, latestRows, sensorToday, week, manualToday, sensorTimes]) => {
         if (mine !== seq.current) return;
         const rows = windowRows
           .map(rowFromLog)
           .filter((r): r is CurveRow => r != null);
+        const picked = pickHomeCardToday({
+          sensorTimesMs: sensorTimes,
+          dayStartMs: dayStart.getTime(),
+          nowMs,
+          sensor: sensorToday,
+          manual: manualToday,
+        });
         const newest = latestRows[0];
         const latestAt = newest ? Date.parse(newest.logged_at) : NaN;
         setData({
@@ -178,7 +197,9 @@ export function useCgmWindow(input: {
           latest: newest && Number.isFinite(latestAt)
             ? { atMs: latestAt, mgdl: newest.glucose_level_mgdl }
             : null,
-          today,
+          today: picked.stats,
+          todaySource: picked.source,
+          todayEmpty: picked.noReading,
           week,
         });
       })

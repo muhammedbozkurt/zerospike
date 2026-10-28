@@ -846,6 +846,7 @@ const pt: TranslationSchema = {
   cgmHome: {
     waiting: "Aguardando o CGM",
     waitingBody: "As leituras aparecerão aqui assim que chegarem.",
+    manualBasis: "Inserido manualmente",
     watching: "CGM acompanhando",
     offerTitle: "Mudar para o modo CGM?",
     offerBody: "Foram encontradas leituras de CGM em {{store}}. Você quer mudar para o modo CGM?",
