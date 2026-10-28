@@ -1061,7 +1061,7 @@ const en: TranslationSchema = {
     pdfTitle: "PDF report",
     pdfBody: "A report you can take to your doctor.",
     cgmTitle: "Full CGM curve",
-    cgmBody: "Follow your CGM curve beyond 24 hours, with Nightscout support.",
+    cgmBody: "See your CGM curve beyond 24 hours, with Nightscout support.",
     syncTitle: "Automatic {{health}} sync",
     syncBody: "Your glucose readings reach the logbook in the background.",
     spikeTitle: "More Spike messages",

@@ -1061,7 +1061,7 @@ const es: TranslationSchema = {
     pdfTitle: "Informe PDF",
     pdfBody: "Un informe que puede llevar a su médico.",
     cgmTitle: "Curva CGM completa",
-    cgmBody: "Siga su curva CGM más allá de 24 horas, con compatibilidad con Nightscout.",
+    cgmBody: "Vea su curva CGM más allá de 24 horas, con compatibilidad con Nightscout.",
     syncTitle: "Sincronización automática con {{health}}",
     syncBody: "Sus valores de glucosa llegan al diario en segundo plano.",
     spikeTitle: "Más mensajes de Spike",

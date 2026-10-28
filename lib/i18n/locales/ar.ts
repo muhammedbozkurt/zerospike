@@ -1061,7 +1061,7 @@ const ar: TranslationSchema = {
     pdfTitle: "تقرير PDF",
     pdfBody: "تقرير يمكنك اصطحابه إلى طبيبك.",
     cgmTitle: "منحنى CGM الكامل",
-    cgmBody: "تابع منحنى CGM لأكثر من 24 ساعة مع دعم Nightscout.",
+    cgmBody: "اعرض منحنى CGM لأكثر من 24 ساعة مع دعم Nightscout.",
     syncTitle: "مزامنة {{health}} تلقائية",
     syncBody: "تصل قراءات سكر الدم إلى دفترك في الخلفية.",
     spikeTitle: "رسائل Spike أكثر",

@@ -1059,7 +1059,7 @@ const tr = {
     pdfTitle: "PDF rapor",
     pdfBody: "Doktorunuza götürebileceğiniz bir rapor.",
     cgmTitle: "Tam CGM eğrisi",
-    cgmBody: "CGM eğrinizi 24 saatin ötesinde izleyin, Nightscout desteğiyle.",
+    cgmBody: "CGM eğrinizi 24 saatin ötesinde görün, Nightscout desteğiyle.",
     syncTitle: "Otomatik {{health}} senkronu",
     syncBody: "Glukoz ölçümleriniz arka planda günlüğünüze ulaşır.",
     spikeTitle: "Daha çok Spike mesajı",
