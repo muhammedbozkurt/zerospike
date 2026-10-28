@@ -102,6 +102,7 @@ import {
 } from "../../lib/services/health";
 import {
   createHealthFlow,
+  createRetryQueue,
   realClock,
   runConnect,
   runGuardedImport,
@@ -457,8 +458,6 @@ export default function DashboardScreen() {
   // lib/healthConnectFlow.
   // Starts false: a screen that mounts under a modal must not read as free.
   const focusedRef = useRef(false);
-  // A run that found the screen covered for too long asks again once it clears.
-  const retryRef = useRef<"connect" | "sync" | null>(null);
   const flowRef = useRef<HealthFlow | null>(null);
   if (flowRef.current === null) {
     flowRef.current = createHealthFlow({
@@ -469,13 +468,27 @@ export default function DashboardScreen() {
   const healthFlow = flowRef.current;
   const latestRef = useRef({ runSync, toggleCgm });
   latestRef.current = { runSync, toggleCgm };
-  const flushRetry = useCallback(() => {
-    const kind = retryRef.current;
-    if (kind === null || !focusedRef.current) return;
-    retryRef.current = null;
-    if (kind === "connect") void latestRef.current.toggleCgm(true);
-    else void latestRef.current.runSync(false);
-  }, []);
+  // A run that found the screen covered for too long asks again once it
+  // clears, but only for the profile that asked and only while that profile's
+  // Health switch is on (a profile switch in between drops it).
+  const retryRef = useRef<ReturnType<typeof createRetryQueue> | null>(null);
+  if (retryRef.current === null) {
+    retryRef.current = createRetryQueue({
+      activeProfileId: () => activeProfileIdRef.current,
+      isFocused: () => focusedRef.current,
+      run: (kind, profileId) => {
+        if (kind === "connect") {
+          void latestRef.current.toggleCgm(true);
+          return;
+        }
+        void readProfileFlag(CGM_KEY, profileId).then((on) => {
+          if (on && activeProfileIdRef.current === profileId) void latestRef.current.runSync(false);
+        });
+      },
+    });
+  }
+  const retryQueue = retryRef.current;
+  const flushRetry = useCallback(() => retryQueue.flush(), [retryQueue]);
   useFocusEffect(
     useCallback(() => {
       focusedRef.current = true;
@@ -1029,6 +1042,7 @@ export default function DashboardScreen() {
     // let its toggle read as this profile's own) for one frame before the read
     // below resolves.
     setCgmOn(null);
+    retryQueue.clear();
     (async () => {
       let saved = false;
       try {
@@ -1107,7 +1121,7 @@ export default function DashboardScreen() {
       {
         setSyncing,
         onBlocked: () => {
-          retryRef.current ??= "sync";
+          retryQueue.queue("sync", profileId);
         },
         run: async () => {
           manualBefore = await countNonCgmHealthRows(profileId).catch(() => null);
@@ -1854,7 +1868,7 @@ export default function DashboardScreen() {
       // Off is immediate and final: whatever is still in flight (a permission
       // request that never came back, an import) is superseded, so a late
       // answer cannot switch anything back on or leave "Syncing" behind.
-      retryRef.current = null;
+      retryQueue.clear();
       await switchOff(healthFlow, {
         setSyncing,
         setSwitch: setCgmOn,
@@ -1871,7 +1885,7 @@ export default function DashboardScreen() {
     await runConnect(healthFlow, {
       setSyncing,
       onBlocked: () => {
-        retryRef.current ??= "connect";
+        retryQueue.queue("connect", profileId);
       },
       // The system dialog cannot be shown over a modal that is still closing
       // (the Pro welcome sends the person here while it slides away). Connecting

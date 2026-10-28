@@ -280,7 +280,6 @@ export async function runConnect<A extends ConnectAccess, R>(
     if (step.kind === "timeout") {
       d.setSyncing(false);
       step = await step.late;
-      if (step.kind === "value") d.setSyncing(true);
     }
     if (step.kind !== "value") return "stale";
     const access = step.value;
@@ -295,6 +294,56 @@ export async function runConnect<A extends ConnectAccess, R>(
   } finally {
     if (session.owns()) d.setSyncing(false);
   }
+}
+
+export type RetryKind = "connect" | "sync";
+
+export interface RetryQueueDeps {
+  activeProfileId: () => string | null;
+  isFocused: () => boolean;
+  run: (kind: RetryKind, profileId: string) => void;
+}
+
+/**
+ * One run that found the screen covered for too long, to be tried again once it
+ * clears. It belongs to the profile that asked: a profile switch in between
+ * drops it, so one profile's Health sync (or connect) can never run for another.
+ */
+export function createRetryQueue(d: RetryQueueDeps) {
+  let queued: { kind: RetryKind; profileId: string } | null = null;
+  return {
+    queue(kind: RetryKind, profileId: string): void {
+      queued ??= { kind, profileId };
+    },
+    /** Runs the queued retry if the screen is free and the profile is still the one that asked. */
+    flush(): void {
+      if (queued === null || !d.isFocused()) return;
+      const entry = queued;
+      queued = null;
+      if (entry.profileId !== d.activeProfileId()) return;
+      d.run(entry.kind, entry.profileId);
+    },
+    clear(): void {
+      queued = null;
+    },
+    pending: () => queued,
+  };
+}
+
+/**
+ * The follow-up of a combined read+write permission answer: the write mirror
+ * is switched on only for a NEW grant and only while the run that asked is
+ * still wanted (a cancelled run must not switch it on unannounced). Returns
+ * whether it was switched on.
+ */
+export async function settleWriteGrant(o: {
+  write: boolean;
+  wasAuthorized: boolean;
+  wanted: () => boolean;
+  enable: () => Promise<boolean>;
+}): Promise<boolean> {
+  if (o.write && !o.wasAuthorized && o.wanted()) return o.enable();
+  return false;
 }
 
 /**

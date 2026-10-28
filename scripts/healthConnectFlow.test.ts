@@ -28,7 +28,9 @@ import {
   connectNotice,
   createHealthFlow,
   createImportShare,
+  createRetryQueue,
   isImportStale,
+  settleWriteGrant,
   runConnect,
   runGuardedImport,
   switchOff,
@@ -333,6 +335,90 @@ async function main() {
     eq("after a newer run the late value is stale", first.kind === "timeout" ? await first.late : null, { kind: "stale" });
   });
 
+  await section("B4. a late grant shows Syncing again while its import runs", async () => {
+    let grant: (a: Access) => void = () => {};
+    let finish: (v: string) => void = () => {};
+    const h = harness({
+      request: () => new Promise<Access>((r) => (grant = r)),
+      sync: () => new Promise<string>((r) => (finish = r)),
+    });
+    const run = h.connect();
+    await h.c.advance(PERMISSION_TIMEOUT_MS + 10);
+    ok("freed at the timeout", !h.state.syncing);
+    grant({ read: true, newlyEnabled: false });
+    await h.c.advance(50);
+    eq("the import started", h.state.syncs, 1);
+    ok("Syncing is back while the late import runs", h.state.syncing);
+    finish("ok");
+    await h.c.advance(50);
+    eq("done", await run, "done");
+    ok("Syncing cleared", !h.state.syncing);
+  });
+
+  await section("C5. switching off during the first import: no connect follow-up at all", async () => {
+    let finish: (v: string) => void = () => {};
+    const h = harness({ sync: () => new Promise<string>((r) => (finish = r)) });
+    const run = h.connect();
+    await h.c.advance(50);
+    eq("the import is running", h.state.syncs, 1);
+    await switchOff(h.flow, { setSyncing: () => {}, setSwitch: () => {}, persist: async () => {} });
+    finish("ok");
+    await h.c.advance(100);
+    eq("outcome", await run, "stale");
+    eq("no connected event, write-on toast or backfill offer", h.log.filter((l) => l.startsWith("connected")), []);
+    eq("no result handled", h.log.filter((l) => l.startsWith("result")), []);
+  });
+
+  await section("C6. the write mirror follows the run (real settleWriteGrant)", async () => {
+    let enabled = 0;
+    const enable = async () => {
+      enabled++;
+      return true;
+    };
+    eq("new grant, wanted run: switched on", await settleWriteGrant({ write: true, wasAuthorized: false, wanted: () => true, enable }), true);
+    eq("new grant, cancelled run: not switched on", await settleWriteGrant({ write: true, wasAuthorized: false, wanted: () => false, enable }), false);
+    eq("existing grant: left alone", await settleWriteGrant({ write: true, wasAuthorized: true, wanted: () => true, enable }), false);
+    eq("write refused: nothing", await settleWriteGrant({ write: false, wasAuthorized: false, wanted: () => true, enable }), false);
+    eq("enable ran exactly once", enabled, 1);
+    ok("health.ts passes the run's wanted() to it", /settleWriteGrant\(\{[\s\S]*?wanted,/.test(src("lib/services/health.ts")));
+  });
+
+  await section("H. retry belongs to the profile that asked", async () => {
+    let active: string | null = "A";
+    let focused = false;
+    const ran: string[] = [];
+    const q = createRetryQueue({
+      activeProfileId: () => active,
+      isFocused: () => focused,
+      run: (kind, id) => ran.push(`${kind}:${id}`),
+    });
+    q.queue("sync", "A");
+    q.queue("connect", "A");
+    eq("the first request wins", q.pending(), { kind: "sync", profileId: "A" });
+    q.flush();
+    eq("nothing while the screen is covered", ran, []);
+    focused = true;
+    q.flush();
+    eq("runs once for the asking profile", ran, ["sync:A"]);
+    q.flush();
+    eq("and only once", ran, ["sync:A"]);
+
+    q.queue("sync", "A");
+    active = "C";
+    q.flush();
+    eq("a switch to another profile drops it (nothing runs for C)", ran, ["sync:A"]);
+    eq("and clears the entry", q.pending(), null);
+
+    q.queue("connect", "C");
+    q.clear();
+    q.flush();
+    eq("a profile change clears it", ran, ["sync:A"]);
+    const dash = src("app/(tabs)/index.tsx");
+    ok("the dashboard queues with the profile id", /retryQueue\.queue\("sync", profileId\)/.test(dash) && /retryQueue\.queue\("connect", profileId\)/.test(dash));
+    ok("the profile effect clears the queue", /setCgmOn\(null\);\s*retryQueue\.clear\(\)/.test(dash));
+    ok("a retried sync re-checks the profile's own switch", /readProfileFlag\(CGM_KEY, profileId\)\.then\(\(on\) =>\s*\{\s*if \(on && activeProfileIdRef/.test(dash));
+  });
+
   await section("D. import runs: gate before the import, never bypassed", async () => {
     const c = fakeClock();
     let covered = true;
@@ -439,7 +525,7 @@ async function main() {
     ok("sync goes through runGuardedImport", /runGuardedImport<SyncResult>\(\s*healthFlow/.test(dash));
     ok("off goes through switchOff", /switchOff\(healthFlow/.test(dash));
     ok("the dashboard drops the flow on unmount", /=> healthFlow\.cancel\(\), \[healthFlow\]/.test(dash));
-    ok("a covered screen retries once it clears", /retryRef\.current \?\?= "sync"/.test(dash) && /flushRetry\(\)/.test(dash));
+    ok("a covered screen retries once it clears", /flushRetry\(\)/.test(dash));
     ok("the screen is not free until focus says so", /const focusedRef = useRef\(false\)/.test(dash));
     ok("the Android read refusal has its own text", /healthReadDeniedStepsAndroid/.test(dash));
     ok("onboarding bounds its Health request", /session\.race\(requestHealthPermissions\(\), PERMISSION_TIMEOUT_MS\)/.test(src("app/onboarding.tsx")));

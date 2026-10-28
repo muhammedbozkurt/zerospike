@@ -51,7 +51,7 @@ import {
   isWritePermissionBlocked,
 } from "./healthConnect";
 import { healthMock } from "./healthMock";
-import { createImportShare } from "../healthConnectFlow";
+import { createImportShare, settleWriteGrant } from "../healthConnectFlow";
 import {
   ANDROID_GLUCOSE_PAGE_SIZE,
   ANDROID_SYNC_ROUND_MAX_SAMPLES,
@@ -496,14 +496,17 @@ export async function requestHealthReadWriteAccess(
   try {
     const wasAuthorized = await provider.isWriteAuthorized();
     const res = await provider.requestReadWritePermissions();
-    let newlyEnabled = false;
-    if (res.write && !wasAuthorized && wanted()) {
-      const id = profileId ?? (await activeProfileId());
-      if (id) {
+    const newlyEnabled = await settleWriteGrant({
+      write: res.write,
+      wasAuthorized,
+      wanted,
+      enable: async () => {
+        const id = profileId ?? (await activeProfileId());
+        if (!id) return false;
         await setHealthWriteEnabled(true, id);
-        newlyEnabled = true;
-      }
-    }
+        return true;
+      },
+    });
     const writeEnabled = res.write && (await getHealthWriteEnabled(profileId));
     return { read: res.read, write: res.write, writeEnabled, newlyEnabled };
   } catch {
