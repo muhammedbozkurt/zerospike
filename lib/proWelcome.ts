@@ -112,3 +112,106 @@ export function shouldReturnToWelcome(
 ): boolean {
   return shouldAutoOpenWelcome(withHealthMirror(state, true), healthAvailable);
 }
+
+/**
+ * The slice of the router the welcome's buttons need. A button that leads to
+ * another screen must close this modal first: on iOS a push issued while the
+ * modal is up lands underneath it, so nothing changes on screen and "Continue"
+ * then needs a second tap (same fix as app/alarm-tour.tsx).
+ */
+export interface WelcomeNav<H> {
+  canGoBack: () => boolean;
+  back: () => void;
+  push: (href: H) => void;
+}
+
+/**
+ * Dismiss first, then go. The dismiss only happens when there is something
+ * under the modal: the welcome can be the root of a launch flow, and a back()
+ * with nothing behind it is a no-op that would leave it sitting over the target.
+ */
+export function leaveThen<H>(nav: WelcomeNav<H>, href: H): void {
+  if (nav.canGoBack()) nav.back();
+  nav.push(href);
+}
+
+export type WelcomeFeatureId = "insights" | "pdf" | "cgm" | "health" | "spike";
+
+/**
+ * What Pro opens, in the order the welcome lists it. Every entry is a benefit the
+ * paywall already sells. The fourth slot is the Health sync where Health can be
+ * connected, and the larger Spike allowance everywhere else.
+ */
+export function welcomeFeatures(healthAvailable: boolean): WelcomeFeatureId[] {
+  return ["insights", "pdf", "cgm", healthAvailable ? "health" : "spike"];
+}
+
+/** "Connect my data" shows only where Health exists and is not connected yet. */
+export function showConnectData(
+  state: ProWelcomeState,
+  healthAvailable: boolean
+): boolean {
+  return healthAvailable && state.health !== "done";
+}
+
+/** The reminder shortcut disappears once a reminder was set up from here. */
+export function showReminderStep(state: ProWelcomeState): boolean {
+  return state.reminders !== "done";
+}
+
+export interface CelebrationPlan {
+  /** Badge spring, halo pulse and sparks run. False is the static final look. */
+  animate: boolean;
+  /** Number of sparks drawn around the badge. */
+  sparks: number;
+}
+
+/** Reduce Motion means no motion at all: a still badge, no sparks. */
+export function celebrationPlan(reducedMotion: boolean): CelebrationPlan {
+  return reducedMotion ? { animate: false, sparks: 0 } : { animate: true, sparks: SPARK_COUNT };
+}
+
+export const SPARK_COUNT = 14;
+/** The whole burst, from first spark to last fade. One shot, never looped. */
+export const SPARK_BURST_MS = 1300;
+
+export type SparkTone = "accent" | "strong" | "target" | "warm";
+
+export interface SparkSpec {
+  /** Radians, 0 = to the right, clockwise on screen. */
+  angle: number;
+  /** How far from the badge centre the spark travels, in dp. */
+  distance: number;
+  size: number;
+  delayMs: number;
+  shape: "dot" | "star";
+  tone: SparkTone;
+}
+
+const SPARK_TONES: readonly SparkTone[] = ["accent", "target", "strong", "warm"];
+
+/** Deterministic burst: the same layout every time, spread evenly round the badge. */
+export function sparkSpecs(count: number = SPARK_COUNT): SparkSpec[] {
+  const out: SparkSpec[] = [];
+  for (let i = 0; i < count; i++) {
+    const near = i % 2 === 0;
+    out.push({
+      angle: (i / count) * Math.PI * 2 - Math.PI / 2 + (near ? 0 : Math.PI / count),
+      distance: near ? 92 : 112,
+      size: i % 3 === 0 ? 16 : near ? 10 : 7,
+      delayMs: (i % 4) * 60,
+      shape: i % 3 === 0 ? "star" : "dot",
+      tone: SPARK_TONES[i % SPARK_TONES.length],
+    });
+  }
+  return out;
+}
+
+/**
+ * Insights, reminders and the Health connect all live behind the onboarding
+ * gate. Until onboarding is finished the welcome only celebrates and closes;
+ * those shortcuts stay out of it (they are still in Settings afterwards).
+ */
+export function welcomeLinksOpen(onboardingDone: boolean): boolean {
+  return onboardingDone;
+}
