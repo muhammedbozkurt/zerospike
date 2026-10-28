@@ -248,7 +248,6 @@ const ja: TranslationSchema = {
     postMealStopBody: "カウントダウンと関連するリマインダーが削除されます。",
     postMealStopConfirm: "停止する",
     postMealStopKeep: "キャンセル",
-    postMealOtherProfile: "このタイマーは別のプロフィールのものです。",
     lowFollowTitle: "最新の測定値は{{value}} {{unit}}です。",
     lowFollowRemind: "15分後に再測定をお知らせする",
     lowFollowSet: "15分後のリマインダーを設定しました。",

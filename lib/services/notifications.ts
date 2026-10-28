@@ -41,6 +41,12 @@ import { reminderAlarmTitle } from "../reminderLabel";
 import {
   derivePostMealStart,
   decidePostMealAutoStart,
+  planPostMealMigration,
+  postMealOwnerFromEndKey,
+  postMealTimerKeys,
+  POSTMEAL_LEGACY_END_KEY,
+  POSTMEAL_LEGACY_PROFILE_KEY,
+  POSTMEAL_LEGACY_START_KEY,
   postMealWindowSpanMinutes,
   restartPostMealWindowAt,
   startPostMealLate,
@@ -68,24 +74,24 @@ const TRIAL_NUDGE_ID = "zerospike-trial-day1-nudge";
 // "I started eating" button can never stack two notifications at the same time
 // (re-scheduling with the same id replaces the pending one).
 const POSTMEAL_ID = "zerospike-postmeal-reminder";
-// End time (epoch ms) of the pending post-meal reminder, persisted so the
-// dashboard button can disable itself and show a live countdown. Written by the
-// service on every successful schedule (button OR the automatic paths) so the
-// countdown always matches the real notification.
-const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
-// The moment that same timer was ARMED. Persisted alongside the end so the
-// elapsed bar and the "x min window" label are drawn from the timer's OWN span
-// rather than re-derived from the fixed window, which is what keeps a
-// backdated start ("I started eating a while ago") honest. A timer armed by an
-// older build has no start recorded; it is derived from the end and the fixed
-// window (POST_MEAL_WINDOW_MIN).
-const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
-// Profile the running timer belongs to (audit finding B): a caregiver who
-// starts the countdown on one profile and switches to another must not have it
-// silently show/act as if it were the new profile's own timer. Absent on a
-// timer armed before this field existed - readPostMealTimerProfile treats that
-// the same as "no lock" (shows for whichever profile is active).
-const POSTMEAL_TIMER_PROFILE_KEY = "zerospike.postMealTimerProfile";
+// Each profile's pending reminder has its own id, so arming one never replaces
+// another's. The bare id above is the pre-per-profile one (migration cancels it).
+function postMealNotificationId(owner: string): string {
+  return `${POSTMEAL_ID}:${owner}`;
+}
+// The countdown is stored PER PROFILE (lib/postMealTimer.ts postMealTimerKeys):
+// the end and the start moment under keys suffixed with the owner's id, so one
+// profile's countdown can never cancel, overwrite or hide another's. The three
+// device-wide keys below are the earlier layout and are only read by the
+// one-time move (migrateLegacyPostMealTimer).
+const POSTMEAL_LEGACY_KEYS = [
+  POSTMEAL_LEGACY_END_KEY,
+  POSTMEAL_LEGACY_START_KEY,
+  POSTMEAL_LEGACY_PROFILE_KEY,
+];
+// Stands in for the owner when no profile can be resolved at all (an empty
+// profile table); such a countdown is device-wide, as before.
+const POSTMEAL_DEVICE_OWNER = "device";
 // Fire times (epoch ms) of the pending ONE-OFF reminders whose copy is not
 // recoverable from anywhere else. The OS stores the literal text it was handed,
 // so switching language leaves an already-scheduled reminder speaking the old
@@ -625,10 +631,14 @@ export function parseAlarmIdentifier(
 
 /** The post-meal countdown's own alarm identity (2.3.0's B). Same prefix as
  *  every reminder row's alarm, but a FIXED suffix rather than a row id - the
- *  countdown is a single device-wide timer, exactly like POSTMEAL_ID is on the
- *  notification side. applyReminders' orphan sweep skips it for that reason:
- *  no reminder row will ever claim it. */
+ *  countdown is one timer per profile (postMealAlarmId appends the owner), and
+ *  POSTMEAL_ID is the same on the notification side. applyReminders' orphan
+ *  sweep skips every id with this prefix for that reason: no reminder row will
+ *  ever claim them. */
 const POSTMEAL_ALARM_ID = `${ALARM_ID_PREFIX}postmeal`;
+function postMealAlarmId(owner: string): string {
+  return `${POSTMEAL_ALARM_ID}:${owner}`;
+}
 
 /** The alarm's own on-screen title - just the text, unlike reminderContent
  *  below (which also carries Android channel/sound extras an AlarmKit alarm
@@ -1072,7 +1082,7 @@ export async function applyReminders(prefs: NotificationPrefs): Promise<number> 
   // settings save, app launch). Its own lifecycle is entirely in
   // schedulePostMealAt / cancelPostMealTimer / completePostMealTimer.
   for (const alarmId of listScheduledAlarmIds()) {
-    if (alarmId === POSTMEAL_ALARM_ID) continue;
+    if (alarmId.startsWith(POSTMEAL_ALARM_ID)) continue;
     if (!knownAlarms.has(alarmId)) await cancelAlarm(alarmId);
   }
   return failures;
@@ -1329,7 +1339,7 @@ export async function applyNotificationPrefs(
   // two hours later.
   if (!p.enabled) {
     await cancelWeeklySummary();
-    await cancelPostMealTimer();
+    await cancelAllPostMealTimers();
     await cancelIdleReminder();
     // The two one-offs are armed outside the preference screen (a low reading,
     // a started trial), so nothing else took them down: turning notifications
@@ -1356,9 +1366,12 @@ export async function applyNotificationPrefs(
       alarmAuthorized: alarmKit && getAlarmAuthorizationStatus() === "authorized",
     });
     // A sensor-mode countdown arms no notification, so the missing permission
-    // takes nothing away from it.
-    if (!postMealRingsAsAlarm && !(await runningPostMealIsSensorOwned())) {
-      await cancelPostMealTimer();
+    // takes nothing away from it. Judged per profile's countdown.
+    if (!postMealRingsAsAlarm) {
+      for (const running of await listRunningPostMealTimers()) {
+        const owner = running.profileId ?? POSTMEAL_DEVICE_OWNER;
+        if (!(await postMealOwnerIsSensorMode(owner))) await cancelPostMealTimer(running.profileId);
+      }
     }
     return failures;
   }
@@ -1370,7 +1383,7 @@ export async function applyNotificationPrefs(
   // alarm stay exactly as they are, because the two hours belong to the MEAL
   // and to whoever ate it, not to whoever is holding the phone now (see the
   // known limits in docs/plan-2.3.0.md).
-  await hidePostMealActivityForOtherProfile();
+  await syncPostMealActivityToActiveProfile();
 
   // A countdown that is already running gets its delivery re-checked against
   // what this device can do right now - the one post-meal thing this function
@@ -1552,7 +1565,7 @@ async function schedulePostMealAt(opts: {
   endsAt?: number;
   /** Keep an already-running timer's start instead of `now`. */
   startedAt?: number;
-  /** Profile the timer belongs to (see POSTMEAL_TIMER_PROFILE_KEY). Omitted by
+  /** Profile the timer belongs to (see postMealTimerKeys). Omitted by
    *  a re-arm that could not resolve one - the lock then stays open rather than
    *  guessing an owner. */
   profileId?: string;
@@ -1580,6 +1593,12 @@ async function schedulePostMealAt(opts: {
   const { minutes, windowMin = opts.minutes, minSeconds = 60 } = opts;
   const seconds = Math.max(minSeconds, Math.round(minutes * 60));
 
+  // The owner decides every key and delivery id below, so it is resolved (and
+  // the one-time move of the old single slot done) before anything else.
+  const owner = await resolvePostMealOwner(opts.profileId);
+  await ensurePostMealMigrated();
+  const keys = postMealTimerKeys(owner);
+
   // Resolved BEFORE the delivery branch: a one-shot alarm is armed for the
   // absolute end moment, so the end has to exist before the alarm is asked
   // for. Both branches then persist the exact same pair below.
@@ -1591,10 +1610,11 @@ async function schedulePostMealAt(opts: {
   // armed: the three values describe a single countdown, and a reader must
   // never catch a mix of an old one and a new one.
   const entries: [string, string][] = [
-    [POSTMEAL_TIMER_END_KEY, String(endsAt)],
-    [POSTMEAL_TIMER_START_KEY, String(startedAt)],
+    [keys.end, String(endsAt)],
+    [keys.start, String(startedAt)],
   ];
-  if (opts.profileId) entries.push([POSTMEAL_TIMER_PROFILE_KEY, opts.profileId]);
+  const notificationId = postMealNotificationId(owner);
+  const alarmId = postMealAlarmId(owner);
 
   if (opts.claimIfIdle) {
     // COMPARE-AND-SET, and the FIRST thing this function does.
@@ -1612,7 +1632,7 @@ async function schedulePostMealAt(opts: {
     // scripts/afterDelete.test.ts locks the adjacency in place against drift.
     let running = false;
     try {
-      const raw = await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY);
+      const raw = await AsyncStorage.getItem(keys.end);
       const end = raw == null ? NaN : parseInt(raw, 10);
       running = Number.isFinite(end) && end > Date.now();
     } catch (err) {
@@ -1624,7 +1644,6 @@ async function schedulePostMealAt(opts: {
     if (running) return false;
     try {
       await AsyncStorage.multiSet(entries);
-      if (!opts.profileId) await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
     } catch (err) {
       // best-effort persistence
       logCrash(err, { service: "notifications", op: "claimPostMealTimer" });
@@ -1633,7 +1652,7 @@ async function schedulePostMealAt(opts: {
 
   await ensureAndroidChannel();
   try {
-    await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
+    await Notifications.cancelScheduledNotificationAsync(notificationId);
   } catch (err) {
     // nothing pending
     logCrash(err, { service: "notifications", op: "rearmPostMeal" });
@@ -1642,7 +1661,6 @@ async function schedulePostMealAt(opts: {
   if (!opts.claimIfIdle) {
     try {
       await AsyncStorage.multiSet(entries);
-      if (!opts.profileId) await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
     } catch (err) {
       // best-effort persistence
       logCrash(err, { service: "notifications", op: "writePostMealTimer" });
@@ -1652,16 +1670,14 @@ async function schedulePostMealAt(opts: {
   // Sensor mode: the countdown is shown but nothing is armed to ring at its
   // end, because the 2-hour value is taken from the sensor readings instead
   // (lib/cgm/postMealLink.ts). A delivery left over from manual mode goes.
-  const sensorProfileId =
-    opts.profileId ?? (await readActiveProfile().catch(() => null))?.id;
-  if (sensorProfileId && (await sensorModeActive(sensorProfileId))) {
-    await cancelAlarm(POSTMEAL_ALARM_ID);
+  if (owner !== POSTMEAL_DEVICE_OWNER && (await sensorModeActive(owner))) {
+    await cancelAlarm(alarmId);
     try {
-      await addPendingLink(sensorProfileId, { startedAt, targetAt: endsAt });
+      await addPendingLink(owner, { startedAt, targetAt: endsAt });
     } catch (err) {
       logCrash(err, { service: "notifications", op: "addPostMealLink" });
     }
-    await mirrorPostMealActivity(endsAt, startedAt);
+    await mirrorPostMealActivity(endsAt, startedAt, owner);
     return true;
   }
 
@@ -1676,7 +1692,7 @@ async function schedulePostMealAt(opts: {
           alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
       }) &&
       (await scheduleOneShotAlarm({
-        id: POSTMEAL_ALARM_ID,
+        id: alarmId,
         atMs: endsAt,
         // The short form, for the same clipping reason as reminderAlarmLabel
         // above; the NOTIFICATION below keeps the full sentence.
@@ -1688,7 +1704,7 @@ async function schedulePostMealAt(opts: {
 
     if (!armedAsAlarm) {
       await Notifications.scheduleNotificationAsync({
-        identifier: POSTMEAL_ID,
+        identifier: notificationId,
         content: {
           title: i18n.t("notifications.postmealTitle"),
           body: i18n.t("notifications.postmealBody", { n: Math.round(windowMin) }),
@@ -1704,7 +1720,7 @@ async function schedulePostMealAt(opts: {
       // Collects a timer left behind by the alarm mode being switched off (or by
       // a device that has since lost the AlarmKit permission) - the counterpart
       // of applyReminders' own "rowActive but not useAlarm" cancel.
-      await cancelAlarm(POSTMEAL_ALARM_ID);
+      await cancelAlarm(alarmId);
     }
   } catch (e) {
     if (isExactTimingError(e) && Platform.OS === "android") {
@@ -1713,31 +1729,27 @@ async function schedulePostMealAt(opts: {
       // the settings screen that fixes the delivery.
       if (opts.result) opts.result.deliveryMissed = true;
       try {
-        await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
-        await cancelAlarm(POSTMEAL_ALARM_ID);
+        await Notifications.cancelScheduledNotificationAsync(notificationId);
+        await cancelAlarm(alarmId);
       } catch (cancelErr) {
         // nothing pending
         logCrash(cancelErr, { service: "notifications", op: "postMealExactFallback" });
       }
-      await mirrorPostMealActivity(endsAt, startedAt);
+      await mirrorPostMealActivity(endsAt, startedAt, owner);
       return true;
     }
     // Nothing was armed, so nothing may be left claiming a countdown is
     // running: undo the write above and let the caller see the failure, exactly
     // as it did when persistence came last.
     try {
-      await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
-      await cancelAlarm(POSTMEAL_ALARM_ID);
+      await Notifications.cancelScheduledNotificationAsync(notificationId);
+      await cancelAlarm(alarmId);
     } catch (cancelErr) {
       // nothing pending
       logCrash(cancelErr, { service: "notifications", op: "postMealRollbackCancel" });
     }
     try {
-      await AsyncStorage.multiRemove([
-        POSTMEAL_TIMER_END_KEY,
-        POSTMEAL_TIMER_START_KEY,
-        POSTMEAL_TIMER_PROFILE_KEY,
-      ]);
+      await AsyncStorage.multiRemove([keys.end, keys.start]);
     } catch (rollbackErr) {
       // best-effort rollback
       logCrash(rollbackErr, { service: "notifications", op: "postMealRollback" });
@@ -1745,15 +1757,24 @@ async function schedulePostMealAt(opts: {
     throw e;
   }
 
-  await mirrorPostMealActivity(endsAt, startedAt);
+  await mirrorPostMealActivity(endsAt, startedAt, owner);
   return true;
 }
 
 /** Lock screen / ongoing-notification mirror of the countdown. Best-effort: the
  *  countdown is already persisted, so a failure here must never undo it (it used
  *  to throw out of the arm and leave a stored timer the card never showed). */
-async function mirrorPostMealActivity(endsAt: number, startedAt: number): Promise<void> {
+async function mirrorPostMealActivity(
+  endsAt: number,
+  startedAt: number,
+  owner: string
+): Promise<void> {
   try {
+    // One lock-screen card exists for the whole device, and it belongs to the
+    // profile in use: another profile's countdown keeps running and ringing but
+    // does not take the card over.
+    if (!(await postMealOwnerIsActive(owner))) return;
+    postMealActivityOwner = owner;
     // Mirror the same countdown onto the lock screen and Dynamic Island, so the
     // user can see the time left without opening the app. Timer-style, no push:
     // iOS draws the countdown from the end date we just persisted. A no-op when
@@ -1765,8 +1786,15 @@ async function mirrorPostMealActivity(endsAt: number, startedAt: number): Promis
     // draws nothing until the window ends and this card is the only countdown on
     // the lock screen either way. The alarm adds sound and a full-screen finish,
     // it does not replace the surface the user already knows.
-    const { readLiveData } = await import("./liveData");
-    const snapshot = await readLiveData();
+    //
+    // The reading on the card is computed fresh for the countdown's owner, not
+    // read back from the stored snapshot: that copy is only as new as the last
+    // sync and could belong to another profile.
+    const { computeLiveData, readLiveData } = await import("./liveData");
+    const ownerProfile = owner === POSTMEAL_DEVICE_OWNER ? null : await getProfile(owner);
+    const snapshot = ownerProfile
+      ? await computeLiveData(owner, ownerProfile.glucose_unit)
+      : await readLiveData();
     startPostMealActivity({
       endsAt,
       startedAt,
@@ -1783,19 +1811,153 @@ async function mirrorPostMealActivity(endsAt: number, startedAt: number): Promis
   }
 }
 
-/**
- * The active post-meal timer's end (epoch ms), or null when none is pending or
- * it has already elapsed. A stale (elapsed) key is cleaned up on read, so the
- * button falls back to its normal state on its own.
- */
-export async function getPostMealTimerEnd(): Promise<number | null> {
+// ── Per-profile countdown storage ───────────────────────────────────────────
+
+/** Whose countdown a call is about: the profile it names, else the one in use. */
+async function resolvePostMealOwner(profileId?: string | null): Promise<string> {
+  if (profileId) return profileId;
   try {
-    const raw = await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY);
+    return (await readActiveProfile())?.id ?? POSTMEAL_DEVICE_OWNER;
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "resolvePostMealOwner" });
+    return POSTMEAL_DEVICE_OWNER;
+  }
+}
+
+/** True when the lock-screen card is this owner's to touch: the owner is the
+ *  profile in use (or no profile can be told, in which case nothing is hidden). */
+async function postMealOwnerIsActive(owner: string): Promise<boolean> {
+  if (owner === POSTMEAL_DEVICE_OWNER) return true;
+  try {
+    const active = await readActiveProfile();
+    return active == null || active.id === owner;
+  } catch {
+    return true;
+  }
+}
+
+/** Whose countdown the single lock-screen card is currently drawing, in this
+ *  process; null when none is known. Lets a profile switch bring the right
+ *  card back without restarting one that is already up. */
+let postMealActivityOwner: string | null = null;
+
+let postMealMigration: Promise<void> | null = null;
+
+/** Test hook: forget that the old single slot was already looked at, so a test
+ *  that plants old keys by hand gets the move again. */
+export function resetPostMealMigrationForTest(): void {
+  postMealMigration = null;
+}
+
+/**
+ * The one-time move of the old single countdown slot to its owner's keys.
+ * Memoized per process; a stored countdown whose owner cannot be named yet is
+ * left untouched and asked about again on the next read.
+ */
+function ensurePostMealMigrated(): Promise<void> {
+  if (postMealMigration == null) {
+    const run = migrateLegacyPostMealTimer();
+    postMealMigration = run.then((outcome) => {
+      if (outcome === "defer") postMealMigration = null;
+    });
+    // The pending reminder / alarm of the old slot are cancelled by the move
+    // (their ids belong to no owner); the moved countdown gets its delivery back
+    // under its owner's ids here, after the move is visible to every reader.
+    void run.then((outcome) => {
+      if (typeof outcome === "object" && outcome != null) {
+        void rearmRunningPostMealForMode(outcome.owner).catch((err) =>
+          logCrash(err, { service: "notifications", op: "migrateRearmPostMeal" })
+        );
+      }
+    });
+  }
+  return postMealMigration;
+}
+
+async function migrateLegacyPostMealTimer(): Promise<"none" | "defer" | { owner: string }> {
+  try {
+    const [legacyEnd, legacyStart, legacyOwner] = await Promise.all(
+      POSTMEAL_LEGACY_KEYS.map((k) => AsyncStorage.getItem(k))
+    );
+    let activeProfileId: string | null = null;
+    if (legacyEnd != null && !legacyOwner) {
+      activeProfileId = (await readActiveProfile().catch(() => null))?.id ?? null;
+    }
+    const plan = planPostMealMigration({ legacyEnd, legacyStart, legacyOwner, activeProfileId });
+    if (plan.kind === "none") return "none";
+    if (plan.kind === "defer") return "defer";
+    if (plan.kind === "drop") {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
+      } catch (err) {
+        logCrash(err, { service: "notifications", op: "migrateCancelLegacyNotification" });
+      }
+      await cancelAlarm(POSTMEAL_ALARM_ID);
+      await AsyncStorage.multiRemove(POSTMEAL_LEGACY_KEYS);
+      return "none";
+    }
+    const keys = postMealTimerKeys(plan.ownerId);
+    // A per-profile countdown that already exists is newer than the old slot.
+    if ((await AsyncStorage.getItem(keys.end)) == null) {
+      await AsyncStorage.multiSet([
+        [keys.end, String(plan.endsAt)],
+        [keys.start, String(plan.startedAt)],
+      ]);
+    }
+    // Cancel before dropping the keys, so the old delivery is never left
+    // without its record. Both cancels swallow their own errors: a failed
+    // cancel is logged and the move still completes.
+    try {
+      await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
+    } catch (err) {
+      logCrash(err, { service: "notifications", op: "migrateCancelLegacyNotification" });
+    }
+    await cancelAlarm(POSTMEAL_ALARM_ID);
+    await AsyncStorage.multiRemove(POSTMEAL_LEGACY_KEYS);
+    return { owner: plan.ownerId };
+  } catch (err) {
+    // Unreadable storage: nothing moved, nothing lost; the next process retries.
+    logCrash(err, { service: "notifications", op: "migratePostMealTimer" });
+    return "defer";
+  }
+}
+
+/** Every profile that has a countdown stored right now (elapsed ones are
+ *  cleaned up by the read, so only running ones come back). */
+async function listRunningPostMealTimers(): Promise<PostMealTimerWindow[]> {
+  await ensurePostMealMigrated();
+  let owners: string[] = [];
+  try {
+    owners = (await AsyncStorage.getAllKeys())
+      .map((k) => postMealOwnerFromEndKey(k))
+      .filter((id): id is string => id != null);
+  } catch (err) {
+    logCrash(err, { service: "notifications", op: "listPostMealTimers" });
+  }
+  const out: PostMealTimerWindow[] = [];
+  for (const owner of owners) {
+    const state = await getPostMealTimerState(owner);
+    if (state != null) out.push(state);
+  }
+  return out;
+}
+
+/**
+ * A profile's active post-meal timer end (epoch ms), or null when none is
+ * pending or it has already elapsed. `profileId` defaults to the profile in
+ * use. A stale (elapsed) key is cleaned up on read, so the button falls back to
+ * its normal state on its own.
+ */
+export async function getPostMealTimerEnd(profileId?: string): Promise<number | null> {
+  try {
+    const owner = await resolvePostMealOwner(profileId);
+    await ensurePostMealMigrated();
+    const raw = await AsyncStorage.getItem(postMealTimerKeys(owner).end);
     if (!raw) return null;
     const end = parseInt(raw, 10);
     if (!Number.isFinite(end)) return null;
     if (end <= Date.now()) {
-      await completePostMealTimer();
+      await completePostMealTimer(owner);
       return null;
     }
     return end;
@@ -1806,27 +1968,33 @@ export async function getPostMealTimerEnd(): Promise<number | null> {
 }
 
 /**
- * The active timer's own start AND end, or null when none is pending. The start
- * is what makes the elapsed part of the window knowable: the progress bar and
- * the "x min window" label both read the pair, instead of assuming every timer
- * spans POST_MEAL_WINDOW_MIN - which a backdated start ("I started eating a
- * while ago") deliberately does not.
+ * A profile's active timer, start AND end, or null when none is pending. The
+ * start is what makes the elapsed part of the window knowable: the progress bar
+ * and the "x min window" label both read the pair, instead of assuming every
+ * timer spans POST_MEAL_WINDOW_MIN - which a backdated start ("I started eating
+ * a while ago") deliberately does not.
  *
  * A timer armed before the start was persisted falls back to the end minus the
  * fixed window, which is exactly where it must have begun.
  */
-export async function getPostMealTimerState(): Promise<PostMealTimerWindow | null> {
-  const endsAt = await getPostMealTimerEnd();
+export async function getPostMealTimerState(
+  profileId?: string
+): Promise<PostMealTimerWindow | null> {
+  const owner = await resolvePostMealOwner(profileId);
+  const endsAt = await getPostMealTimerEnd(owner);
   if (endsAt == null) return null;
-  const profileId = (await readPostMealTimerProfile()) ?? undefined;
-  const startedAt = await readPostMealStart();
-  if (startedAt != null && startedAt < endsAt) return { startedAt, endsAt, profileId };
-  return { startedAt: derivePostMealStart(endsAt, POST_MEAL_WINDOW_MIN), endsAt, profileId };
+  const startedAt = await readPostMealStart(owner);
+  if (startedAt != null && startedAt < endsAt) return { startedAt, endsAt, profileId: owner };
+  return {
+    startedAt: derivePostMealStart(endsAt, POST_MEAL_WINDOW_MIN),
+    endsAt,
+    profileId: owner,
+  };
 }
 
-async function readPostMealStart(): Promise<number | null> {
+async function readPostMealStart(owner: string): Promise<number | null> {
   try {
-    const raw = await AsyncStorage.getItem(POSTMEAL_TIMER_START_KEY);
+    const raw = await AsyncStorage.getItem(postMealTimerKeys(owner).start);
     if (!raw) return null;
     const start = parseInt(raw, 10);
     return Number.isFinite(start) ? start : null;
@@ -1836,23 +2004,14 @@ async function readPostMealStart(): Promise<number | null> {
   }
 }
 
-async function readPostMealTimerProfile(): Promise<string | null> {
-  try {
-    return await AsyncStorage.getItem(POSTMEAL_TIMER_PROFILE_KEY);
-  } catch (err) {
-    logCrash(err, { service: "notifications", op: "readPostMealTimerProfile" });
-    return null;
-  }
-}
-
 /**
- * The countdown reached its end: clear the persisted timer and take the Live
- * Activity down. Nothing else ends it: the `timerInterval` freezes the display
- * at 0:00 and `staleDate` only dims it (see PostMealActivity.swift), it does
- * not dismiss it, so without this call the card would sit on the lock screen
- * frozen and faded until the user opened the app, or the OS eventually expired
- * it hours later, or another timer got armed. The notification itself has
- * already fired, so it is not cancelled here.
+ * A countdown reached its end: clear the persisted timer and take the Live
+ * Activity down (when it is this profile's). Nothing else ends it: the
+ * `timerInterval` freezes the display at 0:00 and `staleDate` only dims it (see
+ * PostMealActivity.swift), it does not dismiss it, so without this call the
+ * card would sit on the lock screen frozen and faded until the user opened the
+ * app, or the OS eventually expired it hours later, or another timer got armed.
+ * The notification itself has already fired, so it is not cancelled here.
  *
  * The AlarmKit timer (2.3.0's B) is deliberately NOT cancelled here either,
  * and for a stronger reason: "the countdown reached its end" is the exact
@@ -1861,64 +2020,84 @@ async function readPostMealTimerProfile(): Promise<string | null> {
  * of which can land while the alarm is still on screen - cancelling would
  * silence the one delivery the user chose. Nothing leaks: the identity is
  * reused (cancel-then-schedule) by the next arm, and applyReminders' orphan
- * sweep skips this id by design. cancelPostMealTimer is where an alarm really
+ * sweep skips these ids by design. cancelPostMealTimer is where an alarm really
  * does have to be taken down, because there the user ended the window early.
  */
-export async function completePostMealTimer(): Promise<void> {
-  const ownerProfileId = await readPostMealTimerProfile();
+export async function completePostMealTimer(profileId?: string): Promise<void> {
+  const owner = await resolvePostMealOwner(profileId);
+  await ensurePostMealMigrated();
+  const keys = postMealTimerKeys(owner);
   try {
-    await AsyncStorage.multiRemove([
-      POSTMEAL_TIMER_END_KEY,
-      POSTMEAL_TIMER_START_KEY,
-      POSTMEAL_TIMER_PROFILE_KEY,
-    ]);
+    await AsyncStorage.multiRemove([keys.end, keys.start]);
   } catch (err) {
     // best-effort
     logCrash(err, { service: "notifications", op: "completePostMealTimer" });
   }
+  await endPostMealActivityFor(owner);
+  if (owner !== POSTMEAL_DEVICE_OWNER) void resolvePendingPostMealLinks(owner);
+}
+
+async function endPostMealActivityFor(owner: string): Promise<void> {
+  // A deleted owner can no longer be "the profile in use" (the active-profile
+  // read falls through to another one), and a card last drawn for this owner is
+  // theirs to take down; only a different, living profile's card is left alone.
+  const ownerGone =
+    owner !== POSTMEAL_DEVICE_OWNER && (await getProfile(owner).catch(() => undefined)) === null;
+  if (!ownerGone && postMealActivityOwner !== owner && !(await postMealOwnerIsActive(owner))) {
+    return;
+  }
+  postMealActivityOwner = null;
   endPostMealActivity();
-  if (ownerProfileId) void resolvePendingPostMealLinks(ownerProfileId);
 }
 
 /**
- * Cancels a pending post-meal reminder and clears its timer. Used for early
- * completion: once the user logs their 2-hour reading the nudge is unnecessary.
+ * Cancels a profile's pending post-meal reminder and clears its timer. Used for
+ * early completion: once the user logs their 2-hour reading the nudge is
+ * unnecessary. `profileId` defaults to the profile in use; no other profile's
+ * countdown is touched.
  *
  * Takes down BOTH deliveries unconditionally (2.3.0's B): whichever one this
  * countdown was armed with, cancelling the other is a no-op, and an early
  * reading must never leave an alarm behind to ring at a moment the app already
  * considers finished.
  */
-export async function cancelPostMealTimer(): Promise<void> {
+export async function cancelPostMealTimer(profileId?: string): Promise<void> {
+  const owner = await resolvePostMealOwner(profileId);
+  await ensurePostMealMigrated();
+  const keys = postMealTimerKeys(owner);
   try {
-    await Notifications.cancelScheduledNotificationAsync(POSTMEAL_ID);
+    await Notifications.cancelScheduledNotificationAsync(postMealNotificationId(owner));
   } catch (err) {
     // nothing pending
     logCrash(err, { service: "notifications", op: "cancelPostMeal" });
   }
-  await cancelAlarm(POSTMEAL_ALARM_ID);
+  await cancelAlarm(postMealAlarmId(owner));
   // The user ended this window themselves (or logged the reading by hand), so
   // no sensor value is to be taken for it.
-  const cancelledStart = await readPostMealStart();
-  const cancelledOwner = await readPostMealTimerProfile();
-  const cancelledEnd = Number(await AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY).catch(() => null));
-  if (cancelledStart != null && cancelledOwner && cancelledEnd > Date.now()) {
+  const cancelledStart = await readPostMealStart(owner);
+  const cancelledEnd = Number(await AsyncStorage.getItem(keys.end).catch(() => null));
+  if (cancelledStart != null && owner !== POSTMEAL_DEVICE_OWNER && cancelledEnd > Date.now()) {
     try {
-      await removePendingLink(cancelledOwner, cancelledStart);
+      await removePendingLink(owner, cancelledStart);
     } catch (err) {
       logCrash(err, { service: "notifications", op: "removePostMealLink" });
     }
   }
   try {
-    await AsyncStorage.multiRemove([
-      POSTMEAL_TIMER_END_KEY,
-      POSTMEAL_TIMER_START_KEY,
-      POSTMEAL_TIMER_PROFILE_KEY,
-    ]);
+    await AsyncStorage.multiRemove([keys.end, keys.start]);
   } catch (err) {
     // best-effort
     logCrash(err, { service: "notifications", op: "clearPostMealTimer" });
   }
+  await endPostMealActivityFor(owner);
+}
+
+/** Takes down every profile's countdown and the card: the master switch is off. */
+async function cancelAllPostMealTimers(): Promise<void> {
+  for (const running of await listRunningPostMealTimers()) {
+    await cancelPostMealTimer(running.profileId);
+  }
+  postMealActivityOwner = null;
   endPostMealActivity();
 }
 
@@ -1966,13 +2145,15 @@ export async function schedulePostMealReminder(
   const prefs = await getNotificationPrefs();
   if (!prefs.enabled || !prefs.postMeal) return "off";
   const profile = await readActiveProfile();
+  // "A timer is already running" is asked of THIS profile's countdown only: a
+  // caregiver's other profile running one must not swallow this meal's.
   // Sensor mode: a logged meal never arms a measurement reminder; only the
   // countdown the user starts themselves runs (startPostMealTimer).
   if (profile && (await sensorModeActive(profile.id))) return "off";
   const loggedAtMs =
     loggedAt == null ? Date.now() : loggedAt instanceof Date ? loggedAt.getTime() : loggedAt;
   const decision = decidePostMealAutoStart({
-    timerActive: (await getPostMealTimerEnd()) != null,
+    timerActive: (await getPostMealTimerEnd(profile?.id)) != null,
     loggedAtMs,
     now: Date.now(),
   });
@@ -2073,8 +2254,8 @@ export async function openExactTimingSettings(): Promise<void> {
  * knows how long an ALREADY-ARMED window is meant to run; a re-anchor that
  * cannot read it falls back to POST_MEAL_WINDOW_MIN rather than guess short.
  */
-async function runningPostMealWindowMinutes(): Promise<number | null> {
-  const state = await getPostMealTimerState();
+async function runningPostMealWindowMinutes(owner?: string): Promise<number | null> {
+  const state = await getPostMealTimerState(owner);
   if (!state) return null;
   const span = Math.round((state.endsAt - state.startedAt) / 60_000);
   return span > 0 ? span : null;
@@ -2111,14 +2292,14 @@ export async function restartPostMealTimerAt(
     const startedAt = loggedAt instanceof Date ? loggedAt.getTime() : loggedAt;
     const resolvedProfileId = profileId ?? (await readActiveProfile())?.id;
     const resolvedWindowMin =
-      windowMin ?? (await runningPostMealWindowMinutes()) ?? POST_MEAL_WINDOW_MIN;
+      windowMin ?? (await runningPostMealWindowMinutes(resolvedProfileId)) ?? POST_MEAL_WINDOW_MIN;
     const next = restartPostMealWindowAt({
       startedAt,
       windowMin: resolvedWindowMin,
       now: Date.now(),
     });
     if (next.kind === "elapsed") {
-      await cancelPostMealTimer();
+      await cancelPostMealTimer(resolvedProfileId);
       return "elapsed";
     }
     await schedulePostMealAt({
@@ -2241,8 +2422,8 @@ export type PostMealRetimeResult =
  */
 export async function applyPostMealAlarmModeChange(): Promise<PostMealRetimeResult> {
   try {
-    const running = await getPostMealTimerState();
-    if (running == null) return "idle";
+    const timers = await listRunningPostMealTimers();
+    if (timers.length === 0) return "idle";
     const now = Date.now();
     const prefs = await getNotificationPrefs();
     const alarmKitAvailable = isAlarmKitAvailable();
@@ -2252,18 +2433,21 @@ export async function applyPostMealAlarmModeChange(): Promise<PostMealRetimeResu
       alarmAuthorized:
         alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
     });
-    if (!toAlarm && !(await hasNotificationPermission())) {
-      await cancelAlarm(POSTMEAL_ALARM_ID);
-      return "retimed";
+    const canNotify = toAlarm || (await hasNotificationPermission());
+    for (const running of timers) {
+      if (!canNotify) {
+        await cancelAlarm(postMealAlarmId(running.profileId ?? POSTMEAL_DEVICE_OWNER));
+        continue;
+      }
+      await schedulePostMealAt({
+        minutes: (running.endsAt - now) / 60_000,
+        windowMin: Math.round((running.endsAt - running.startedAt) / 60_000),
+        endsAt: running.endsAt,
+        startedAt: running.startedAt,
+        profileId: running.profileId,
+        minSeconds: 1,
+      });
     }
-    await schedulePostMealAt({
-      minutes: (running.endsAt - now) / 60_000,
-      windowMin: Math.round((running.endsAt - running.startedAt) / 60_000),
-      endsAt: running.endsAt,
-      startedAt: running.startedAt,
-      profileId: running.profileId,
-      minSeconds: 1,
-    });
     return "retimed";
   } catch (err) {
     // The running countdown keeps the mode it was armed with; nothing is lost.
@@ -2273,23 +2457,35 @@ export async function applyPostMealAlarmModeChange(): Promise<PostMealRetimeResu
 }
 
 /**
- * Takes the branded countdown card down when the ACTIVE profile is not the one
- * the countdown belongs to (2.3.0's P4).
+ * Keeps the single lock-screen card pointed at the profile in use (2.3.0's P4).
  *
- * Deliberately one-way and card-only. The window itself is a property of the
- * meal, so switching profiles must not cancel it or move its end; the owner
- * gets it back - card included - on their next apply pass, because that pass
- * re-arms the Live Activity through schedulePostMealAt.
+ * Card-only: every profile's countdown, stored end and delivery stay exactly as
+ * they are, because the two hours belong to the MEAL and to whoever ate it, not
+ * to whoever is holding the phone now. When the profile in use has no
+ * countdown the card is taken down; when it has one and the card was last
+ * drawn for somebody else, it is drawn again for it.
  */
-async function hidePostMealActivityForOtherProfile(): Promise<void> {
+async function syncPostMealActivityToActiveProfile(): Promise<void> {
   try {
-    const running = await getPostMealTimerState();
-    if (running == null || running.profileId == null) return;
     const active = await readActiveProfile();
-    if (active?.id && active.id !== running.profileId) endPostMealActivity();
+    if (active == null) return;
+    const mine = await getPostMealTimerState(active.id);
+    if (mine == null) {
+      const others = await listRunningPostMealTimers();
+      if (others.length > 0) {
+        postMealActivityOwner = null;
+        endPostMealActivity();
+      }
+      return;
+    }
+    // null = the card's owner is unknown (fresh process): redraw rather than
+    // leave whichever profile's card the previous process put up.
+    if (postMealActivityOwner !== active.id) {
+      await mirrorPostMealActivity(mine.endsAt, mine.startedAt, active.id);
+    }
   } catch (err) {
     // best-effort: at worst the card stays a little longer than it should
-    logCrash(err, { service: "notifications", op: "hideOtherProfileActivity" });
+    logCrash(err, { service: "notifications", op: "syncPostMealActivity" });
   }
 }
 
@@ -2323,11 +2519,6 @@ async function hidePostMealActivityForOtherProfile(): Promise<void> {
  */
 async function reconcilePostMealDelivery(prefs: NotificationPrefs): Promise<void> {
   try {
-    const running = await getPostMealTimerState();
-    if (running == null) return;
-    const remainingMs = running.endsAt - Date.now();
-    if (remainingMs <= 0) return;
-
     const alarmKitAvailable = isAlarmKitAvailable();
     const canRingAsAlarm = shouldUseAlarm({
       alarmEnabled: prefs.postMealAlarm,
@@ -2335,20 +2526,26 @@ async function reconcilePostMealDelivery(prefs: NotificationPrefs): Promise<void
       alarmAuthorized:
         alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
     });
-    // The alarm this window was armed with is still deliverable: leave it be.
+    // The alarm each window was armed with is still deliverable: leave them be.
     if (canRingAsAlarm) return;
 
+    const timers = await listRunningPostMealTimers();
+    if (timers.length === 0) return;
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-    if (scheduled.some((n) => n.identifier === POSTMEAL_ID)) return;
-
-    await schedulePostMealAt({
-      minutes: remainingMs / 60_000,
-      windowMin: Math.round((running.endsAt - running.startedAt) / 60_000),
-      endsAt: running.endsAt,
-      startedAt: running.startedAt,
-      profileId: running.profileId,
-      minSeconds: 1,
-    });
+    for (const running of timers) {
+      const remainingMs = running.endsAt - Date.now();
+      if (remainingMs <= 0) continue;
+      const owner = running.profileId ?? POSTMEAL_DEVICE_OWNER;
+      if (scheduled.some((n) => n.identifier === postMealNotificationId(owner))) continue;
+      await schedulePostMealAt({
+        minutes: remainingMs / 60_000,
+        windowMin: Math.round((running.endsAt - running.startedAt) / 60_000),
+        endsAt: running.endsAt,
+        startedAt: running.startedAt,
+        profileId: running.profileId,
+        minSeconds: 1,
+      });
+    }
   } catch (err) {
     // best-effort: the countdown keeps whatever it was armed with.
     logCrash(err, { service: "notifications", op: "reconcilePostMealDelivery" });
@@ -2462,8 +2659,8 @@ export async function rescheduleForLanguageChange(): Promise<void> {
 
     // Post-meal check: its end time is already persisted, so re-arm for whatever
     // is left of it instead of restarting the countdown.
-    const running = await getPostMealTimerState();
-    if (running != null && running.endsAt - now >= 60_000) {
+    for (const running of await listRunningPostMealTimers()) {
+      if (running.endsAt - now < 60_000) continue;
       await schedulePostMealAt({
         minutes: (running.endsAt - now) / 60_000,
         windowMin: Math.round((running.endsAt - running.startedAt) / 60_000),
@@ -2558,15 +2755,12 @@ async function sensorModeActive(profileId: string): Promise<boolean> {
   return isCgmModeActive(await getCgmMode(profileId));
 }
 
-/** True when the running countdown belongs to a profile in a sensor mode. */
-async function runningPostMealIsSensorOwned(): Promise<boolean> {
+/** True when this profile's countdown belongs to a profile in a sensor mode. */
+async function postMealOwnerIsSensorMode(owner: string): Promise<boolean> {
   try {
-    const running = await getPostMealTimerState();
-    if (running == null) return false;
-    const owner = running.profileId ?? (await readActiveProfile())?.id;
-    return owner != null && (await sensorModeActive(owner));
+    return owner !== POSTMEAL_DEVICE_OWNER && (await sensorModeActive(owner));
   } catch (err) {
-    logCrash(err, { service: "notifications", op: "runningPostMealIsSensorOwned" });
+    logCrash(err, { service: "notifications", op: "postMealOwnerIsSensorMode" });
     return false;
   }
 }
@@ -2583,9 +2777,8 @@ async function resolveActiveProfilePostMealLinks(): Promise<void> {
 /** Moves a countdown that is already running to the delivery its profile's mode
  *  calls for: no notification in a sensor mode, the usual one back in manual. */
 async function rearmRunningPostMealForMode(profileId: string): Promise<void> {
-  const running = await getPostMealTimerState();
+  const running = await getPostMealTimerState(profileId);
   if (running == null) return;
-  if (running.profileId && running.profileId !== profileId) return;
   const remainingMs = running.endsAt - Date.now();
   if (remainingMs <= 0) return;
   if (!(await sensorModeActive(profileId))) {

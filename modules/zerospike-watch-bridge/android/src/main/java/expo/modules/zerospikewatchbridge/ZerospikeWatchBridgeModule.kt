@@ -85,7 +85,7 @@ class ZerospikeWatchBridgeModule : Module() {
     return try {
       val request = PutDataMapRequest.create(DATA_PATH).apply {
         dataMap.putString(DATA_KEY, json)
-      }.asPutDataRequest()
+      }.asPutDataRequest().setUrgent()
       Wearable.getDataClient(context).putDataItem(request)
       true
     } catch (e: Exception) {

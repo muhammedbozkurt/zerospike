@@ -246,7 +246,6 @@ const tr = {
     postMealStopBody: "Geri sayım ve ona bağlı hatırlatıcı kaldırılır.",
     postMealStopConfirm: "Durdur",
     postMealStopKeep: "Vazgeç",
-    postMealOtherProfile: "Bu sayaç başka bir profile ait.",
     postMealDurationPick: "Özel süre seç",
     postMealDurationA11y: "Sayaç süresini değiştirin",
     postMealSetAt: "Sayaç kuruldu. Hatırlatma saat {{time}}, {{left}} dk sonra.",

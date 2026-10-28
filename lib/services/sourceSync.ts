@@ -154,6 +154,19 @@ export async function nightscoutBackgroundWanted(): Promise<boolean> {
   }
 }
 
+/** New readings landed while no screen was watching: bring the widgets, the
+ *  watch and the lock screen up to date (see syncLiveDataAfterImport). */
+async function refreshSurfacesAfterImport(): Promise<void> {
+  try {
+    const profileId = await activeProfileId();
+    if (!profileId) return;
+    const { syncLiveDataAfterImport } = await import("./liveData");
+    await syncLiveDataAfterImport(profileId);
+  } catch {
+    // best-effort
+  }
+}
+
 export interface SourcePassOutcome {
   failed: boolean;
 }
@@ -161,12 +174,14 @@ export interface SourcePassOutcome {
 /** One background pass: Nightscout, then Health. Never throws, never prompts. */
 export async function syncSourcesInBackground(): Promise<SourcePassOutcome> {
   let failed = false;
+  let inserted = 0;
   try {
     const profileId = await activeProfileId();
     if (profileId && secureStoreAvailable()) {
       const entitled = await getHealthBackgroundEntitled();
       const out = await runNightscoutSync(profileId, deps(), { entitled });
       if (out.status === "error" && out.error !== "auth") failed = true;
+      if (out.status === "ok") inserted += out.inserted;
     }
   } catch (err) {
     logCrash(safeNightscoutError("background", err), { screen: "nightscout", op: "background" });
@@ -174,5 +189,7 @@ export async function syncSourcesInBackground(): Promise<SourcePassOutcome> {
   }
   const health = await syncHealthInBackground();
   if (health.result?.status === "error") failed = true;
+  inserted += health.result?.inserted ?? 0;
+  if (inserted > 0) await refreshSurfacesAfterImport();
   return { failed };
 }

@@ -76,6 +76,8 @@ section("A. every base name is really written by the file that owns it");
     "zerospike.cgmPostMealPending": "lib/cgm/postMealLink.ts",
     "zerospike.cgmCurveHours": "lib/useCgmWindow.ts",
     "zerospike.nightscoutFloor": "lib/nightscout/sync.ts",
+    "zerospike.postMealTimerEnd": "lib/postMealTimer.ts",
+    "zerospike.postMealTimerStart": "lib/postMealTimer.ts",
   };
   for (const base of PROFILE_SCOPED_KEY_BASES) {
     const file = owners[base];
@@ -137,7 +139,6 @@ section("D. the sweep never touches device-level keys");
     "zerospike.liveData",
     "zerospike.notifPrefs",
     "zerospike.alarmTourSeen",
-    "zerospike.postMealTimerEnd",
     "zerospike.activeProfileId",
   ];
   const keys = profileScopedKeys("p1");

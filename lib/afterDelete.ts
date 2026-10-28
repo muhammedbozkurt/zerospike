@@ -102,7 +102,7 @@ export function isEmptyAftermath(a: DeletionAftermath | null | undefined): boole
 
 /** The meals still recorded near a countdown's anchor, as epoch ms. Read AFTER
  *  the delete, so the removed row is already gone from the answer. */
-async function mealsNearAnchor(
+export async function mealsNearAnchor(
   profileId: string | null,
   anchorMs: number
 ): Promise<number[]> {
@@ -156,11 +156,20 @@ export async function applyAfterDelete(
      *  whatever was there, including a last_used_at that never came from a
      *  meal_logs row at all. */
     settleTemplates?: boolean;
+    /** Let the delete end the countdown whose own meal it removed. Default true.
+     *
+     *  The "undo" of a just-saved meal passes false unless that very save
+     *  STARTED the countdown (schedulePostMealReminder answered "started"):
+     *  with a countdown the user armed by hand, or one already running, the
+     *  save did not create it, so taking the record back must not end it. */
+    settleTimer?: boolean;
   }
 ): Promise<DeletionAftermath> {
   if (meals.length === 0) return noAftermath();
   const aftermath = noAftermath();
-  aftermath.postMealTimer = await endPostMealTimerIfOrphaned(meals);
+  if (opts?.settleTimer !== false) {
+    aftermath.postMealTimer = await endPostMealTimerIfOrphaned(meals);
+  }
   if (opts?.settleTemplates !== false) {
     aftermath.templateUsage = await settleTemplateUsage(meals);
   }
@@ -173,13 +182,12 @@ async function endPostMealTimerIfOrphaned(
   meals: readonly DeletedMeal[]
 ): Promise<PostMealTimerWindow | null> {
   try {
-    const timer = await getPostMealTimerState();
+    // Each profile has its own countdown: the one the deleted meals belong to
+    // is the only one a delete can end.
+    const timer = await getPostMealTimerState(
+      meals.find((m) => m.profileId != null)?.profileId ?? undefined
+    );
     if (timer == null) return null;
-    // Profile lock, the same one the dashboard card applies
-    // (postMealWindowForProfile): a countdown owned by another profile is that
-    // caregiver's business and is never ended by a delete made under this one.
-    // A timer with no recorded owner predates the lock and belongs to whoever
-    // is looking, so it is not excluded here either.
     const mine = meals.filter(
       (m) => timer.profileId == null || m.profileId == null || m.profileId === timer.profileId
     );
@@ -195,7 +203,7 @@ async function endPostMealTimerIfOrphaned(
     // window, which is exactly why this is cancelPostMealTimer and not
     // completePostMealTimer: the window did not reach its end, it lost its
     // subject, so nothing may be left to ring.
-    await cancelPostMealTimer();
+    await cancelPostMealTimer(timer.profileId);
     return timer;
   } catch {
     // The countdown keeps running; the rows are still deleted. Nothing here is

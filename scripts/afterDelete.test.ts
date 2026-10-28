@@ -86,7 +86,7 @@ section("A. the countdown claim is a real compare-and-set");
   const body = functionBody(src, "schedulePostMealAt");
   ok("schedulePostMealAt was found", body.length > 0);
 
-  const readAt = body.indexOf("AsyncStorage.getItem(POSTMEAL_TIMER_END_KEY)");
+  const readAt = body.indexOf("AsyncStorage.getItem(keys.end)");
   const writeAt = body.indexOf("AsyncStorage.multiSet(entries)");
   ok("the claim reads the stored end", readAt >= 0);
   ok("the claim writes the timer", writeAt >= 0);
@@ -108,7 +108,7 @@ section("A. the countdown claim is a real compare-and-set");
   // everything below it (the notification cancel) is destructive to a
   // countdown that turns out to be someone else's.
   const channelAt = body.indexOf("ensureAndroidChannel()");
-  const cancelAt = body.indexOf("cancelScheduledNotificationAsync(POSTMEAL_ID)");
+  const cancelAt = body.indexOf("cancelScheduledNotificationAsync(notificationId)");
   ok("the android channel step exists", channelAt >= 0);
   ok("the notification cancel exists", cancelAt >= 0);
   ok("the claim runs BEFORE the android channel await", writeAt < channelAt);

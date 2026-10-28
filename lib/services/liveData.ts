@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 
 import i18n, { currentLang } from "../i18n";
 import { getLatestSugarLog, getSugarAverageSince } from "../db/logs";
@@ -27,11 +27,14 @@ import {
 } from "../insulinMode";
 import type { GlucoseUnit } from "../db/types";
 import { getCgmMode } from "../cgm/state";
+import { getGlucoseOptIn } from "../cgm/reminderMode";
 import { subscribeCgmChanges } from "../cgm/importEvents";
+import { createPublishCoalescer } from "./publishCoalescer";
 import {
   cgmLiveFields,
   cgmReadingText,
   loadCgmReadings,
+  widgetUpcomingInputs,
   type LiveCgm,
   type LiveCgmMode,
 } from "./liveDataCgm";
@@ -247,7 +250,7 @@ export async function computeLiveData(
     getNotificationPrefs(),
     // The profile's own band, so the widget/watch colour matches the app exactly.
     getProfile(profileId),
-    getPostMealTimerState(),
+    getPostMealTimerState(profileId),
     // The reminders registry (schema v17): basal/med/glucose/custom all live
     // here now, not in prefs.basal/med/glucose - see applyReminders in
     // ./notifications.ts, which schedules from this same table. Explicitly
@@ -300,8 +303,14 @@ export async function computeLiveData(
     ? postMealState!.startedAt
     : null;
   const alarmKitAvailable = isAlarmKitAvailable();
+  const upcoming = widgetUpcomingInputs(
+    cgmMode,
+    reminders,
+    cgmMode === "manual" ? new Set<string>() : await getGlucoseOptIn(profileId),
+    runningPostMeal
+  );
   const next: UpcomingItem | null = nextUpcoming({
-    rows: reminders,
+    rows: upcoming.rows,
     now,
     // A day ahead, the same horizon the reminders screen uses.
     windowMs: 24 * 60 * 60 * 1000,
@@ -316,7 +325,7 @@ export async function computeLiveData(
     alarmKitAvailable,
     alarmAuthorized:
       alarmKitAvailable && getAlarmAuthorizationStatus() === "authorized",
-    postMealEndsAt: runningPostMeal,
+    postMealEndsAt: upcoming.postMealEndsAt,
     postMealAlarm: prefs.postMealAlarm,
   });
 
@@ -461,9 +470,15 @@ async function publishToNativeSurfaces(json: string): Promise<void> {
  */
 const NATIVE_PUBLISH_COALESCE_MS = 30_000;
 
-let lastPublishAt = 0;
-let pendingJson: string | null = null;
-let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+const coalescer = createPublishCoalescer(
+  (json) => void publishToNativeSurfaces(json),
+  NATIVE_PUBLISH_COALESCE_MS,
+  {
+    now: () => Date.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  }
+);
 
 /**
  * Publishes at most once per NATIVE_PUBLISH_COALESCE_MS, always with the LATEST
@@ -472,23 +487,24 @@ let pendingTimer: ReturnType<typeof setTimeout> | null = null;
  * written unconditionally by the caller, so nothing reading it ever sees a delay.
  */
 function publishCoalesced(json: string): void {
-  const now = Date.now();
-  const elapsed = now - lastPublishAt;
-  if (elapsed >= NATIVE_PUBLISH_COALESCE_MS) {
-    lastPublishAt = now;
-    void publishToNativeSurfaces(json);
-    return;
+  coalescer.push(json);
+}
+
+// iOS suspends JS timers once the app leaves the foreground, so a payload still
+// waiting out the window (a reading corrected or deleted seconds before locking
+// the phone) would stay off the widget and the watch until the next launch.
+// Leaving the foreground sends it now.
+let appStateWatched = false;
+function ensureBackgroundFlush(): void {
+  if (appStateWatched) return;
+  appStateWatched = true;
+  try {
+    AppState.addEventListener("change", (state) => {
+      if (state === "background" || state === "inactive") coalescer.flush();
+    });
+  } catch {
+    // no AppState (tests, web): the timer path still works
   }
-  pendingJson = json;
-  if (pendingTimer != null) return;
-  pendingTimer = setTimeout(() => {
-    pendingTimer = null;
-    const next = pendingJson;
-    pendingJson = null;
-    if (next == null) return;
-    lastPublishAt = Date.now();
-    void publishToNativeSurfaces(next);
-  }, NATIVE_PUBLISH_COALESCE_MS - elapsed);
 }
 
 let lastSynced: { profileId: string; unit: GlucoseUnit } | null = null;
@@ -521,6 +537,7 @@ export async function syncLiveData(
 ): Promise<LiveData | null> {
   lastSynced = { profileId, unit };
   ensureCgmSubscription();
+  ensureBackgroundFlush();
   try {
     const data = await computeLiveData(profileId, unit);
     const json = JSON.stringify(data);
@@ -560,6 +577,26 @@ export async function syncLiveData(
     return data;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Re-publishes the snapshot after a background import (Android WorkManager task
+ * or the iOS HealthKit observer) inserted rows. The CGM subscription only
+ * exists once a foreground syncLiveData has run in this JS context, and a
+ * headless background run never does, so without this the widgets and the watch
+ * kept the pre-import reading. The unit comes from the profile, as there is no
+ * screen to ask.
+ */
+export async function syncLiveDataAfterImport(profileId: string): Promise<void> {
+  try {
+    const profile = await getProfile(profileId);
+    if (!profile) return;
+    await syncLiveData(profileId, profile.glucose_unit);
+    // No foreground to deliver a parked payload later (see ensureBackgroundFlush).
+    if (AppState.currentState !== "active") coalescer.flush();
+  } catch {
+    // best-effort: the import itself already succeeded
   }
 }
 

@@ -38,8 +38,18 @@ data class LiveDataSnapshot(
     val usesInsulin: Boolean,
     val usesOralMeds: Boolean,
     val band: Band?,
-    val labels: Labels?
+    val labels: Labels?,
+    /** "manual" | "cgm" | "nightscout"; null on a snapshot from an older phone. */
+    val mode: String? = null,
+    /** Newest sensor reading, present only in a sensor mode with data. */
+    val cgm: Cgm? = null
 ) {
+    data class Cgm(
+        val mgdl: Double,
+        val at: Long,
+        val display: String
+    )
+
     data class Band(
         val hypo: Double,
         val low: Double,
@@ -63,7 +73,9 @@ data class LiveDataSnapshot(
         val addMed: String,
         val timerTitle: String,
         val startCountdown: String?,
-        val mealTime: String?
+        val mealTime: String?,
+        /** Generic sensor heading ("CGM"), never a brand. */
+        val cgm: String? = null
     )
 
     companion object {
@@ -113,7 +125,16 @@ data class LiveDataSnapshot(
                         addMed = l.optString("addMed"),
                         timerTitle = l.optString("timerTitle"),
                         startCountdown = l.nullableString("startCountdown"),
-                        mealTime = l.nullableString("mealTime")
+                        mealTime = l.nullableString("mealTime"),
+                        cgm = l.nullableString("cgm")
+                    )
+                },
+                mode = obj.nullableString("mode"),
+                cgm = obj.optJSONObject("cgm")?.let {
+                    Cgm(
+                        mgdl = it.optDouble("mgdl"),
+                        at = it.optLong("at"),
+                        display = it.optString("display")
                     )
                 }
             )
@@ -143,6 +164,10 @@ object LiveDataStore {
 
     /** Compose-observable so MainActivity redraws the moment a new snapshot lands. */
     val snapshot: MutableState<LiveDataSnapshot?> = mutableStateOf(null)
+
+    /** Bumped when the screen returns to the foreground, so the reading's age is
+     *  re-measured once per visit without a self-ticking counter on screen. */
+    val resumeTick: MutableState<Long> = mutableStateOf(0L)
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

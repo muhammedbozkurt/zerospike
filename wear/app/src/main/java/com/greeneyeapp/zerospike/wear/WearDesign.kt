@@ -66,6 +66,40 @@ fun glucoseColorFor(mgdl: Double, band: LiveDataSnapshot.Band?): Color {
     return GlucoseInk.High
 }
 
+/** Older than this a sensor reading is drawn faded; the same 20 minutes as
+ *  LiveData.Cgm.staleAfterMinutes on the Apple Watch and CGM_STALE_MIN on the phone. */
+const val CGM_STALE_MINUTES = 20L
+
+/** The sensor reading, only while the profile is in a sensor mode (the Apple
+ *  Watch's `activeCgm`). Null otherwise, and every surface keeps its manual look. */
+val LiveDataSnapshot.activeCgm: LiveDataSnapshot.Cgm?
+    get() = if (mode != null && mode != "manual") cgm else null
+
+fun LiveDataSnapshot.readingDisplay(): String? = activeCgm?.display ?: lastGlucoseDisplay
+
+fun LiveDataSnapshot.readingMgdl(): Double? = activeCgm?.mgdl ?: lastGlucoseMgdl
+
+fun LiveDataSnapshot.readingAt(): Long? = activeCgm?.at ?: lastGlucoseAt
+
+/** "CGM" in the phone's language when a sensor feeds this reading, else null. */
+fun LiveDataSnapshot.cgmHeading(): String? =
+    activeCgm?.let { labels?.cgm?.takeIf { s -> s.isNotBlank() } ?: "CGM" }
+
+/**
+ * The colour of the reading. A sensor value is drawn plain (no band colour) and
+ * faded once it is older than CGM_STALE_MINUTES, exactly as ContentView.swift
+ * does; a hand-logged one keeps the band ladder.
+ */
+fun LiveDataSnapshot?.readingColor(now: Long): Color {
+    if (this == null) return Ink.Muted
+    val sensor = activeCgm
+    if (sensor != null) {
+        val ageMin = ((now - sensor.at) / 60_000L).coerceAtLeast(0L)
+        return if (ageMin > CGM_STALE_MINUTES) Ink.Muted else Ink.Primary
+    }
+    return lastGlucoseMgdl?.let { glucoseColorFor(it, band) } ?: Ink.Muted
+}
+
 /** mg/dL or mmol/L, from the snapshot's own unit field. Not translatable. */
 fun unitLabelOf(unit: String?): String = if (unit == "mmol") "mmol/L" else "mg/dL"
 

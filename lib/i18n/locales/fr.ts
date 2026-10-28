@@ -248,7 +248,6 @@ const fr: TranslationSchema = {
     postMealStopBody: "Le compte à rebours et son rappel seront supprimés.",
     postMealStopConfirm: "Arrêter",
     postMealStopKeep: "Annuler",
-    postMealOtherProfile: "Ce minuteur appartient à un autre profil.",
     postMealDurationPick: "Régler la durée",
     postMealDurationA11y: "Modifier la durée du minuteur",
     postMealSetAt: "Minuteur lancé. Rappel à {{time}}, dans {{left}} min.",

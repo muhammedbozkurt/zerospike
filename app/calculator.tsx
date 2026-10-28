@@ -68,6 +68,7 @@ import {
   applyAfterDeleteFromSnapshot,
   undoAfterDelete,
 } from "../lib/afterDelete";
+import { settlePostMealTimerAfterMealTimeEdit } from "../lib/mealTimeEditTimer";
 import {
   deleteInjection,
   getCalculatorInjectionForMeal,
@@ -1510,6 +1511,15 @@ function CalculatorScreen() {
           }
         });
 
+        // A countdown that is this meal's own follows the meal to its new time.
+        if (loggedAtChanged && prefillLoggedAtRef.current != null) {
+          await settlePostMealTimerAfterMealTimeEdit({
+            profileId: activeProfile.id,
+            oldLoggedAtMs: prefillLoggedAtRef.current.getTime(),
+            newLoggedAtMs: new Date(loggedIso ?? at.toISOString()).getTime(),
+          });
+        }
+
         // A corrected glucose value belongs on the reading this meal is already
         // attached to, not on a second row. Clearing the field leaves the
         // reading alone: a measurement is not deleted because a field went blank.
@@ -1711,8 +1721,9 @@ function CalculatorScreen() {
       // Best effort on purpose: scheduleNotificationAsync throws on a device
       // that refuses the schedule, and an unavailable REMINDER must never cost
       // the user a saved MEAL or trap them in this modal.
+      let timerStartedBySave = false;
       try {
-        await schedulePostMealReminder(loggedAt);
+        timerStartedBySave = (await schedulePostMealReminder(loggedAt)) === "started";
       } catch (err) {
         logCrash(err, { screen: "calculator", step: "postMealReminder" });
         trackSaveFailed("meal", "schedule");
@@ -1809,7 +1820,7 @@ function CalculatorScreen() {
                 loggedAtMs: mealLoggedAtMs,
                 templateId: mealTemplateId,
               },
-            ]);
+            ], { settleTimer: timerStartedBySave });
             bumpData();
             toast(t("calculator.undone"), "info");
           })();

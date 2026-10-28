@@ -248,7 +248,6 @@ const ar: TranslationSchema = {
     postMealStopBody: "ستتم إزالة العد التنازلي والتذكير المرتبط به.",
     postMealStopConfirm: "إيقاف",
     postMealStopKeep: "إلغاء",
-    postMealOtherProfile: "هذا المؤقّت يخصّ ملفًا شخصيًا آخر.",
     lowFollowTitle: "آخر قراءة لديك {{value}} {{unit}}.",
     lowFollowRemind: "ذكّرني بالقياس مرة أخرى بعد 15 دقيقة",
     lowFollowSet: "تم ضبط تذكير بعد 15 دقيقة.",

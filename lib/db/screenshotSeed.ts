@@ -23,6 +23,12 @@ import { getCgmMode, setCgmMode } from "../cgm/state";
 import { isScreenshotMode } from "../screenshotMode";
 import { setProOverride } from "../services/purchases";
 import i18n from "../i18n";
+import {
+  POSTMEAL_LEGACY_END_KEY,
+  POSTMEAL_LEGACY_PROFILE_KEY,
+  POSTMEAL_LEGACY_START_KEY,
+  postMealTimerKeys,
+} from "../postMealTimer";
 
 /**
  * Store-screenshot seed. Populates a profile with a realistic, consistent story
@@ -94,9 +100,6 @@ function seedMarkerKey(profileId: string): string {
   return `${SEEDED_LANG_KEY}.${profileId}`;
 }
 
-const POSTMEAL_TIMER_END_KEY = "zerospike.postMealTimerEnd";
-const POSTMEAL_TIMER_PROFILE_KEY = "zerospike.postMealTimerProfile";
-const POSTMEAL_TIMER_START_KEY = "zerospike.postMealTimerStart";
 // Mirrors app/(tabs)/index.tsx: the dashboard's "finish setting up" row is a
 // nudge for a real user and has no place in a store frame.
 const FINISH_SETUP_DISMISSED_KEY = "zerospike.finishSetupDismissed";
@@ -566,15 +569,19 @@ async function seedScreenshotDataLocked(
     // elapsed), because the bar and its "x min window" label are both drawn
     // from the timer's OWN start/end pair, not from POST_MEAL_WINDOW_MIN.
     const timerEnd = Date.now() + 72 * 60 * 1000;
+    // Stored under the seeded profile's own keys (a countdown is per profile),
+    // and any old device-wide slot is dropped so it cannot be moved onto
+    // another profile afterwards.
+    const timerKeys = postMealTimerKeys(profileId);
     await AsyncStorage.multiSet([
-      [POSTMEAL_TIMER_END_KEY, String(timerEnd)],
-      [POSTMEAL_TIMER_START_KEY, String(timerEnd - 120 * 60 * 1000)],
+      [timerKeys.end, String(timerEnd)],
+      [timerKeys.start, String(timerEnd - 120 * 60 * 1000)],
     ]);
-    // The owner key is CLEARED, never carried over: a seeded countdown belongs
-    // to whichever profile the capture is pointing at, and an owner left behind
-    // by an earlier seed (or by a real timer on the same simulator) would make
-    // the profile lock hide the very card the frame is meant to show.
-    await AsyncStorage.removeItem(POSTMEAL_TIMER_PROFILE_KEY);
+    await AsyncStorage.multiRemove([
+      POSTMEAL_LEGACY_END_KEY,
+      POSTMEAL_LEGACY_START_KEY,
+      POSTMEAL_LEGACY_PROFILE_KEY,
+    ]);
 
     const markerKey = seedMarkerKey(profileId);
     const seededLang = await AsyncStorage.getItem(markerKey);
