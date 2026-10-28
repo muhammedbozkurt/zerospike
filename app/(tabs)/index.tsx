@@ -99,6 +99,7 @@ import {
   type SyncResult,
 } from "../../lib/services/health";
 import { undoNewGlucose } from "../../lib/services/glucoseUndo";
+import { runHealthWriteAsk } from "../../lib/healthWriteAsk";
 import { healthWriteAskSeen, markHealthWriteAskSeen } from "../../lib/services/healthWritePrompt";
 import { useHealthBackfill } from "../../lib/useHealthBackfill";
 import { useHealthWriteDenied } from "../../lib/useHealthWriteDenied";
@@ -222,6 +223,7 @@ import {
 import { applyGlucoseCorrection } from "../../lib/services/glucoseEdit";
 import { attemptGlucoseWrite, openNewReadingState } from "../../lib/glucoseSheetFlow";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
+import { createSheetCloseGate } from "../../lib/sheetCloseGate";
 import { useEntryGuardConfirm } from "../../components/useEntryGuardConfirm";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback } from "../../components/Feedback";
@@ -382,6 +384,14 @@ export default function DashboardScreen() {
     void applyScreenshotCgm(screenshotProfileId, shotCgm).then(bumpData);
   }, [screenshotProfileId, shotCgm, bumpData]);
   const { toast, confirm, actionSheet } = useFeedback();
+  // Dialogs raised after a save wait for the entry sheet to be gone: its own
+  // FeedbackHost owns them while it is up and abandons them when it unmounts.
+  const sheetGate = useRef(
+    createSheetCloseGate({
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    })
+  ).current;
   const healthBackfill = useHealthBackfill();
   const onHealthWriteDenied = useHealthWriteDenied();
   const guardEntry = useEntryGuardConfirm();
@@ -1555,6 +1565,7 @@ export default function DashboardScreen() {
       return true;
     }
 
+    sheetGate.markOpen();
     // loggedAt is null when the user left the time untouched ("now"); a
     // backdated reading must not arm/cancel today's timers or nudges.
     const isNow = loggedAt == null;
@@ -1647,6 +1658,8 @@ export default function DashboardScreen() {
       toast(t("calculator.savedRecord"), "success", savedUndo);
     }
     bumpData();
+    // A sheet that never reported its close must not swallow the follow-ups: carry on after the cap.
+    await sheetGate.whenClear();
     const followupShown = isNow ? await maybeOfferLowFollowup(value) : false;
     // Not on top of the low-reading follow-up sheet.
     const isLow = classifyGlucose(value, period, activeProfile) === "low";
@@ -1675,18 +1688,23 @@ export default function DashboardScreen() {
       // Marked only once Health is known to be usable here: an unavailable
       // Health Connect must not use up the one question.
       if (!(await isHealthAvailable())) return false;
-      await markHealthWriteAskSeen();
       const many = profiles.length > 1 && activeProfile ? displayProfileName(activeProfile, t) : undefined;
-      const yes = await confirm({
-        title: t("dashboard.healthWriteAskTitle", { health: HEALTH_NAME }),
-        message:
-          t("dashboard.healthWriteAskBody", { health: HEALTH_NAME }) +
-          (many ? `\n\n${t("dashboard.healthWriteAskProfile", { name: many })}` : ""),
-        confirmLabel: t("dashboard.healthWriteAskYes"),
-        cancelLabel: t("dashboard.healthWriteAskLater"),
-        icon: "heart-outline",
+      // Marked only once answered: a dialog torn down unanswered keeps the question.
+      const outcome = await runHealthWriteAsk({
+        markAsked: markHealthWriteAskSeen,
+        show: (onAbandon) =>
+          confirm({
+            title: t("dashboard.healthWriteAskTitle", { health: HEALTH_NAME }),
+            message:
+              t("dashboard.healthWriteAskBody", { health: HEALTH_NAME }) +
+              (many ? `\n\n${t("dashboard.healthWriteAskProfile", { name: many })}` : ""),
+            confirmLabel: t("dashboard.healthWriteAskYes"),
+            cancelLabel: t("dashboard.healthWriteAskLater"),
+            icon: "heart-outline",
+            onAbandon,
+          }),
       });
-      if (!yes) return true;
+      if (outcome !== "yes") return true;
       if (!(await requestHealthWritePermission())) {
         await onHealthWriteDenied();
         return true;
@@ -3067,6 +3085,7 @@ export default function DashboardScreen() {
         profile={activeProfile ?? undefined}
         edit={editGlucose}
         onClose={() => {
+          sheetGate.markClosed();
           setSheetOpen(false);
           setEditGlucose(null);
         }}
