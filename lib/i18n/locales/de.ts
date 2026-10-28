@@ -769,6 +769,7 @@ const de: TranslationSchema = {
     healthPermissionBlocked: "Der Zugriff auf {{health}} scheint blockiert zu sein. Die Einstellungen werden geöffnet, damit Sie ihn erlauben können.",
     healthDeniedStepsIos: "Öffnen Sie dazu die Health-App, tippen Sie auf Ihr Profilbild, wählen Sie Apps (bis iOS 17: Datenschutz, dann Apps), wählen Sie zerospike und aktivieren Sie Blutzucker.",
     healthDeniedStepsAndroid: "Öffnen Sie dazu Health Connect, gehen Sie zu App-Berechtigungen, wählen Sie zerospike und erlauben Sie das Schreiben von Blutzucker.",
+    healthReadDeniedStepsAndroid: "Öffnen Sie dazu Health Connect, gehen Sie zu App-Berechtigungen, wählen Sie zerospike und erlauben Sie das Lesen von Blutzucker.",
     healthOpenApp: "{{health}} öffnen",
     healthPendingWrites: "Ausstehend: {{count}}",
     healthRetryNow: "Jetzt versuchen",

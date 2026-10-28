@@ -769,6 +769,7 @@ const ar: TranslationSchema = {
     healthPermissionBlocked: "يبدو أن الوصول إلى {{health}} محظور. سيتم فتح الإعدادات للسماح به.",
     healthDeniedStepsIos: "للسماح بذلك، افتح تطبيق الصحة، واضغط على صورة ملفك الشخصي، ثم اختر التطبيقات (حتى iOS 17: الخصوصية ثم التطبيقات)، وحدد zerospike، وفعّل سكر الدم.",
     healthDeniedStepsAndroid: "للسماح بذلك، افتح Health Connect، وانتقل إلى أذونات التطبيقات، وحدد zerospike، واسمح بكتابة سكر الدم.",
+    healthReadDeniedStepsAndroid: "للسماح بذلك، افتح Health Connect، وانتقل إلى أذونات التطبيقات، وحدد zerospike، واسمح بقراءة سكر الدم.",
     healthOpenApp: "فتح {{health}}",
     healthPendingWrites: "بانتظار الكتابة: {{count}}",
     healthRetryNow: "حاول الآن",

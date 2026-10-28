@@ -101,11 +101,11 @@ import {
   type SyncResult,
 } from "../../lib/services/health";
 import {
-  PERMISSION_TIMEOUT_MS,
-  SYNC_TIMEOUT_MS,
-  connectNotice,
   createHealthFlow,
   realClock,
+  runConnect,
+  runGuardedImport,
+  switchOff,
   type FlowSession,
   type HealthFlow,
 } from "../../lib/healthConnectFlow";
@@ -455,7 +455,10 @@ export default function DashboardScreen() {
   // Health system dialogs wait for the screen to be free (a modal that sent the
   // person here is still sliding away) and every wait is bounded; see
   // lib/healthConnectFlow.
-  const focusedRef = useRef(true);
+  // Starts false: a screen that mounts under a modal must not read as free.
+  const focusedRef = useRef(false);
+  // A run that found the screen covered for too long asks again once it clears.
+  const retryRef = useRef<"connect" | "sync" | null>(null);
   const flowRef = useRef<HealthFlow | null>(null);
   if (flowRef.current === null) {
     flowRef.current = createHealthFlow({
@@ -464,17 +467,34 @@ export default function DashboardScreen() {
     });
   }
   const healthFlow = flowRef.current;
+  const latestRef = useRef({ runSync, toggleCgm });
+  latestRef.current = { runSync, toggleCgm };
+  const flushRetry = useCallback(() => {
+    const kind = retryRef.current;
+    if (kind === null || !focusedRef.current) return;
+    retryRef.current = null;
+    if (kind === "connect") void latestRef.current.toggleCgm(true);
+    else void latestRef.current.runSync(false);
+  }, []);
   useFocusEffect(
     useCallback(() => {
       focusedRef.current = true;
       healthFlow.touch();
+      flushRetry();
       return () => {
         focusedRef.current = false;
         healthFlow.touch();
       };
-    }, [healthFlow])
+    }, [healthFlow, flushRetry])
   );
-  useEffect(() => onSurveyRelease(() => healthFlow.touch()), [healthFlow]);
+  useEffect(
+    () =>
+      onSurveyRelease(() => {
+        healthFlow.touch();
+        flushRetry();
+      }),
+    [healthFlow, flushRetry]
+  );
   useEffect(() => () => healthFlow.cancel(), [healthFlow]);
   // undefined = not checked yet, or this platform/build cannot say either way
   // (no native module linked, a query error). The setup row's Widget item
@@ -1078,23 +1098,30 @@ export default function DashboardScreen() {
     void retryPendingHealthWrites(activeProfile.id);
     void retryHealthRecords(activeProfile.id);
     if (!isProUser || (!shared && syncing)) return null;
-    const session = shared ?? healthFlow.start();
-    setSyncing(true);
-    try {
-      // The import may raise the system permission dialog: not before the
-      // screen is free, and never without a time limit.
-      if (!shared && !(await session.clear())) return null;
-      const manualBefore = await countNonCgmHealthRows(activeProfile.id).catch(() => null);
-      const outcome = await session.race(
-        importHealthGlucose(activeProfile.id, announce ? "manual" : "foreground"),
-        SYNC_TIMEOUT_MS
-      );
-      if (outcome.kind === "stale") return null;
-      if (outcome.kind === "timeout") {
-        if (announce) toast(t("dashboard.healthError", { health: HEALTH_NAME }), "info");
-        return { status: "error", inserted: 0, read: 0 };
-      }
-      const res = outcome.value;
+    const profileId = activeProfile.id;
+    let manualBefore: number | null = null;
+    // The import may raise the system permission dialog: not before the screen
+    // is free, and a timeout only frees the card (a late result still lands).
+    return runGuardedImport<SyncResult>(
+      healthFlow,
+      {
+        setSyncing,
+        onBlocked: () => {
+          retryRef.current ??= "sync";
+        },
+        run: async () => {
+          manualBefore = await countNonCgmHealthRows(profileId).catch(() => null);
+          return importHealthGlucose(profileId, announce ? "manual" : "foreground");
+        },
+        onResult: (res) => finishSync(res, announce, manualBefore),
+      },
+      shared
+    );
+  }
+
+  async function finishSync(res: SyncResult, announce: boolean, manualBefore: number | null) {
+    if (!activeProfile) return;
+    {
       if (res.status === "ok") void refreshFirstSync(activeProfile.id).then(setSyncDone);
       if (res.inserted > 0) {
         // One event per sync (not per row) to keep health-import volume sane. Its
@@ -1142,10 +1169,6 @@ export default function DashboardScreen() {
           }
         }
       }
-      return res;
-    } finally {
-      // A run that was cancelled or replaced leaves the flag to whoever did that.
-      if (session.owns()) setSyncing(false);
     }
   }
 
@@ -1159,7 +1182,7 @@ export default function DashboardScreen() {
     const open = await confirm({
       title: t("dashboard.healthDenied", { health: HEALTH_NAME }),
       message: t(
-        Platform.OS === "ios" ? "settings.healthDeniedStepsIos" : "settings.healthDeniedStepsAndroid"
+        Platform.OS === "ios" ? "settings.healthDeniedStepsIos" : "settings.healthReadDeniedStepsAndroid"
       ),
       confirmLabel: t("settings.healthOpenApp", { health: HEALTH_NAME }),
       cancelLabel: t("common.close"),
@@ -1831,63 +1854,56 @@ export default function DashboardScreen() {
       // Off is immediate and final: whatever is still in flight (a permission
       // request that never came back, an import) is superseded, so a late
       // answer cannot switch anything back on or leave "Syncing" behind.
-      healthFlow.cancel();
-      setSyncing(false);
-      setCgmOn(false);
-      if (activeProfile) await writeProfileFlag(CGM_KEY, activeProfile.id, false);
+      retryRef.current = null;
+      await switchOff(healthFlow, {
+        setSyncing,
+        setSwitch: setCgmOn,
+        persist: async (on) => {
+          if (activeProfile) await writeProfileFlag(CGM_KEY, activeProfile.id, on);
+        },
+      });
       return;
     }
     setCgmOn(true);
     if (activeProfile) await writeProfileFlag(CGM_KEY, activeProfile.id, true);
     if (!activeProfile) return;
-    const session = healthFlow.start();
-    setSyncing(true);
-    try {
+    const profileId = activeProfile.id;
+    await runConnect(healthFlow, {
+      setSyncing,
+      onBlocked: () => {
+        retryRef.current ??= "connect";
+      },
       // The system dialog cannot be shown over a modal that is still closing
-      // (the Pro welcome sends the person here while it slides away).
-      if (!(await session.clear())) return;
-      // Connecting asks for write access in the same system dialog as read; a new
-      // grant switches the mirror on for this profile, a denial stays silent.
-      const step = await session.race(
-        requestHealthReadWriteAccess(activeProfile.id),
-        PERMISSION_TIMEOUT_MS
-      );
-      const notice = connectNotice(step);
-      if (step.kind === "stale") return;
-      if (step.kind === "timeout") {
-        // The switch stays on: a tap on the card runs the connect again.
-        toast(t("dashboard.healthError", { health: HEALTH_NAME }), "info");
-        return;
-      }
-      const access = step.value;
+      // (the Pro welcome sends the person here while it slides away). Connecting
+      // asks for write access in the same dialog as read; a new grant switches
+      // the mirror on for this profile.
+      request: (wanted) => requestHealthReadWriteAccess(profileId, wanted),
       // Read refused in the combined dialog: opening the read dialog again right
       // away (importHealthGlucose asks for it) would just repeat the same prompt.
-      if (notice === "denied") {
+      onDenied: async (access) => {
         setCgmOn(false);
-        await writeProfileFlag(CGM_KEY, activeProfile.id, false);
+        await writeProfileFlag(CGM_KEY, profileId, false);
         if (access.newlyEnabled) toast(writeOnMessage(), "info");
         else await offerHealthSettings();
-        return;
-      }
-      const synced = await runSync(true, session);
-      if (!session.current()) return;
-      if (synced?.status === "ok") {
-        // Connected and the first import went through: the Health funnel step, and
-        // the day-1 nudge (and the Pro welcome step) have nothing left to ask for.
-        logEvent("health_connected", {
-          platform: Platform.OS === "ios" ? "ios" : "android",
-          imported: synced.inserted,
-        });
-        void markProWelcomeStep("health", "done");
-        void cancelTrialDay1Nudge();
-      }
-      if (access.newlyEnabled) {
-        toast(writeOnMessage(), "success");
-        await healthBackfill.offerOnce(activeProfile.id);
-      }
-    } finally {
-      if (session.owns()) setSyncing(false);
-    }
+      },
+      sync: (session) => runSync(true, session),
+      onConnected: async (synced, access) => {
+        if (synced?.status === "ok") {
+          // Connected and the first import went through: the Health funnel step, and
+          // the day-1 nudge (and the Pro welcome step) have nothing left to ask for.
+          logEvent("health_connected", {
+            platform: Platform.OS === "ios" ? "ios" : "android",
+            imported: synced.inserted,
+          });
+          void markProWelcomeStep("health", "done");
+          void cancelTrialDay1Nudge();
+        }
+        if (access.newlyEnabled) {
+          toast(writeOnMessage(), "success");
+          await healthBackfill.offerOnce(profileId);
+        }
+      },
+    });
   }
 
   // The one Health entry point, shared by the quick-access card and the

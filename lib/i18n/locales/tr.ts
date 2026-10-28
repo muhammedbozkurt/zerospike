@@ -767,6 +767,7 @@ const tr = {
     healthPermissionBlocked: "{{health}} erişimi engellenmiş görünüyor. İzin verebilmeniz için Ayarlar açılıyor.",
     healthDeniedStepsIos: "İzin vermek için Sağlık uygulamasını açın, profil resminize dokunun, Uygulamalar'ı seçin (iOS 17 ve öncesinde: Gizlilik, ardından Uygulamalar), zerospike'ı seçip Kan Şekeri iznini açın.",
     healthDeniedStepsAndroid: "İzin vermek için Health Connect'i açın, Uygulama izinleri bölümüne gidin, zerospike'ı seçip Kan şekeri yazma iznini verin.",
+    healthReadDeniedStepsAndroid: "İzin vermek için Health Connect'i açın, Uygulama izinleri bölümüne gidin, zerospike'ı seçip Kan şekeri okuma iznini verin.",
     healthOpenApp: "{{health}} uygulamasını açın",
     healthPendingWrites: "Yazılmayı bekleyen: {{count}}",
     healthRetryNow: "Şimdi deneyin",

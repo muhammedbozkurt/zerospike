@@ -1,13 +1,23 @@
 /**
  * lib/healthConnectFlow harness: the Health system permission request waits for
- * a covered screen to clear, every wait is bounded, and switching sync off
- * supersedes whatever is in flight. Fake clock, no native modules.
+ * a covered screen to clear, a timeout frees the UI without dropping a late
+ * answer, and switching sync off supersedes whatever is in flight. Fake clock,
+ * no native modules. The real orchestration functions run here (the dashboard
+ * only wires its UI into them), so these are behavior tests, not source greps.
+ *
+ * A section that never settles fails the run, and so does a run that ends with
+ * unfinished work (a hang must never look like a pass).
  *
  * Run: npx tsx scripts/healthConnectFlow.test.ts
  */
 declare const console: { log: (...a: unknown[]) => void };
-declare const process: { exit: (code: number) => void };
+declare const process: {
+  exit: (code: number) => void;
+  on: (event: string, cb: () => void) => void;
+};
 declare function require(id: string): any;
+declare function setTimeout(fn: () => void, ms: number): unknown;
+declare function clearTimeout(h: unknown): void;
 
 import {
   GATE_MAX_WAIT_MS,
@@ -17,7 +27,11 @@ import {
   SYNC_TIMEOUT_MS,
   connectNotice,
   createHealthFlow,
+  createImportShare,
   isImportStale,
+  runConnect,
+  runGuardedImport,
+  switchOff,
   type FlowClock,
 } from "../lib/healthConnectFlow";
 
@@ -28,6 +42,7 @@ const src = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), "utf8
 
 let passed = 0;
 let failed = 0;
+let finished = false;
 function eq<T>(name: string, actual: T, expected: T): void {
   if (JSON.stringify(actual) === JSON.stringify(expected)) passed++;
   else {
@@ -42,8 +57,26 @@ function ok(name: string, cond: boolean): void {
     console.log(`  x ${name}`);
   }
 }
-function section(name: string): void {
+
+process.on("beforeExit", () => {
+  if (finished) return;
+  console.log("  x the run ended with unfinished work (a promise never settled)");
+  process.exit(1);
+});
+
+const SECTION_LIMIT_MS = 5000;
+async function section(name: string, body: () => Promise<void>): Promise<void> {
   console.log(name);
+  let timer: unknown = null;
+  const limit = new Promise<"hung">((resolve) => {
+    timer = setTimeout(() => resolve("hung"), SECTION_LIMIT_MS);
+  });
+  const outcome = await Promise.race([body().then(() => "done" as const), limit]);
+  clearTimeout(timer);
+  if (outcome === "hung") {
+    failed++;
+    console.log(`  x section hung: ${name}`);
+  }
 }
 
 /** Timers fire in order as time is advanced; promises settle between steps. */
@@ -63,7 +96,7 @@ function fakeClock() {
     now: () => nowMs,
   };
   const flush = async () => {
-    for (let i = 0; i < 10; i++) await Promise.resolve();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
   };
   const advance = async (ms: number) => {
     await flush();
@@ -83,198 +116,195 @@ function fakeClock() {
   return { clock, advance, flush, pending: () => timers.size };
 }
 
-/** The dashboard's connect flow, minus the UI: gate, permission, then a sync. */
-function connectFlow(
-  flow: ReturnType<typeof createHealthFlow>,
-  calls: { permission: number; sync: number },
-  permission: () => Promise<{ read: boolean; newlyEnabled: boolean }>,
-  sync: () => Promise<string>,
-  log: string[]
-) {
-  return (async () => {
-    const session = flow.start();
-    if (!(await session.clear())) {
-      log.push("not-clear");
-      return;
-    }
-    calls.permission++;
-    const step = await session.race(permission(), PERMISSION_TIMEOUT_MS);
-    const notice = connectNotice(step);
-    if (step.kind === "stale") {
-      log.push("stale-permission");
-      return;
-    }
-    if (step.kind === "timeout") {
-      log.push("timeout-permission");
-      return;
-    }
-    if (notice === "denied") {
-      log.push("denied");
-      return;
-    }
-    calls.sync++;
-    const out = await session.race(sync(), SYNC_TIMEOUT_MS);
-    log.push(out.kind === "value" ? `synced:${out.value}` : `${out.kind}-sync`);
-  })();
+type Access = { read: boolean; newlyEnabled: boolean };
+
+/** The dashboard's connect wiring with every effect recorded. */
+function harness(opts: {
+  isBlocked?: () => boolean;
+  request?: (wanted: () => boolean) => Promise<Access>;
+  sync?: () => Promise<string>;
+}) {
+  const c = fakeClock();
+  const flow = createHealthFlow({ isBlocked: opts.isBlocked ?? (() => false), clock: c.clock });
+  const log: string[] = [];
+  const state = { syncing: false, switchOn: true, requests: 0, syncs: 0, mirrorOn: false };
+  const connect = () =>
+    runConnect<Access, string>(flow, {
+      setSyncing: (on) => {
+        state.syncing = on;
+      },
+      onBlocked: () => log.push("blocked"),
+      request: (wanted) => {
+        state.requests++;
+        const req = opts.request ?? (async () => ({ read: true, newlyEnabled: true }));
+        // The mirror is switched on only for a run that is still wanted.
+        return req(wanted).then((a) => {
+          if (a.newlyEnabled && wanted()) state.mirrorOn = true;
+          return a;
+        });
+      },
+      onDenied: async () => {
+        state.switchOn = false;
+        log.push("denied");
+      },
+      sync: (session) =>
+        runGuardedImport<string>(
+          flow,
+          {
+            setSyncing: (on) => {
+              state.syncing = on;
+            },
+            run: () => {
+              state.syncs++;
+              return (opts.sync ?? (async () => "ok"))();
+            },
+            onResult: async (r) => {
+              log.push(`result:${r}`);
+            },
+          },
+          session
+        ),
+      onConnected: async (synced, access) => {
+        log.push(`connected:${synced}:${access.newlyEnabled}`);
+      },
+    });
+  return { c, flow, log, state, connect };
 }
 
 async function main() {
-  section("A. modal open: no request; closed: exactly one, after the settle time");
-  {
-    const c = fakeClock();
+  await section("A. modal open: no request; closed: exactly one, after the settle time", async () => {
     let covered = true;
-    const flow = createHealthFlow({ isBlocked: () => covered, clock: c.clock });
-    const calls = { permission: 0, sync: 0 };
-    const log: string[] = [];
-    flow.touch();
-    const run = connectFlow(flow, calls, async () => ({ read: true, newlyEnabled: false }), async () => "ok", log);
-    await c.advance(5000);
-    eq("no request while the modal is up", calls.permission, 0);
+    const h = harness({ isBlocked: () => covered });
+    h.flow.touch();
+    const run = h.connect();
+    await h.c.advance(5000);
+    eq("no request while the modal is up", h.state.requests, 0);
+    ok("the card shows Syncing while it waits", h.state.syncing);
     covered = false;
-    flow.touch();
-    await c.advance(PERMISSION_SETTLE_MS - 100);
-    eq("still none inside the settle time", calls.permission, 0);
-    await c.advance(400);
-    await run;
-    eq("one request after the modal is gone", calls.permission, 1);
-    eq("then the sync runs", log, ["synced:ok"]);
-    await c.advance(10_000);
-    eq("never asked a second time", calls.permission, 1);
-    eq("no timer is left behind", c.pending(), 0);
-  }
+    h.flow.touch();
+    await h.c.advance(PERMISSION_SETTLE_MS - 100);
+    eq("still none inside the settle time", h.state.requests, 0);
+    await h.c.advance(400);
+    eq("one request after the modal is gone", h.state.requests, 1);
+    eq("outcome", await run, "done");
+    await h.c.advance(10_000);
+    eq("never asked a second time", h.state.requests, 1);
+    ok("Syncing is cleared at the end", !h.state.syncing);
+    eq("no timer is left behind", h.c.pending(), 0);
+  });
 
-  section("A2. nothing covering: no needless delay");
-  {
-    const c = fakeClock();
-    const flow = createHealthFlow({ isBlocked: () => false, clock: c.clock });
-    const calls = { permission: 0, sync: 0 };
-    const run = connectFlow(flow, calls, async () => ({ read: true, newlyEnabled: false }), async () => "ok", []);
-    await c.flush();
-    eq("asked at once on a free screen", calls.permission, 1);
+  await section("A2. nothing covering: no needless delay", async () => {
+    const h = harness({});
+    const run = h.connect();
+    await h.c.flush();
+    eq("asked at once on a free screen", h.state.requests, 1);
     await run;
-  }
+  });
 
-  section("A3. a screen covered past the limit never asks");
-  {
-    const c = fakeClock();
-    const flow = createHealthFlow({ isBlocked: () => true, clock: c.clock });
-    const calls = { permission: 0, sync: 0 };
-    const log: string[] = [];
-    const run = connectFlow(flow, calls, async () => ({ read: true, newlyEnabled: false }), async () => "ok", log);
-    await c.advance(GATE_MAX_WAIT_MS + 1000);
-    await run;
-    eq("no request", calls.permission, 0);
-    eq("reported as not clear", log, ["not-clear"]);
-    eq("no timer is left behind", c.pending(), 0);
-  }
+  await section("A3. a screen covered past the limit never asks and reports blocked", async () => {
+    const h = harness({ isBlocked: () => true });
+    const run = h.connect();
+    await h.c.advance(GATE_MAX_WAIT_MS + 1000);
+    eq("outcome", await run, "blocked");
+    eq("no request", h.state.requests, 0);
+    eq("the caller was told to retry", h.log, ["blocked"]);
+    ok("Syncing is cleared", !h.state.syncing);
+    eq("no timer is left behind", h.c.pending(), 0);
+  });
 
-  section("A4. a second modal opening during the settle time restarts it");
-  {
-    const c = fakeClock();
+  await section("A4. a second modal during the settle time restarts it", async () => {
     let covered = false;
-    const flow = createHealthFlow({ isBlocked: () => covered, clock: c.clock });
-    const calls = { permission: 0, sync: 0 };
-    flow.touch();
-    const run = connectFlow(flow, calls, async () => ({ read: true, newlyEnabled: false }), async () => "ok", []);
-    await c.advance(600);
+    const h = harness({ isBlocked: () => covered });
+    h.flow.touch();
+    const run = h.connect();
+    await h.c.advance(600);
     covered = true;
-    await c.advance(600);
-    eq("nothing while it is covered again", calls.permission, 0);
+    await h.c.advance(600);
+    eq("nothing while it is covered again", h.state.requests, 0);
     covered = false;
-    await c.advance(PERMISSION_SETTLE_MS + 400);
+    await h.c.advance(PERMISSION_SETTLE_MS + 400);
     await run;
-    eq("one request once it is really free", calls.permission, 1);
-  }
+    eq("one request once it is really free", h.state.requests, 1);
+  });
 
-  section("B. a permission promise that never settles ends at the timeout");
-  {
-    const c = fakeClock();
-    const flow = createHealthFlow({ isBlocked: () => false, clock: c.clock });
-    const calls = { permission: 0, sync: 0 };
-    const log: string[] = [];
-    let owns = true;
-    const session0 = flow.start();
-    const run = (async () => {
-      const step = await session0.race(new Promise<never>(() => {}), PERMISSION_TIMEOUT_MS);
-      log.push(step.kind);
-      owns = session0.owns();
-    })();
-    await c.advance(PERMISSION_TIMEOUT_MS - 1);
-    eq("still waiting just before the limit", log, []);
-    await c.advance(2);
-    await run;
-    eq("timeout reported", log, ["timeout"]);
-    ok("a timed-out run still owns the flag it set (so it clears it)", owns);
-    ok("but it is no longer current", !session0.current());
-    eq("no timer is left behind", c.pending(), 0);
-    void calls;
+  await section("B. a permission sheet read past the limit: UI is freed, the late grant still imports", async () => {
+    let grant: (a: Access) => void = () => {};
+    const h = harness({ request: () => new Promise<Access>((r) => (grant = r)) });
+    const run = h.connect();
+    await h.c.advance(PERMISSION_TIMEOUT_MS + 10);
+    ok("Syncing ended at the timeout", !h.state.syncing);
+    eq("no sync yet", h.state.syncs, 0);
+    grant({ read: true, newlyEnabled: true });
+    await h.c.advance(100);
+    eq("outcome", await run, "done");
+    eq("the late grant started the import", h.state.syncs, 1);
+    eq("and the normal follow-up ran", h.log, ["result:ok", "connected:ok:true"]);
+    ok("the mirror switched on for the wanted run", h.state.mirrorOn);
+    ok("Syncing is cleared at the end", !h.state.syncing);
+    eq("no timer is left behind", h.c.pending(), 0);
+  });
 
-    const retry = flow.start();
-    const again = await retry.race(Promise.resolve(7), 1000);
-    eq("a retry after a timeout works", again, { kind: "value", value: 7 });
-  }
+  await section("B2. a sync longer than the limit: UI freed, no error, result still lands", async () => {
+    let finish: (v: string) => void = () => {};
+    const h = harness({ sync: () => new Promise<string>((r) => (finish = r)) });
+    const run = h.connect();
+    await h.c.advance(SYNC_TIMEOUT_MS + 10);
+    ok("Syncing ended at the timeout", !h.state.syncing);
+    eq("nothing reported as an error", h.log, []);
+    finish("ok");
+    await h.c.advance(100);
+    eq("outcome", await run, "done");
+    eq("the late import is reported and the connect completes", h.log, ["result:ok", "connected:ok:true"]);
+  });
 
-  section("B2. a hung sync ends at its timeout");
-  {
-    const c = fakeClock();
-    const flow = createHealthFlow({ isBlocked: () => false, clock: c.clock });
-    const calls = { permission: 0, sync: 0 };
-    const log: string[] = [];
-    const run = connectFlow(
-      flow,
-      calls,
-      async () => ({ read: true, newlyEnabled: false }),
-      () => new Promise<string>(() => {}),
-      log
-    );
-    await c.advance(SYNC_TIMEOUT_MS + 10);
-    await run;
-    eq("sync timed out", log, ["timeout-sync"]);
-  }
+  await section("B3. a hung request that never comes back ends with no timer left", async () => {
+    const h = harness({ request: () => new Promise<Access>(() => {}) });
+    const run = h.connect();
+    await h.c.advance(PERMISSION_TIMEOUT_MS + 10);
+    ok("Syncing ended", !h.state.syncing);
+    h.flow.cancel();
+    eq("a cancel ends the waiting run", await run, "stale");
+    eq("no timer is left behind", h.c.pending(), 0);
+  });
 
-  section("C. switching off cancels; a late answer changes nothing");
-  {
-    const c = fakeClock();
-    const flow = createHealthFlow({ isBlocked: () => false, clock: c.clock });
-    const calls = { permission: 0, sync: 0 };
-    const log: string[] = [];
-    let resolvePermission: (v: { read: boolean; newlyEnabled: boolean }) => void = () => {};
-    const run = connectFlow(
-      flow,
-      calls,
-      () => new Promise((r) => (resolvePermission = r)),
-      async () => "ok",
-      log
-    );
-    await c.flush();
-    eq("the request is out", calls.permission, 1);
-    flow.cancel();
-    await run;
-    eq("the waiting run ends at once", log, ["stale-permission"]);
-    resolvePermission({ read: true, newlyEnabled: true });
-    await c.advance(1000);
-    eq("the late grant starts no sync", calls.sync, 0);
-    eq("and adds nothing to the outcome", log, ["stale-permission"]);
-    eq("no timer is left behind", c.pending(), 0);
-  }
+  await section("C. switching off (switchOff) cancels; a late answer changes nothing", async () => {
+    let grant: (a: Access) => void = () => {};
+    const h = harness({ request: () => new Promise<Access>((r) => (grant = r)) });
+    const run = h.connect();
+    await h.c.flush();
+    eq("the request is out", h.state.requests, 1);
+    const persisted: boolean[] = [];
+    const ui = { syncing: true, switchOn: true };
+    await switchOff(h.flow, {
+      setSyncing: (on) => (ui.syncing = on),
+      setSwitch: (on) => (ui.switchOn = on),
+      persist: async (on) => {
+        persisted.push(on);
+      },
+    });
+    eq("off clears Syncing at once", ui.syncing, false);
+    eq("off flips the switch at once", ui.switchOn, false);
+    eq("off is persisted", persisted, [false]);
+    eq("the waiting run ends", await run, "stale");
+    grant({ read: true, newlyEnabled: true });
+    await h.c.advance(1000);
+    eq("the late grant starts no sync", h.state.syncs, 0);
+    eq("the late grant switches no mirror on", h.state.mirrorOn, false);
+    eq("nothing else happened", h.log, []);
+    eq("no timer is left behind", h.c.pending(), 0);
+  });
 
-  section("C2. switching off while the gate still waits");
-  {
-    const c = fakeClock();
-    const flow = createHealthFlow({ isBlocked: () => true, clock: c.clock });
-    const calls = { permission: 0, sync: 0 };
-    const log: string[] = [];
-    const run = connectFlow(flow, calls, async () => ({ read: true, newlyEnabled: false }), async () => "ok", log);
-    await c.advance(3000);
-    flow.cancel();
-    await run;
-    eq("never asked", calls.permission, 0);
-    eq("ended without a request", log, ["not-clear"]);
-    eq("no timer is left behind", c.pending(), 0);
-  }
+  await section("C2. switching off while the gate still waits", async () => {
+    const h = harness({ isBlocked: () => true });
+    const run = h.connect();
+    await h.c.advance(3000);
+    h.flow.cancel();
+    eq("outcome", await run, "stale");
+    eq("never asked", h.state.requests, 0);
+    eq("no timer is left behind", h.c.pending(), 0);
+  });
 
-  section("C3. a newer run supersedes the older one; the older cannot clear the newer's flag");
-  {
+  await section("C3. a newer run supersedes the older one", async () => {
     const c = fakeClock();
     const flow = createHealthFlow({ isBlocked: () => false, clock: c.clock });
     const a = flow.start();
@@ -286,47 +316,141 @@ async function main() {
     flow.cancel();
     ok("a cancel takes ownership from the newer too", !b.owns());
     eq("a cancelled session races stale at once", await b.race(Promise.resolve(1), 1000), { kind: "stale" });
-  }
+  });
 
-  section("D. refused access");
-  {
-    eq("refused read is a refusal", connectNotice({ kind: "value", value: { read: false } }), "denied");
-    eq("granted read has nothing to say", connectNotice({ kind: "value", value: { read: true } }), "none");
-    eq("a timeout is a retry, not a refusal", connectNotice({ kind: "timeout" }), "timeout");
-    eq("a superseded run says nothing", connectNotice({ kind: "stale" }), "none");
-
+  await section("C4. a late result of a superseded run is dropped", async () => {
     const c = fakeClock();
     const flow = createHealthFlow({ isBlocked: () => false, clock: c.clock });
-    const calls = { permission: 0, sync: 0 };
-    const log: string[] = [];
-    await connectFlow(flow, calls, async () => ({ read: false, newlyEnabled: false }), async () => "ok", log);
-    eq("denied stops before the sync", log, ["denied"]);
-    eq("no sync was started", calls.sync, 0);
-  }
+    const a = flow.start();
+    let resolveA: (v: number) => void = () => {};
+    const raced = a.race(new Promise<number>((r) => (resolveA = r)), 1000);
+    await c.advance(1001);
+    const first = await raced;
+    eq("timeout reported", first.kind, "timeout");
+    ok("a timed-out run is still wanted", a.current());
+    flow.start();
+    resolveA(5);
+    eq("after a newer run the late value is stale", first.kind === "timeout" ? await first.late : null, { kind: "stale" });
+  });
 
-  section("E. a hung import is not shared forever");
-  {
+  await section("D. import runs: gate before the import, never bypassed", async () => {
+    const c = fakeClock();
+    let covered = true;
+    const flow = createHealthFlow({ isBlocked: () => covered, clock: c.clock });
+    flow.touch();
+    let imports = 0;
+    const results: string[] = [];
+    const run = runGuardedImport<string>(flow, {
+      setSyncing: () => {},
+      run: async () => {
+        imports++;
+        return "ok";
+      },
+      onResult: async (r) => {
+        results.push(r);
+      },
+    });
+    await c.advance(8000);
+    eq("no import while covered", imports, 0);
+    covered = false;
+    flow.touch();
+    await c.advance(PERMISSION_SETTLE_MS + 300);
+    eq("one import once clear", await run, "ok");
+    eq("imports", imports, 1);
+    eq("result handled once", results, ["ok"]);
+  });
+
+  await section("D2. covered import reports blocked (caller retries when the screen clears)", async () => {
+    const c = fakeClock();
+    const flow = createHealthFlow({ isBlocked: () => true, clock: c.clock });
+    let blocked = 0;
+    let imports = 0;
+    const run = runGuardedImport<string>(flow, {
+      setSyncing: () => {},
+      onBlocked: () => blocked++,
+      run: async () => {
+        imports++;
+        return "ok";
+      },
+      onResult: async () => {},
+    });
+    await c.advance(GATE_MAX_WAIT_MS + 500);
+    eq("returns null", await run, null);
+    eq("blocked reported once", blocked, 1);
+    eq("no import", imports, 0);
+  });
+
+  await section("E. refused access", async () => {
+    eq("refused read is a refusal", connectNotice({ kind: "value", value: { read: false } }), "denied");
+    eq("granted read has nothing to say", connectNotice({ kind: "value", value: { read: true } }), "none");
+    eq("a timeout is not a refusal", connectNotice({ kind: "timeout" }), "timeout");
+    eq("a superseded run says nothing", connectNotice({ kind: "stale" }), "none");
+    const h = harness({ request: async () => ({ read: false, newlyEnabled: false }) });
+    eq("denied outcome", await h.connect(), "denied");
+    eq("denied stops before the sync", h.state.syncs, 0);
+    eq("the switch is off and the denial reported", h.log, ["denied"]);
+    ok("Syncing is cleared", !h.state.syncing);
+  });
+
+  await section("F. a hung import is not shared forever (the real share used by health.ts)", async () => {
     ok("fresh import is shared", !isImportStale(1000, 1000 + IMPORT_STALE_MS - 1));
     ok("a hung import is not", isImportStale(1000, 1000 + IMPORT_STALE_MS));
-    ok("stale limit is under the sync timeout (a retry after a timeout starts fresh)", IMPORT_STALE_MS < SYNC_TIMEOUT_MS);
-  }
+    ok("stale limit is under the sync timeout", IMPORT_STALE_MS < SYNC_TIMEOUT_MS);
 
-  section("F. wiring");
-  {
+    let now = 0;
+    const share = createImportShare<string>(() => now);
+    let starts = 0;
+    const hang = () => {
+      starts++;
+      return new Promise<string>(() => {});
+    };
+    void share.share("p", hang);
+    void share.share("p", hang);
+    eq("overlapping callers share one import", starts, 1);
+    now = IMPORT_STALE_MS - 1;
+    void share.share("p", hang);
+    eq("still shared just before the limit", starts, 1);
+    now = IMPORT_STALE_MS;
+    void share.share("p", hang);
+    eq("a hung import is replaced by a fresh one after the limit", starts, 2);
+    void share.share("other", hang);
+    eq("another profile is independent", starts, 3);
+
+    let resolveIt: (v: string) => void = () => {};
+    const quick = createImportShare<string>(() => now);
+    const first = quick.share("p", () => new Promise<string>((r) => (resolveIt = r)));
+    resolveIt("done");
+    eq("the shared result", await first, "done");
+    let again = 0;
+    await quick.share("p", async () => {
+      again++;
+      return "x";
+    });
+    eq("a finished import is not reused", again, 1);
+
+    const wired = src("lib/services/health.ts");
+    ok("health.ts shares imports through the tested helper", /importShare\.share\(profileId/.test(wired));
+  });
+
+  await section("G. wiring", async () => {
     const dash = src("app/(tabs)/index.tsx");
-    const toggle = dash.slice(dash.indexOf("async function toggleCgm"), dash.indexOf("function openHealthFlow"));
-    ok("connect waits for a clear screen before the request", /session\.clear\(\)[\s\S]*requestHealthReadWriteAccess/.test(toggle));
-    ok("the permission request is bounded", /session\.race\(\s*requestHealthReadWriteAccess[\s\S]*PERMISSION_TIMEOUT_MS/.test(toggle));
-    ok("off cancels the flow and clears Syncing", /!next[\s\S]*healthFlow\.cancel\(\)[\s\S]*setSyncing\(false\)[\s\S]*setCgmOn\(false\)/.test(toggle));
-    const sync = dash.slice(dash.indexOf("async function runSync"), dash.indexOf("async function offerHealthSettings"));
-    ok("sync waits for a clear screen", /session\.clear\(\)[\s\S]*importHealthGlucose/.test(sync));
-    ok("the import is bounded", /SYNC_TIMEOUT_MS/.test(sync));
-    ok("only the owning run clears Syncing", /session\.owns\(\)\)\s*setSyncing\(false\)/.test(sync));
+    ok("connect goes through runConnect", /runConnect\(healthFlow/.test(dash));
+    ok("the connect passes the run's wanted() to the permission request", /requestHealthReadWriteAccess\(profileId, wanted\)/.test(dash));
+    ok("sync goes through runGuardedImport", /runGuardedImport<SyncResult>\(\s*healthFlow/.test(dash));
+    ok("off goes through switchOff", /switchOff\(healthFlow/.test(dash));
     ok("the dashboard drops the flow on unmount", /=> healthFlow\.cancel\(\), \[healthFlow\]/.test(dash));
-    ok("health.ts no longer shares a stale import", /isImportStale\(running\.startedAt/.test(src("lib/services/health.ts")));
+    ok("a covered screen retries once it clears", /retryRef\.current \?\?= "sync"/.test(dash) && /flushRetry\(\)/.test(dash));
+    ok("the screen is not free until focus says so", /const focusedRef = useRef\(false\)/.test(dash));
+    ok("the Android read refusal has its own text", /healthReadDeniedStepsAndroid/.test(dash));
     ok("onboarding bounds its Health request", /session\.race\(requestHealthPermissions\(\), PERMISSION_TIMEOUT_MS\)/.test(src("app/onboarding.tsx")));
-  }
+    for (const lang of ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"]) {
+      ok(`${lang} has the read-denied text`, /healthReadDeniedStepsAndroid: "/.test(src(`lib/i18n/locales/${lang}.ts`)));
+    }
+    const en = src("lib/i18n/locales/en.ts");
+    ok("the read text says reading, not writing", /healthReadDeniedStepsAndroid: "[^"]*reading Blood glucose/.test(en));
+  });
 
+  finished = true;
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 }
