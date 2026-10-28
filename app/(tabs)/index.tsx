@@ -222,6 +222,7 @@ import {
 import { applyGlucoseCorrection } from "../../lib/services/glucoseEdit";
 import { attemptGlucoseWrite, openNewReadingState } from "../../lib/glucoseSheetFlow";
 import { GlucoseInputSheet } from "../../components/GlucoseInputSheet";
+import { createSheetCloseGate } from "../../lib/sheetCloseGate";
 import { useEntryGuardConfirm } from "../../components/useEntryGuardConfirm";
 import { ProfileSwitcher } from "../../components/ProfileSwitcher";
 import { useFeedback } from "../../components/Feedback";
@@ -382,6 +383,14 @@ export default function DashboardScreen() {
     void applyScreenshotCgm(screenshotProfileId, shotCgm).then(bumpData);
   }, [screenshotProfileId, shotCgm, bumpData]);
   const { toast, confirm, actionSheet } = useFeedback();
+  // Dialogs raised after a save wait for the entry sheet to be gone: its own
+  // FeedbackHost owns them while it is up and abandons them when it unmounts.
+  const sheetGate = useRef(
+    createSheetCloseGate({
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    })
+  ).current;
   const healthBackfill = useHealthBackfill();
   const onHealthWriteDenied = useHealthWriteDenied();
   const guardEntry = useEntryGuardConfirm();
@@ -1555,6 +1564,7 @@ export default function DashboardScreen() {
       return true;
     }
 
+    sheetGate.markOpen();
     // loggedAt is null when the user left the time untouched ("now"); a
     // backdated reading must not arm/cancel today's timers or nudges.
     const isNow = loggedAt == null;
@@ -1647,6 +1657,7 @@ export default function DashboardScreen() {
       toast(t("calculator.savedRecord"), "success", savedUndo);
     }
     bumpData();
+    if (!(await sheetGate.whenClear())) return;
     const followupShown = isNow ? await maybeOfferLowFollowup(value) : false;
     // Not on top of the low-reading follow-up sheet.
     const isLow = classifyGlucose(value, period, activeProfile) === "low";
@@ -3067,6 +3078,7 @@ export default function DashboardScreen() {
         profile={activeProfile ?? undefined}
         edit={editGlucose}
         onClose={() => {
+          sheetGate.markClosed();
           setSheetOpen(false);
           setEditGlucose(null);
         }}
