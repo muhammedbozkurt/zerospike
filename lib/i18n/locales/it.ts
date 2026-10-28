@@ -947,6 +947,19 @@ const it: TranslationSchema = {
     addedWithInvalid: "{{added}} contatti aggiunti, {{invalid}} numeri non validi",
     invalidNumbers: "{{n}} numeri non validi",
   },
+  purchasePending: {
+    toast: "Il Suo pagamento è in attesa di approvazione. Pro si attiverà automaticamente appena sarà approvato.",
+    cta: "In attesa di approvazione",
+    restoreSlow: "Il ripristino richiede più tempo del solito. Completi l'accesso richiesto dallo store; poi Pro si attiverà automaticamente.",
+  },
+  paywallReason: {
+    nightscoutTitle: "La connessione a Nightscout fa parte di Pro",
+    nightscoutBody: "Con Pro, le misurazioni del Suo server Nightscout vengono aggiunte automaticamente al Suo diario. Le misurazioni già presenti restano sempre.",
+    carbEstimateTitle: "Ha utilizzato le stime dei pasti di oggi",
+    carbEstimateBody: "Pro aumenta il limite giornaliero. Una stima è solo un punto di partenza per il Suo diario.",
+    cgmHistoryTitle: "I giorni precedenti della curva del sensore fanno parte di Pro",
+    cgmHistoryBody: "Le ultime 24 ore sono sempre gratuite. Pro sblocca le curve dei giorni precedenti.",
+  },
   proCta: {
     trial: "Provi {{days}} giorni gratis",
     upgrade: "Passi a Pro",

@@ -20,7 +20,7 @@ import {
   type NsDeps,
 } from "../lib/nightscout/sync";
 import { fetchEntries, verifyAuth } from "../lib/nightscout/client";
-import { PAYWALL_REASONS } from "../lib/analytics/eventSchema";
+import { PAYWALL_REASONS, normalizeEventParams } from "../lib/analytics/eventSchema";
 
 let passed = 0;
 let failed = 0;
@@ -323,7 +323,11 @@ const tick = () => new Promise((r) => setTimeout(r, 10));
     const src = readFileSync(join(import.meta.dirname, "..", "app/onboarding.tsx"), "utf8");
     const reasons = [...src.matchAll(/pathname: "\/paywall", params: \{ reason: "([a-zA-Z_]+)"/g)].map((m) => m[1]);
     ok("onboarding pushes paywall reasons", reasons.length > 0);
-    for (const r of reasons) ok(`reason "${r}" is allowed`, (PAYWALL_REASONS as readonly string[]).includes(r));
+    // The reason the server sees is the one the funnel folds it to (nightscout -> health).
+    for (const r of reasons) {
+      const sent = String((normalizeEventParams("purchase_result", { reason: r }) as { reason: string }).reason);
+      ok(`reason "${r}" is allowed`, (PAYWALL_REASONS as readonly string[]).includes(sent));
+    }
   }
 
   console.log(`\nnightscout race: ${passed} passed, ${failed} failed`);

@@ -725,7 +725,7 @@ export default function OnboardingScreen() {
     hapticSelect();
     setMeasureDenied(false);
     if (measureNeedsPro(picked) && !nightscoutAllowed(isProUser)) {
-      router.push({ pathname: "/paywall", params: { reason: "health" } });
+      router.push({ pathname: "/paywall", params: { reason: "nightscout" } });
       return;
     }
     if (picked !== "cgm") {

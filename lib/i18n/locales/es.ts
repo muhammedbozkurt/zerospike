@@ -947,6 +947,19 @@ const es: TranslationSchema = {
     addedWithInvalid: "{{added}} contactos añadidos, {{invalid}} números no válidos",
     invalidNumbers: "{{n}} números no válidos",
   },
+  purchasePending: {
+    toast: "Su pago está pendiente de aprobación. Pro se activará automáticamente cuando se apruebe.",
+    cta: "Pendiente de aprobación",
+    restoreSlow: "La restauración tarda más de lo habitual. Complete el inicio de sesión que pida la tienda; después Pro se activará automáticamente.",
+  },
+  paywallReason: {
+    nightscoutTitle: "La conexión con Nightscout forma parte de Pro",
+    nightscoutBody: "Con Pro, las lecturas de su propio servidor Nightscout se añaden automáticamente a su diario. Sus lecturas actuales siempre se conservan.",
+    carbEstimateTitle: "Ha usado las estimaciones de comida de hoy",
+    carbEstimateBody: "Pro amplía el límite diario. Una estimación es solo un punto de partida para su diario.",
+    cgmHistoryTitle: "Los días anteriores de la curva del sensor forman parte de Pro",
+    cgmHistoryBody: "Las últimas 24 horas son siempre gratuitas. Pro desbloquea las curvas de los días anteriores.",
+  },
   proCta: {
     trial: "Pruebe {{days}} días gratis",
     upgrade: "Mejorar a Pro",

@@ -304,6 +304,7 @@ function PaywallScreen() {
   const busy = purchaseUiBusy(ui) || exitingUi;
   const purchasing = ui === "purchasing" || ui === "done";
   const failed = ui === "failed";
+  const pendingApproval = ui === "pending";
   const [plan, setPlan] = useState<PlanId>("annual");
   const [offer, setOffer] = useState<OfferingsResult | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -489,11 +490,28 @@ function PaywallScreen() {
       onResult: (p, r) => liveRef.current!.onResult(p, r),
       onSuccess: (p, r) => liveRef.current!.onSuccess(p, r),
       onCancelled: (p) => liveRef.current!.onCancelled(p),
+      onPending: (p, r) => liveRef.current!.onPending(p, r),
       onFailed: (p, r, e) => liveRef.current!.onFailed(p, r, e),
       onPostPurchaseError: (e) => liveRef.current!.onPostPurchaseError(e),
       onState: setUi,
     });
   }
+
+  // Pro arriving while the paywall is open and nothing here caused it (an Ask to
+  // Buy approval, a restore that finished late, another device) ends the sale:
+  // the paywall closes and the app root opens the welcome. A purchase or restore
+  // of this screen is busy and leaves through its own path.
+  const arrivedFreeRef = useRef(!isProUser);
+  useEffect(() => {
+    if (!isProUser) {
+      arrivedFreeRef.current = true;
+      return;
+    }
+    if (!arrivedFreeRef.current) return;
+    arrivedFreeRef.current = false;
+    if (flowRef.current!.isBusy() || exitCtlRef.current!.isExiting()) return;
+    exit();
+  }, [isProUser]);
 
   // Leaves the paywall.
   function exit() {
@@ -577,7 +595,22 @@ function PaywallScreen() {
                       title: t("paywall.limitTitleSpike"),
                       body: t("paywall.limitBodySpike"),
                     }
-                  : reason === "insights"
+                  : reason === "nightscout"
+                    ? {
+                        title: t("paywallReason.nightscoutTitle"),
+                        body: t("paywallReason.nightscoutBody"),
+                      }
+                    : reason === "carbEstimate"
+                      ? {
+                          title: t("paywallReason.carbEstimateTitle"),
+                          body: t("paywallReason.carbEstimateBody"),
+                        }
+                      : reason === "cgmHistory"
+                        ? {
+                            title: t("paywallReason.cgmHistoryTitle"),
+                            body: t("paywallReason.cgmHistoryBody"),
+                          }
+                        : reason === "insights"
                     ? { title: t("paywall.limitTitleInsights") }
                     : reason === "export"
                       ? { title: t("paywall.limitTitleExport") }
@@ -675,7 +708,10 @@ function PaywallScreen() {
   liveRef.current = {
     refreshPro,
     onPress: (p) => logEvent("paywall_cta", { tier: p, paywall_version: PAYWALL_VERSION }),
-    onResult: (p, res) =>
+    onResult: (p, res) => {
+      // A payment held for approval is neither a result nor an error: nothing
+      // is reported until it is approved (purchase_completed at that point).
+      if (res.error === "pending") return;
       logEvent("purchase_result", {
         result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
         product: p,
@@ -686,7 +722,8 @@ function PaywallScreen() {
           res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
         paywall_version: PAYWALL_VERSION,
         source: "paywall",
-      }),
+      });
+    },
     onSuccess: async (p, res) => {
       clearPaywallTrial();
       isProRef.current = true;
@@ -703,6 +740,10 @@ function PaywallScreen() {
       await leaveAfterPurchase(res.ok && res.recovered === true);
     },
     onCancelled: afterCancel,
+    onPending: (_p, res) => {
+      const feedback = purchaseToastFor(res);
+      if (feedback) toast(t(feedback.key), feedback.kind);
+    },
     onFailed: (_p, res, err) => {
       if (err) logCrash(err, { screen: "paywall", op: "purchase" });
       // Real store error (or a thrown one): one short message; the button then
@@ -737,6 +778,8 @@ function PaywallScreen() {
         await exit();
       } else if (result === "none") {
         toast(t("paywall.nothingToRestore"), "info");
+      } else if (result === "slow") {
+        toast(t("purchasePending.restoreSlow"), "info");
       } else {
         toast(t("paywall.restoreFailed"), "error");
       }
@@ -784,9 +827,12 @@ function PaywallScreen() {
     annualTrial,
     hasPrice: selectedPrice !== null,
     failed,
+    pending: pendingApproval,
   });
   const ctaLabel =
-    ctaKind === "retry"
+    ctaKind === "pending"
+      ? t("purchasePending.cta")
+      : ctaKind === "retry"
       ? t("paywall.retry")
       : ctaKind === "trial"
         ? t("paywall.ctaTrial", { days: trialDays })
@@ -1133,7 +1179,7 @@ function PaywallScreen() {
               label={ctaLabel}
               loading={purchasing}
               allowTwoLines
-              disabled={busy}
+              disabled={busy || pendingApproval}
               onPress={buy}
             />
             {chargeRow ? (

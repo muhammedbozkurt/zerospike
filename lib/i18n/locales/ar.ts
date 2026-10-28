@@ -947,6 +947,19 @@ const ar: TranslationSchema = {
     addedWithInvalid: "تمت إضافة {{added}} جهة اتصال، و{{invalid}} رقم غير صحيح",
     invalidNumbers: "{{n}} رقم غير صحيح",
   },
+  purchasePending: {
+    toast: "دفعتك بانتظار الموافقة. سيُفعَّل Pro تلقائيًا بمجرد الموافقة عليها.",
+    cta: "بانتظار الموافقة",
+    restoreSlow: "تستغرق الاستعادة وقتًا أطول من المعتاد. أكمل تسجيل الدخول الذي يطلبه المتجر، وسيُفعَّل Pro تلقائيًا بعد ذلك.",
+  },
+  paywallReason: {
+    nightscoutTitle: "الاتصال بـ Nightscout جزء من Pro",
+    nightscoutBody: "مع Pro تُضاف قراءات خادم Nightscout الخاص بك إلى يومياتك تلقائيًا. وتبقى قراءاتك الحالية دائمًا.",
+    carbEstimateTitle: "استخدمت تقديرات الوجبات لهذا اليوم",
+    carbEstimateBody: "يرفع Pro الحد اليومي. التقدير مجرد نقطة بداية ليومياتك.",
+    cgmHistoryTitle: "الأيام السابقة من منحنى المستشعر جزء من Pro",
+    cgmHistoryBody: "آخر 24 ساعة مجانية دائمًا. يتيح Pro منحنيات الأيام السابقة.",
+  },
   proCta: {
     trial: "جرّب {{days}} أيام مجانًا",
     upgrade: "الترقية إلى Pro",

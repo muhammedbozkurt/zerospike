@@ -233,6 +233,23 @@ export function downsellEligible(i: DownsellEligibilityInput): boolean {
   return canShowDownsell(i.state, i.now);
 }
 
+/**
+ * The most a close may wait on the store. A user pressing X on a slow network
+ * must be out in a couple of seconds: past this the paywall just closes and no
+ * discount is offered.
+ */
+export const PAYWALL_EXIT_STORE_TIMEOUT_MS = 2500;
+
+export interface PaywallExitTimer {
+  set(fn: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const realTimer: PaywallExitTimer = {
+  set: (fn, ms) => setTimeout(fn, ms),
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
 export interface PaywallExitDeps {
   isScreenshotMode(): boolean;
   session: SessionOfferFlag;
@@ -248,6 +265,10 @@ export interface PaywallExitDeps {
    *  records its own show. Best effort: a failure must not block the offer. */
   markOffered(now: number): Promise<void>;
   now(): number;
+  /** Deadline clock; defaults to the real timers (tests inject a fake). */
+  timer?: PaywallExitTimer;
+  /** Overrides PAYWALL_EXIT_STORE_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
 
 export type PaywallExitDecision = "downsell" | "exit";
@@ -258,6 +279,10 @@ export type PaywallExitDecision = "downsell" | "exit";
  * the rule says no or the store has no real discount. On "downsell" the slot
  * stays taken (the lifetime show itself is recorded by the downsell screen
  * once it has confirmed the discount).
+ *
+ * The whole lookup runs against one deadline: a store call that hangs makes the
+ * answer "exit", and whatever the late lookup finishes afterwards touches
+ * nothing (no slot release, no stamp), so it cannot disturb a later decision.
  */
 export async function decidePaywallExit(
   deps: PaywallExitDeps,
@@ -265,26 +290,50 @@ export async function decidePaywallExit(
 ): Promise<PaywallExitDecision> {
   if (input.isPro || deps.isScreenshotMode()) return "exit";
   const reserved = deps.session.reserve();
+  const timer = deps.timer ?? realTimer;
+  let timedOut = false;
+  let handle: unknown;
+  const deadline = new Promise<"timeout">((resolve) => {
+    handle = timer.set(() => resolve("timeout"), deps.timeoutMs ?? PAYWALL_EXIT_STORE_TIMEOUT_MS);
+  });
+  const lookup = lookupPaywallExit(deps, input, reserved, () => timedOut);
+  try {
+    const first = await Promise.race([lookup, deadline]);
+    if (first === "timeout") {
+      timedOut = true;
+      if (reserved) deps.session.release();
+      return "exit";
+    }
+    return first;
+  } finally {
+    timer.clear(handle);
+  }
+}
+
+async function lookupPaywallExit(
+  deps: PaywallExitDeps,
+  input: { plan: string; isPro: boolean },
+  reserved: boolean,
+  late: () => boolean
+): Promise<PaywallExitDecision> {
   const base = { plan: input.plan, isPro: input.isPro, shownThisSession: !reserved };
+  const giveBack = (): PaywallExitDecision => {
+    if (reserved && !late()) deps.session.release();
+    return "exit";
+  };
   try {
     const state = await deps.getState();
     const now = deps.now();
-    if (!paywallExitLocalGate({ ...base, state, now })) {
-      if (reserved) deps.session.release();
-      return "exit";
-    }
-    if (await deps.onboardingIncomplete()) {
-      if (reserved) deps.session.release();
-      return "exit";
-    }
-    if (entitlementBlocksDownsell(await deps.entitlementNow())) {
-      if (reserved) deps.session.release();
-      return "exit";
-    }
+    if (late()) return "exit";
+    if (!paywallExitLocalGate({ ...base, state, now })) return giveBack();
+    if (await deps.onboardingIncomplete()) return giveBack();
+    if (late()) return "exit";
+    if (entitlementBlocksDownsell(await deps.entitlementNow())) return giveBack();
+    if (late()) return "exit";
     const offer = await deps.getOffer();
+    if (late()) return "exit";
     if (!shouldOfferDownsellOnPaywallExit({ ...base, state, now, hasRealDiscount: offer.hasRealDiscount })) {
-      if (reserved) deps.session.release();
-      return "exit";
+      return giveBack();
     }
     try {
       await deps.markOffered(now);
@@ -293,8 +342,7 @@ export async function decidePaywallExit(
     }
     return "downsell";
   } catch {
-    if (reserved) deps.session.release();
-    return "exit";
+    return giveBack();
   }
 }
 
@@ -318,6 +366,11 @@ export function createPaywallExitController(
   // Set when a purchase starts while a decision is still in flight: the decision
   // then navigates nowhere (the purchase owns the screen's exit).
   let abandoned = false;
+  // Set when the user closes again while a decision is still pending (a second
+  // X, or the swipe-down): the screen leaves at once and the late decision
+  // navigates nowhere.
+  let forced = false;
+  let deciding = false;
 
   /** Shared tail of a decision that is dropped because a purchase took over. */
   async function settleAbandoned(decision: PaywallExitDecision): Promise<void> {
@@ -345,8 +398,16 @@ export function createPaywallExitController(
       if (exiting) return;
       exiting = true;
       abandoned = false;
+      forced = false;
       onAccepted?.();
-      const decision = await decidePaywallExit(deps, input);
+      deciding = true;
+      const decision = await decidePaywallExit(deps, input).finally(() => {
+        deciding = false;
+      });
+      if (forced) {
+        if (decision === "downsell") deps.session.release();
+        return;
+      }
       if (abandoned) return settleAbandoned(decision);
       if (decision === "downsell") nav.openDownsell();
       else nav.closePaywall();
@@ -361,18 +422,36 @@ export function createPaywallExitController(
       if (exiting) return;
       exiting = true;
       abandoned = false;
-      const decision = await decidePaywallExit(deps, input);
+      forced = false;
+      deciding = true;
+      const decision = await decidePaywallExit(deps, input).finally(() => {
+        deciding = false;
+      });
+      if (forced) {
+        if (decision === "downsell") deps.session.release();
+        return;
+      }
       if (abandoned) return settleAbandoned(decision);
       if (decision === "downsell") nav.openDownsell();
       else exiting = false;
     },
-    /** A close the user asked for (X, back, swipe): ignored while blocked.
+    /** A close the user asked for (X, back, swipe): ignored while blocked, and a
+     *  repeat while a decision is pending closes immediately.
      *  A cancelled purchase uses requestExit directly, as it IS the blocker. */
     async requestUserClose(
       input: { plan: string; isPro: boolean },
       onAccepted?: () => void
     ): Promise<void> {
       if (isBlocked()) return;
+      if (exiting) {
+        // A decision is still looking at the store: the user asked out twice,
+        // so the paywall closes now and the late answer is dropped.
+        if (deciding && !forced && !abandoned) {
+          forced = true;
+          nav.closePaywall();
+        }
+        return;
+      }
       await controller.requestExit(input, onAccepted);
     },
   };

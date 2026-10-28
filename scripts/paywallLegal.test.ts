@@ -41,7 +41,7 @@ for (const file of screens) {
   ok(`${file}: imports LegalLink`, /import \{ LegalLink \} from "\.\.\/components\/LegalLink"/.test(src));
 }
 
-ok("paywall: buy CTA shows a spinner while purchasing and is locked while busy", /<GradientCTA\s+label=\{ctaLabel\}\s+loading=\{purchasing\}\s+allowTwoLines\s+disabled=\{busy\}\s+onPress=\{buy\}/.test(read("app/paywall.tsx")));
+ok("paywall: buy CTA shows a spinner while purchasing and is locked while busy", /<GradientCTA\s+label=\{ctaLabel\}\s+loading=\{purchasing\}\s+allowTwoLines\s+disabled=\{busy \|\| pendingApproval\}\s+onPress=\{buy\}/.test(read("app/paywall.tsx")));
 {
   const pw = read("app/paywall.tsx");
   const buyBody = pw.slice(pw.indexOf("async function buy()"));

@@ -947,6 +947,19 @@ const en: TranslationSchema = {
     addedWithInvalid: "{{added}} contacts added, {{invalid}} numbers invalid",
     invalidNumbers: "{{n}} numbers invalid",
   },
+  purchasePending: {
+    toast: "Your payment is waiting for approval. Pro opens by itself once it is approved.",
+    cta: "Waiting for approval",
+    restoreSlow: "Restoring is taking longer than usual. Finish any sign-in the store asks for; Pro opens by itself once it completes.",
+  },
+  paywallReason: {
+    nightscoutTitle: "The Nightscout connection is part of Pro",
+    nightscoutBody: "With Pro, readings from your own Nightscout server are added to your journal automatically. Your existing readings always stay.",
+    carbEstimateTitle: "You have used today's meal estimates",
+    carbEstimateBody: "Pro raises the daily limit. An estimate is only a starting point for your journal.",
+    cgmHistoryTitle: "Earlier days of the sensor curve are part of Pro",
+    cgmHistoryBody: "The last 24 hours are always free. Pro opens the curves of earlier days.",
+  },
   proCta: {
     trial: "Try {{days}} days free",
     upgrade: "Upgrade to Pro",

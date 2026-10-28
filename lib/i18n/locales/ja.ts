@@ -947,6 +947,19 @@ const ja: TranslationSchema = {
     addedWithInvalid: "{{added}}件を追加しました。{{invalid}}件の番号は無効です",
     invalidNumbers: "{{n}}件の番号が無効です",
   },
+  purchasePending: {
+    toast: "お支払いは承認待ちです。承認されると、Proが自動的に有効になります。",
+    cta: "承認待ち",
+    restoreSlow: "復元に通常より時間がかかっています。ストアから求められたサインインを完了してください。完了するとProが自動的に有効になります。",
+  },
+  paywallReason: {
+    nightscoutTitle: "Nightscout連携はProの機能です",
+    nightscoutBody: "Proでは、ご自身のNightscoutサーバーの測定値が自動的に日誌へ追加されます。これまでの測定値はいつでも残ります。",
+    carbEstimateTitle: "本日の食事の推定回数を使い切りました",
+    carbEstimateBody: "Proでは1日の上限が引き上げられます。推定は日誌のための目安にすぎません。",
+    cgmHistoryTitle: "センサー曲線の過去の日はProの機能です",
+    cgmHistoryBody: "直近24時間は常に無料です。Proでは過去の日の曲線を表示できます。",
+  },
   proCta: {
     trial: "{{days}}日間無料でお試しください",
     upgrade: "Proにアップグレード",

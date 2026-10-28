@@ -122,17 +122,20 @@ function DownsellScreen() {
       const res = await purchaseDownsell();
       await refreshPro();
       const feedback = purchaseToastFor(res);
-      logEvent("purchase_result", {
-        result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
-        product: "downsell_annual",
-        reason: "direct",
-        variant: "default",
-        trial: false,
-        paywall_version: PAYWALL_VERSION,
-        source: "downsell",
-        detail:
-          res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
-      });
+      // A payment held for approval reports nothing until it is approved.
+      if (res.error !== "pending") {
+        logEvent("purchase_result", {
+          result: res.ok ? "success" : res.cancelled ? "cancelled" : "error",
+          product: "downsell_annual",
+          reason: "direct",
+          variant: "default",
+          trial: false,
+          paywall_version: PAYWALL_VERSION,
+          source: "downsell",
+          detail:
+            res.ok || res.cancelled ? "none" : res.error === "alreadyOwned" ? "already_owned" : "store_error",
+        });
+      }
       if (res.ok) {
         logEvent("downsell_accept", { trigger });
         logEvent("purchase_completed", {

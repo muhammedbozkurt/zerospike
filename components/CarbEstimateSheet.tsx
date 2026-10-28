@@ -512,7 +512,7 @@ export function CarbEstimateSheet({
                   onPress={() => {
                     hapticSelect();
                     onClose();
-                    router.push({ pathname: "/paywall", params: { reason: "spike" } });
+                    router.push({ pathname: "/paywall", params: { reason: "carbEstimate" } });
                   }}
                 />
               </View>

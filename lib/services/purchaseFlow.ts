@@ -13,6 +13,8 @@ export interface PurchaseToast {
  * - success: normal activation, or an already-owned recovery ("already yours").
  * - store error: an honest generic message (never a silent stay).
  * - cancel: null, the caller decides (route to downsell, or just dismiss).
+ * - pending (Ask to Buy, a pending Play payment): an info message, never an
+ *   error; Pro opens by itself once the payment is approved.
  */
 export function purchaseToastFor(outcome: PurchaseOutcome): PurchaseToast | null {
   if (outcome.ok) {
@@ -21,5 +23,6 @@ export function purchaseToastFor(outcome: PurchaseOutcome): PurchaseToast | null
       : { key: "paywall.activated", kind: "success" };
   }
   if (outcome.cancelled) return null;
+  if (outcome.error === "pending") return { key: "purchasePending.toast", kind: "info" };
   return { key: "paywall.purchaseError", kind: "error" };
 }
