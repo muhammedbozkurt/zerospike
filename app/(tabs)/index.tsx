@@ -481,9 +481,11 @@ export default function DashboardScreen() {
           void latestRef.current.toggleCgm(true);
           return;
         }
-        void readProfileFlag(CGM_KEY, profileId).then((on) => {
-          if (on && activeProfileIdRef.current === profileId) void latestRef.current.runSync(false);
-        });
+        void readProfileFlag(CGM_KEY, profileId)
+          .then((on) => {
+            if (on && activeProfileIdRef.current === profileId) void latestRef.current.runSync(false);
+          })
+          .catch((err) => logCrash(err, { screen: "dashboard", load: "retrySync" }));
       },
     });
   }
