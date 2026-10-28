@@ -1320,7 +1320,7 @@ const fr: TranslationSchema = {
     patternDawn:
       "Les matins sont plutôt plus élevés : {{morningAvg}} {{unit}} contre {{baseline}} au total.",
     patternHighVariability:
-      "Vos relevés varient beaucoup (CV {{cv}}). Des niveaux plus stables sont plus faciles à gérer.",
+      "Vos relevés varient beaucoup sur cette période (CV {{cv}}).",
     weeklyCompareTitle: "Cette semaine vs la semaine dernière",
     weeklyCompareEmpty: "Se remplira dès que vous aurez des mesures enregistrées pour cette semaine et la semaine dernière.",
     bestDayStreaksTitle: "Meilleur jour et séries",
@@ -1775,6 +1775,12 @@ const fr: TranslationSchema = {
     approx: "env.",
     amountUnreadable: "Certaines quantités ne sont pas des nombres. Corrigez-les pour ajouter",
     unnamedLeftOut: "Les lignes sans nom ne sont pas ajoutées au repas",
+    carbsNotRescaled: "Les glucides n'ont pas été recalculés pour la nouvelle quantité. Ajustez les grammes si besoin.",
+    discardTitle: "Supprimer l'estimation non enregistrée ?",
+    discardBody: "Cette estimation n'a pas encore été ajoutée à votre repas. Si vous quittez maintenant, vous devrez estimer à nouveau.",
+    discardConfirm: "Supprimer",
+    discardKeep: "Garder l'estimation",
+    quantityMissing: "Une ligne n'a pas de quantité. Saisissez une quantité supérieure à zéro, ou supprimez la ligne, pour ajouter.",
     errorLimit: "Vous avez utilisé votre estimation de repas du jour. Réessayez après minuit UTC, ou saisissez les glucides à la main.",
     errorBusy: "Le service est très sollicité en ce moment. Réessayez dans un moment, ou saisissez les glucides à la main.",
     errorFailed: "Nous n'avons pas pu établir d'estimation. Reformulez la description et réessayez, ou saisissez les glucides à la main.",

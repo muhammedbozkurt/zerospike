@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { clearHistory } from "../ai/spikeHistory";
+import { forgetUnsavedEstimate } from "../ai/carbEstimateUnsaved";
 
 /**
  * Spike consent gate - fail-closed (Apple 5.1.1). Until the user explicitly
@@ -154,5 +155,6 @@ export async function withdrawSpikeConsent(): Promise<void> {
   } catch {
     // best-effort
   }
+  forgetUnsavedEstimate();
   await clearHistory();
 }

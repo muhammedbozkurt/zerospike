@@ -2,7 +2,12 @@ import React, { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { useTranslation } from "react-i18next";
 
-import type { EditableItem } from "../../lib/ai/carbEstimateClient";
+import {
+  carbsNotRescaled,
+  withGramsText,
+  withQuantityText,
+  type EditableItem,
+} from "../../lib/ai/carbEstimateClient";
 import { num } from "../../lib/format";
 import { useCarbChoiceText } from "../../lib/carbDisplayPref";
 import { parseGramsInput } from "../../lib/mealCompose";
@@ -65,7 +70,7 @@ export function EstimateResultCard({
           <Text style={{ color: THEME.textMuted, fontSize: 18, fontWeight: "700" }}>≈ </Text>
           <TextInput
             value={line.gramsText}
-            onChangeText={(next) => onChange({ ...line, gramsText: next })}
+            onChangeText={(next) => onChange(withGramsText(line, next))}
             keyboardType="decimal-pad"
             selectTextOnFocus
             maxLength={6}
@@ -101,7 +106,7 @@ export function EstimateResultCard({
         <View style={{ flexDirection: "row", alignItems: "center", columnGap: 8 }}>
           <TextInput
             value={line.quantityText}
-            onChangeText={(next) => onChange({ ...line, quantityText: next })}
+            onChangeText={(next) => onChange(withQuantityText(line, next))}
             keyboardType="decimal-pad"
             selectTextOnFocus
             autoFocus
@@ -174,6 +179,11 @@ export function EstimateResultCard({
           </Pressable>
         </View>
       )}
+      {carbsNotRescaled(line) ? (
+        <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6 }}>
+          {t("carbEstimate.carbsNotRescaled")}
+        </Text>
+      ) : null}
     </MealCardShell>
   );
 }

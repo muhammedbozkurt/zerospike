@@ -34,6 +34,10 @@ import {
   shouldCountEstimate,
   carbErrorCharged,
   editableToEstimateLines,
+  forgetUnsavedEstimate,
+  needsDiscardConfirm,
+  recallUnsavedEstimate,
+  rememberUnsavedEstimate,
   type EditableItem,
 } from "../lib/ai/carbEstimateClient";
 import {
@@ -61,6 +65,7 @@ import { useScrollHint } from "../lib/useScrollHint";
 import { hintBottomOffset } from "../lib/scrollHint";
 import { useA11yModalPresence } from "../lib/a11yModal";
 import { Button } from "./ui";
+import { useFeedback } from "./Feedback";
 
 
 export type CarbEstimateSource = "food_tab" | "meal_sheet";
@@ -104,6 +109,7 @@ export function CarbEstimateSheet({
   onAdd: (lines: EstimateLineInput[]) => void;
 }) {
   const { t } = useTranslation();
+  const { confirm } = useFeedback();
   useA11yModalPresence(true);
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -117,10 +123,12 @@ export function CarbEstimateSheet({
   const [consented, setConsented] = useState<boolean | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [text, setText] = useState("");
+  const [restored] = useState(() => (screenshotResult ? null : recallUnsavedEstimate()));
+  const [text, setText] = useState(restored?.text ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ErrorKind | null>(null);
-  const [items, setItems] = useState<EditableItem[] | null>(null);
+  const [items, setItems] = useState<EditableItem[] | null>(restored?.items ?? null);
+  const confirming = useRef(false);
   const [keyboardH, setKeyboardH] = useState(0);
   const [hostHeight, setHostHeight] = useState(0);
   const fontScale = useFontScale();
@@ -148,7 +156,12 @@ export function CarbEstimateSheet({
   useEffect(() => {
     let alive = true;
     void hasSpikeConsent().then((ok) => {
-      if (alive) setConsented((prev) => (prev === true && screenshotResult ? true : ok));
+      if (!alive) return;
+      setConsented((prev) => (prev === true && screenshotResult ? true : ok));
+      if (!ok && !screenshotResult) {
+        forgetUnsavedEstimate();
+        setItems(null);
+      }
     });
     return () => {
       alive = false;
@@ -156,13 +169,48 @@ export function CarbEstimateSheet({
     };
   }, []);
 
+  // Every way out of a result (scrim, back, X, screen reader escape) asks first; the latest handler is read
+  // through a ref so the Android back listener never closes over stale rows.
+  const requestCloseRef = useRef<() => void>(() => {});
+  requestCloseRef.current = () => {
+    if (!needsDiscardConfirm({ items, saving })) {
+      close();
+      return;
+    }
+    if (confirming.current) return;
+    confirming.current = true;
+    void confirm({
+      title: t("carbEstimate.discardTitle"),
+      message: t("carbEstimate.discardBody"),
+      confirmLabel: t("carbEstimate.discardConfirm"),
+      cancelLabel: t("carbEstimate.discardKeep"),
+      destructive: true,
+      icon: "close-circle-outline",
+    })
+      .then((proceed) => {
+        if (!proceed) return;
+        forgetUnsavedEstimate();
+        close();
+      })
+      .finally(() => {
+        confirming.current = false;
+      });
+  };
+  const requestClose = useCallback(() => requestCloseRef.current(), []);
+
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      onClose();
+      requestClose();
       return true;
     });
     return () => sub.remove();
-  }, [onClose]);
+  }, [requestClose]);
+
+  useEffect(() => {
+    if (screenshotResult) return;
+    if (items && items.length > 0) rememberUnsavedEstimate(text, items);
+    else forgetUnsavedEstimate();
+  }, [items, text, screenshotResult]);
 
   // iOS only: Android is adjustResize and already lifts the sheet.
   useEffect(() => {
@@ -435,7 +483,13 @@ export function CarbEstimateSheet({
       <View style={{ paddingTop: 10 }}>
         {addHint ? (
           <Text style={{ color: THEME.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 8 }}>
-            {t(addHint === "unreadable" ? "carbEstimate.amountUnreadable" : "carbEstimate.unnamedLeftOut")}
+            {t(
+              addHint === "unreadable"
+                ? "carbEstimate.amountUnreadable"
+                : addHint === "quantity"
+                  ? "carbEstimate.quantityMissing"
+                  : "carbEstimate.unnamedLeftOut"
+            )}
           </Text>
         ) : null}
         <Button
@@ -445,6 +499,7 @@ export function CarbEstimateSheet({
             if (canAdd && items) {
               onAdd(editableToEstimateLines(items));
               logEvent("carb_estimate_accepted", { item_count: itemCountBucket(items.length) });
+              forgetUnsavedEstimate();
               close();
             }
           }}
@@ -554,13 +609,13 @@ export function CarbEstimateSheet({
       style={[StyleSheet.absoluteFill, { zIndex: 300 }]}
       accessibilityViewIsModal
       importantForAccessibility="yes"
-      onAccessibilityEscape={onClose}
+      onAccessibilityEscape={requestClose}
       onLayout={(e) => setHostHeight(e.nativeEvent.layout.height)}
     >
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: anim }]}>
         <Pressable
           style={[StyleSheet.absoluteFill, { backgroundColor: SCRIM }]}
-          onPress={onClose}
+          onPress={requestClose}
           accessibilityRole="button"
           accessibilityLabel={t("common.cancel")}
         />
@@ -595,7 +650,7 @@ export function CarbEstimateSheet({
               <View className="w-10 h-1 rounded-full bg-hair" />
             </View>
             <Pressable
-              onPress={close}
+              onPress={requestClose}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel={t("common.close")}

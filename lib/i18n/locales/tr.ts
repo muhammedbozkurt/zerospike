@@ -1318,7 +1318,7 @@ const tr = {
     patternDawn:
       "Sabahlar daha yüksek seyrediyor: {{morningAvg}} {{unit}}, genel {{baseline}}.",
     patternHighVariability:
-      "Ölçümleriniz oldukça değişken (CV {{cv}}). Daha kararlı seyri yönetmek daha kolaydır.",
+      "Ölçümleriniz bu dönemde oldukça değişken (CV {{cv}}).",
     weeklyCompareTitle: "Bu hafta - geçen hafta",
     weeklyCompareEmpty: "Bu hafta ve geçen hafta için ölçüm kaydettikçe dolacak.",
     bestDayStreaksTitle: "En iyi gün ve seriler",
@@ -1769,6 +1769,12 @@ const tr = {
     approx: "yakl.",
     amountUnreadable: "Bazı miktarlar sayı değil. Eklemek için düzeltin",
     unnamedLeftOut: "Adı olmayan satırlar öğüne eklenmez",
+    carbsNotRescaled: "Karbonhidrat yeni miktara göre yeniden ölçeklenmedi. Gerekirse gramı düzeltin.",
+    discardTitle: "Kaydedilmemiş tahmin silinsin mi?",
+    discardBody: "Bu tahmin henüz öğününüze eklenmedi. Şimdi çıkarsanız yeniden tahmin etmeniz gerekir.",
+    discardConfirm: "Sil",
+    discardKeep: "Tahmini koru",
+    quantityMissing: "Bir satırın miktarı yok. Eklemek için sıfırdan büyük bir miktar girin ya da satırı kaldırın.",
     errorLimit: "Bugünkü besin tahmini hakkınızı kullandınız. Yarın (UTC gece yarısından sonra) tekrar deneyebilir ya da karbonhidratı elle girebilirsiniz.",
     errorBusy: "Şu an yoğunluk var. Biraz sonra tekrar deneyin ya da karbonhidratı elle girin.",
     errorFailed: "Tahmin yapılamadı. Yazdığınızı biraz değiştirip tekrar deneyin ya da karbonhidratı elle girin.",

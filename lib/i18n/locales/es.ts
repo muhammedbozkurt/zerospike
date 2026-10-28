@@ -1320,7 +1320,7 @@ const es: TranslationSchema = {
     patternDawn:
       "Las mañanas tienden a ser más altas: {{morningAvg}} {{unit}} frente a {{baseline}} en general.",
     patternHighVariability:
-      "Sus lecturas varían mucho (CV {{cv}}). Niveles más estables son más fáciles de manejar.",
+      "Sus lecturas varían mucho en este período (CV {{cv}}).",
     weeklyCompareTitle: "Esta semana vs. la semana pasada",
     weeklyCompareEmpty: "Se completará en cuanto tenga mediciones registradas de esta semana y la semana pasada.",
     bestDayStreaksTitle: "Mejor día y rachas",
@@ -1774,6 +1774,12 @@ const es: TranslationSchema = {
     approx: "aprox.",
     amountUnreadable: "Algunas cantidades no son números. Corríjalas para añadir",
     unnamedLeftOut: "Las filas sin nombre no se añaden a la comida",
+    carbsNotRescaled: "Los carbohidratos no se recalcularon para la nueva cantidad. Ajuste los gramos si lo necesita.",
+    discardTitle: "¿Descartar la estimación sin guardar?",
+    discardBody: "Esta estimación aún no se ha añadido a su comida. Si sale ahora, tendrá que estimar de nuevo.",
+    discardConfirm: "Descartar",
+    discardKeep: "Conservar estimación",
+    quantityMissing: "A una fila le falta la cantidad. Introduzca una mayor que cero, o elimine la fila, para añadir.",
     errorLimit: "Ya usó su estimación de comida de hoy. Vuelva a intentarlo después de la medianoche UTC o introduzca los carbohidratos a mano.",
     errorBusy: "Ahora hay mucha demanda. Vuelva a intentarlo en un rato o introduzca los carbohidratos a mano.",
     errorFailed: "No pudimos hacer una estimación. Reformule la descripción e inténtelo de nuevo, o introduzca los carbohidratos a mano.",
