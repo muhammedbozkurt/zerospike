@@ -25,6 +25,7 @@ import i18nInstance, {
 } from "../i18n";
 import { isProCached, verifyProWithStore } from "../services/purchases";
 import { markAlarmTourSeen } from "../services/alarmTour";
+import { forgetUnsavedEstimate } from "../ai/carbEstimateUnsaved";
 import { armAfterLogsPaywall } from "../services/afterLogsPaywall";
 import { markWhatsNewSeenNow } from "../whatsNewStore";
 import { takePendingAlarmRoute } from "../../modules/zerospike-alarmkit";
@@ -188,6 +189,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setActiveProfileId = useCallback(async (id: string) => {
     const p = await getProfile(id);
     if (!p) return;
+    // An unsaved meal estimate belongs to the profile it was made for.
+    if (p.id !== activeIdRef.current) forgetUnsavedEstimate();
     setActiveProfile(p);
     await AsyncStorage.setItem(ACTIVE_PROFILE_KEY, id);
     // The two device-level surfaces resolve the profile themselves from the key

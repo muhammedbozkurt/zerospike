@@ -335,6 +335,103 @@ function editing(): void {
   eq("item count bucket is a plain count", [client.itemCountBucket(3), client.itemCountBucket(99), client.itemCountBucket(-1)], [3, 12, 0]);
 }
 
+function quantityAndDiscard(): void {
+  section("H. quantity scales carbs, hand-typed carbs stay, a result is not lost silently");
+  const toast = client.editableFromEstimate([{ name: "Toast", quantity: 2, unit: "slices", grams_carb: 29.4 }])[0];
+  const q3 = client.withQuantityText(toast, "3");
+  eq("2 -> 3 slices: carbs follow in proportion", client.editableGrams(q3), 44.1);
+  const q4 = client.withQuantityText(toast, "4");
+  eq("2 -> 4 slices: 58.8 g, the audit repro", client.editableGrams(q4), 58.8);
+  eq("the saved line carries the scaled carbs", client.editableToEstimateLines([q4])[0].grams_carb, 58.8);
+  const cmQ = require("../lib/mealCompose");
+  eq("the saved meal total is the scaled one", cmQ.composeMealInput(cmQ.addEstimateLines([], client.editableToEstimateLines([q4]))).calculated_carbs_g, 58.8);
+  eq("the shown total is the scaled one", client.editableTotal([q4]), 58.8);
+  let typing = client.withQuantityText(toast, "");
+  eq("an emptied quantity leaves the carbs alone", client.editableGrams(typing), 29.4);
+  typing = client.withQuantityText(typing, "4");
+  typing = client.withQuantityText(typing, "2");
+  eq("4 then back to 2 returns the original carbs, no rounding drift", client.editableGrams(typing), 29.4);
+  eq("a zero quantity leaves the carbs alone", client.editableGrams(client.withQuantityText(toast, "0")), 29.4);
+  eq("a comma decimal quantity scales too", client.editableGrams(client.withQuantityText(client.editableFromEstimate([{ name: "Rice", quantity: 2, unit: "cups", grams_carb: 30 }])[0], "1,5")), 22.5);
+  eq("scaled carbs stay under the 500 g cap", client.editableGrams(client.withQuantityText(toast, "100")), 500);
+  eq("scaling does not mark the carbs as hand-typed", client.withQuantityText(toast, "3").gramsEdited, undefined);
+  eq("no hint while the carbs follow the quantity", client.carbsNotRescaled(q3), false);
+
+  const typed = client.withGramsText(toast, "35");
+  eq("typing carbs marks them as the user's", typed.gramsEdited, true);
+  const typedThenQty = client.withQuantityText(typed, "4");
+  eq("hand-typed carbs are not rescaled by a later quantity change", client.editableGrams(typedThenQty), 35);
+  eq("the quantity itself still changes", typedThenQty.quantityText, "4");
+  eq("and the card says the carbs were not rescaled", client.carbsNotRescaled(typedThenQty), true);
+  eq("no hint when the quantity is back at the estimate", client.carbsNotRescaled(client.withQuantityText(typed, "2")), false);
+  eq("no hint when the carbs were typed but the quantity was not touched", client.carbsNotRescaled(typed), false);
+  const qtyThenTyped = client.withGramsText(q3, "40");
+  eq("quantity first, then typed carbs: the typed figure wins and the hint shows", [client.editableGrams(qtyThenTyped), client.carbsNotRescaled(qtyThenTyped)], [40, true]);
+
+  const bare: any = { key: "k", name: "Tea", quantityText: "1", unit: "glass", gramsText: "8" };
+  eq("a line without a stored estimate scales from its current figures", client.editableGrams(client.withQuantityText(bare, "3")), 24);
+  const noQty = client.editableFromEstimate([{ name: "Soup", quantity: 0, unit: "", grams_carb: 20 }])[0];
+  eq("an estimate that came with no quantity keeps its carbs", client.editableGrams(client.withQuantityText(noQty, "3")), 20);
+
+  eq("no result yet: leaving asks nothing", client.needsDiscardConfirm({ items: null, saving: false }), false);
+  eq("a result with rows: leaving asks first", client.needsDiscardConfirm({ items: [toast], saving: false }), true);
+  eq("every row removed: nothing left to lose", client.needsDiscardConfirm({ items: [], saving: false }), false);
+  eq("while the add is running: no second question", client.needsDiscardConfirm({ items: [toast], saving: true }), false);
+
+  const emptied = client.withQuantityText(toast, "");
+  const zeroed = client.withQuantityText(toast, "0");
+  eq("an emptied quantity on an untouched estimate blocks the add and says why", [client.quantityEmptied(emptied), client.canAddEstimate({ resultShown: true, items: [emptied], saving: false }), client.estimateAddHint([emptied])], [true, false, "quantity"]);
+  eq("a zero quantity blocks it too", [client.quantityEmptied(zeroed), client.canAddEstimate({ resultShown: true, items: [zeroed], saving: false })], [true, false]);
+  eq("a quantity above zero adds again", client.canAddEstimate({ resultShown: true, items: [client.withQuantityText(emptied, "2")], saving: false }), true);
+  eq("hand-typed carbs with an emptied quantity are the user's call", [client.quantityEmptied(client.withGramsText(emptied, "30")), client.canAddEstimate({ resultShown: true, items: [client.withGramsText(emptied, "30")], saving: false })], [false, true]);
+  eq("an estimate that never had a quantity is not blocked", client.quantityEmptied(client.withQuantityText(noQty, "")), false);
+  eq("an unreadable amount is still named first", client.estimateAddHint([{ ...emptied, gramsText: "abc" }]), "unreadable");
+
+  const consentSrc = read("lib/services/spikeConsent.ts");
+  const appCtx = read("lib/store/AppContext.tsx");
+  ok("withdrawing the Spike consent drops the kept estimate", /forgetUnsavedEstimate\(\);\s+await clearHistory\(\)/.test(consentSrc));
+  ok("switching to another profile drops the kept estimate", /p\.id !== activeIdRef\.current\) forgetUnsavedEstimate\(\)/.test(appCtx));
+  ok("the kept-estimate store has no import of the client (no cycle with the consent code)", !/from "\.\/carbEstimateClient"/.test(read("lib/ai/carbEstimateUnsaved.ts").replace(/import type[^\n]*\n/, "")));
+
+  const t0 = 1_000_000;
+  client.forgetUnsavedEstimate();
+  eq("nothing remembered at first", client.recallUnsavedEstimate(t0), null);
+  client.rememberUnsavedEstimate("2 slices of toast", [q4], t0);
+  const back = client.recallUnsavedEstimate(t0 + 5 * 60 * 1000);
+  eq("the same session gets the same rows back, edits included", [back?.text, back?.items.map((i: any) => i.quantityText), back ? client.editableGrams(back.items[0]) : null], ["2 slices of toast", ["4"], 58.8]);
+  if (back) back.items[0].gramsText = "1";
+  eq("what comes back is a copy: changing it leaves the memory alone", client.editableGrams(client.recallUnsavedEstimate(t0)!.items[0]), 58.8);
+  eq("after an hour it is gone", client.recallUnsavedEstimate(t0 + client.UNSAVED_ESTIMATE_TTL_MS + 1), null);
+  client.rememberUnsavedEstimate("x", [q4], t0);
+  client.forgetUnsavedEstimate();
+  eq("a discard or an add forgets it", client.recallUnsavedEstimate(t0), null);
+  client.rememberUnsavedEstimate("x", [q4], t0);
+  client.rememberUnsavedEstimate("x", [], t0);
+  eq("remembering no rows clears it", client.recallUnsavedEstimate(t0), null);
+  client.forgetUnsavedEstimate();
+
+  const sheet = read("components/CarbEstimateSheet.tsx");
+  const card = read("components/meal/EstimateResultCard.tsx");
+  ok("the scrim asks before leaving a result", /onPress=\{requestClose\}\s+accessibilityRole="button"\s+accessibilityLabel=\{t\("common.cancel"\)\}/.test(sheet));
+  ok("the X asks before leaving a result", /onPress=\{requestClose\}\s+hitSlop=\{8\}\s+accessibilityRole="button"\s+accessibilityLabel=\{t\("common.close"\)\}/.test(sheet));
+  ok("Android back and the screen reader escape ask too", /hardwareBackPress", \(\) => \{\s*requestClose\(\);/.test(sheet) && sheet.includes("onAccessibilityEscape={requestClose}"));
+  ok("only the no-result buttons and the paywall hop still call onClose straight", (sheet.match(/onPress=\{onClose\}/g) ?? []).length === 1 && (sheet.match(/onClose\(\);/g) ?? []).length === 2);
+  ok("the question is a destructive confirm with its own keep button", /confirm\(\{[\s\S]*?carbEstimate\.discardTitle[\s\S]*?destructive: true/.test(sheet) && sheet.includes('t("carbEstimate.discardKeep")'));
+  ok("a confirmed discard and an add both forget the kept result", (sheet.match(/forgetUnsavedEstimate\(\);/g) ?? []).length >= 3);
+  ok("reopening restores the rows without a request", sheet.includes("recallUnsavedEstimate()") && (sheet.match(/estimateCarbs\(/g) ?? []).length === 1);
+  ok("the card scales and marks through the client helpers", card.includes("withQuantityText(line, next)") && card.includes("withGramsText(line, next)") && card.includes("carbsNotRescaled(line)"));
+
+  const langs = ["en", "tr", "de", "fr", "es", "it", "pt", "ar", "ja"];
+  const newKeys = ["carbsNotRescaled", "discardTitle", "discardBody", "discardConfirm", "discardKeep", "quantityMissing"];
+  const dose = /doz|dose|dosis|dosi\b|dosage|جرعة|投与/i;
+  const manage = /yönet|manage|gérer|handhaben|manejar|gestire|acompanhar|الإدارة|扱い/i;
+  for (const lang of langs) {
+    const loc = require(`../lib/i18n/locales/${lang}`).default as { carbEstimate: Record<string, string>; insights: Record<string, string> };
+    ok(`${lang}: new carbEstimate keys exist, no dose word, no dash, no percent`, newKeys.every((k) => typeof loc.carbEstimate[k] === "string" && loc.carbEstimate[k].length > 0 && !dose.test(loc.carbEstimate[k]) && !/[%\u2013\u2014]/.test(loc.carbEstimate[k])));
+    ok(`${lang}: patternHighVariability only describes (no management sentence), keeps its figure`, loc.insights.patternHighVariability.includes("{{cv}}") && !manage.test(loc.insights.patternHighVariability) && (loc.insights.patternHighVariability.match(/[.。]/g) ?? []).length <= 1);
+  }
+}
+
 function sourcePins(): void {
   section("F. wiring pins");
   const sheet = read("components/CarbEstimateSheet.tsx");
@@ -462,6 +559,7 @@ async function screenshotSample(): Promise<void> {
   await requests();
   await quota();
   editing();
+  quantityAndDiscard();
   sourcePins();
   locales();
   console.log(`\n${passed} passed, ${failed} failed`);

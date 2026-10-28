@@ -1320,7 +1320,7 @@ const en: TranslationSchema = {
     patternDawn:
       "Mornings tend to run higher: {{morningAvg}} {{unit}} vs {{baseline}} overall.",
     patternHighVariability:
-      "Your readings vary a lot (CV {{cv}}). Steadier levels are easier to manage.",
+      "Your readings vary a lot in this period (CV {{cv}}).",
     weeklyCompareTitle: "This week vs. last week",
     weeklyCompareEmpty: "Fills in once you have readings logged for this week and last week.",
     bestDayStreaksTitle: "Best day & streaks",
@@ -1771,6 +1771,12 @@ const en: TranslationSchema = {
     approx: "approx.",
     amountUnreadable: "Some amounts are not numbers. Correct them to add",
     unnamedLeftOut: "Rows without a name are not added to the meal",
+    carbsNotRescaled: "Carbs were not rescaled for the new amount. Adjust the grams if needed.",
+    discardTitle: "Discard the unsaved estimate?",
+    discardBody: "This estimate has not been added to your meal yet. If you leave now, you will need to estimate again.",
+    discardConfirm: "Discard",
+    discardKeep: "Keep estimate",
+    quantityMissing: "A row has no quantity. Enter one above zero, or remove the row, to add.",
     errorLimit: "You have used today's meal estimate. Try again after UTC midnight, or enter the carbs by hand.",
     errorBusy: "It is busy right now. Try again in a little while, or enter the carbs by hand.",
     errorFailed: "We could not make an estimate. Rephrase the description and try again, or enter the carbs by hand.",

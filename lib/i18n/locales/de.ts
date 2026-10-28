@@ -1320,7 +1320,7 @@ const de: TranslationSchema = {
     patternDawn:
       "Morgens sind die Werte tendenziell höher: {{morningAvg}} {{unit}} statt {{baseline}} insgesamt.",
     patternHighVariability:
-      "Ihre Werte schwanken stark (VK {{cv}}). Stabilere Werte sind leichter zu handhaben.",
+      "Ihre Werte schwanken in diesem Zeitraum stark (VK {{cv}}).",
     weeklyCompareTitle: "Diese Woche ggü. letzter Woche",
     weeklyCompareEmpty: "Füllt sich, sobald Sie für diese und letzte Woche Messungen erfasst haben.",
     bestDayStreaksTitle: "Bester Tag & Serien",
@@ -1775,6 +1775,12 @@ const de: TranslationSchema = {
     approx: "ca.",
     amountUnreadable: "Einige Mengen sind keine Zahlen. Korrigieren Sie sie, um hinzuzufügen",
     unnamedLeftOut: "Zeilen ohne Namen werden der Mahlzeit nicht hinzugefügt",
+    carbsNotRescaled: "Die Kohlenhydrate wurden nicht an die neue Menge angepasst. Passen Sie bei Bedarf die Gramm an.",
+    discardTitle: "Nicht gespeicherte Schätzung verwerfen?",
+    discardBody: "Diese Schätzung wurde noch nicht zu Ihrer Mahlzeit hinzugefügt. Wenn Sie jetzt gehen, müssen Sie erneut schätzen.",
+    discardConfirm: "Verwerfen",
+    discardKeep: "Schätzung behalten",
+    quantityMissing: "Bei einer Zeile fehlt die Menge. Geben Sie eine Menge über null ein oder entfernen Sie die Zeile, um hinzuzufügen.",
     errorLimit: "Ihre Mahlzeitenschätzung für heute ist aufgebraucht. Versuchen Sie es nach Mitternacht UTC erneut oder geben Sie die Kohlenhydrate von Hand ein.",
     errorBusy: "Gerade ist viel los. Versuchen Sie es in Kürze erneut oder geben Sie die Kohlenhydrate von Hand ein.",
     errorFailed: "Es konnte keine Schätzung erstellt werden. Formulieren Sie die Beschreibung um und versuchen Sie es erneut, oder geben Sie die Kohlenhydrate von Hand ein.",

@@ -261,6 +261,11 @@ export interface EditableItem {
   quantityText: string;
   unit: string;
   gramsText: string;
+  /** The quantity and carbs the estimate (or the line before the first edit) came with; quantity edits scale from these. */
+  baseQuantity?: number;
+  baseGrams?: number;
+  /** The user typed the carbs themselves: a quantity change no longer moves them. */
+  gramsEdited?: boolean;
 }
 
 export function editableFromEstimate(items: readonly CarbItem[]): EditableItem[] {
@@ -270,13 +275,58 @@ export function editableFromEstimate(items: readonly CarbItem[]): EditableItem[]
     quantityText: decimalInputText(item.quantity),
     unit: item.unit,
     gramsText: decimalInputText(item.grams_carb),
+    baseQuantity: item.quantity,
+    baseGrams: item.grams_carb,
   }));
+}
+
+/**
+ * The quantity changed: carbs follow in proportion ("2 slices, 29.4 g" -> "3 slices, 44.1 g") as long as the user
+ * has not typed the carbs themselves. The scale always starts from the original estimate, so typing "4" through "" and
+ * back to "2" returns the original figure and rounding never drifts. A quantity with no number, or an estimate
+ * that came with no quantity, leaves the carbs alone.
+ */
+export function withQuantityText(item: EditableItem, quantityText: string): EditableItem {
+  const next: EditableItem = { ...item, quantityText };
+  const baseQuantity = item.baseQuantity ?? parseGramText(item.quantityText) ?? 0;
+  const baseGrams = item.baseGrams ?? parseGramText(item.gramsText) ?? 0;
+  next.baseQuantity = baseQuantity;
+  next.baseGrams = baseGrams;
+  if (item.gramsEdited) return next;
+  const quantity = parseGramText(quantityText);
+  if (quantity === null || quantity <= 0 || baseQuantity <= 0) return next;
+  const grams = Math.min(Math.round(((baseGrams * quantity) / baseQuantity) * 10) / 10, CARB_GRAMS_MAX);
+  next.gramsText = decimalInputText(grams);
+  return next;
+}
+
+/** The user typed the carbs: from now on they stay as typed whatever the quantity does. */
+export function withGramsText(item: EditableItem, gramsText: string): EditableItem {
+  return { ...item, gramsText, gramsEdited: true };
+}
+
+/** The quantity moved away from the estimate while the carbs were typed by hand: the card says the carbs were not rescaled. */
+export function carbsNotRescaled(item: EditableItem): boolean {
+  if (!item.gramsEdited || item.baseQuantity === undefined) return false;
+  const quantity = parseGramText(item.quantityText);
+  return quantity !== null && quantity > 0 && item.baseQuantity > 0 && quantity !== item.baseQuantity;
 }
 
 /** Text typed into an amount field that holds no number at all ("," or "abc"): an empty field is a deliberate 0, this is not. */
 export function hasUnreadableAmount(item: EditableItem): boolean {
   const unreadable = (text: string) => text.trim() !== "" && parseGramText(text) === null;
   return unreadable(item.gramsText) || unreadable(item.quantityText);
+}
+
+/**
+ * The estimate came with a quantity and the user emptied it or set it to 0 while the carbs are still the estimate's
+ * (not typed by hand): "0 slices, 29.4 g" would be saved. Adding waits until the quantity is above zero again or
+ * the row is removed.
+ */
+export function quantityEmptied(item: EditableItem): boolean {
+  if (item.gramsEdited || (item.baseQuantity ?? 0) <= 0) return false;
+  const quantity = parseGramText(item.quantityText);
+  return quantity === null ? item.quantityText.trim() === "" : quantity <= 0;
 }
 
 /** An unreadable or negative amount is 0 grams; the cap matches the function's. */
@@ -320,6 +370,7 @@ export function canAddEstimate(state: {
     state.items.length > 0 &&
     state.items.some(hasItemName) &&
     !state.items.filter(hasItemName).some(hasUnreadableAmount) &&
+    !state.items.filter(hasItemName).some(quantityEmptied) &&
     !state.saving
   );
 }
@@ -335,14 +386,30 @@ export function editableToEstimateLines(items: readonly EditableItem[]): Estimat
   }));
 }
 
+/**
+ * Leaving the result with nothing added would throw away an estimate that already spent a daily allowance: the
+ * sheet asks first. Nothing to lose before a result exists, while a result is being added, or once every row is gone.
+ */
+export function needsDiscardConfirm(state: { items: readonly EditableItem[] | null; saving: boolean }): boolean {
+  return state.items !== null && state.items.length > 0 && !state.saving;
+}
+
+export {
+  UNSAVED_ESTIMATE_TTL_MS,
+  forgetUnsavedEstimate,
+  recallUnsavedEstimate,
+  rememberUnsavedEstimate,
+} from "./carbEstimateUnsaved";
+
 /** Analytics only: an item count bucket, never a gram value. */
 export function itemCountBucket(count: number): number {
   return Math.max(0, Math.min(CARB_MAX_ITEMS, Math.floor(count)));
 }
 
 /** Why "Add to meal" leaves something out or stays shut, if it does. */
-export function estimateAddHint(items: readonly EditableItem[]): "unnamed" | "unreadable" | null {
+export function estimateAddHint(items: readonly EditableItem[]): "unnamed" | "unreadable" | "quantity" | null {
   if (items.filter(hasItemName).some(hasUnreadableAmount)) return "unreadable";
+  if (items.filter(hasItemName).some(quantityEmptied)) return "quantity";
   if (items.some((item) => !hasItemName(item))) return "unnamed";
   return null;
 }

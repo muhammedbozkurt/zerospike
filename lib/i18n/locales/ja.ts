@@ -1320,7 +1320,7 @@ const ja: TranslationSchema = {
     patternDawn:
       "朝は高めに推移しています: {{morningAvg}} {{unit}}、全体は{{baseline}}。",
     patternHighVariability:
-      "測定値のばらつきが大きめです(CV {{cv}})。値が安定しているほど扱いやすくなります。",
+      "この期間は測定値のばらつきが大きめです(CV {{cv}})。",
     weeklyCompareTitle: "今週と先週の比較",
     weeklyCompareEmpty: "今週と先週の両方に測定値が記録されると表示されます。",
     bestDayStreaksTitle: "最高の日と連続記録",
@@ -1771,6 +1771,12 @@ const ja: TranslationSchema = {
     approx: "約",
     amountUnreadable: "数値でない量があります。修正すると追加できます",
     unnamedLeftOut: "名前のない行は食事に追加されません",
+    carbsNotRescaled: "新しい量に合わせた炭水化物の再計算は行われていません。必要に応じてグラムを修正してください。",
+    discardTitle: "保存されていない推定を破棄しますか？",
+    discardBody: "この推定はまだ食事に追加されていません。今すぐ閉じると、もう一度推定する必要があります。",
+    discardConfirm: "破棄する",
+    discardKeep: "推定を残す",
+    quantityMissing: "数量のない行があります。0より大きい数量を入力するか、行を削除すると追加できます。",
     errorLimit: "本日の食事推定の回数を使い切りました。UTCの午前0時を過ぎてから再度お試しいただくか、炭水化物を手入力してください。",
     errorBusy: "現在混み合っています。しばらくしてからもう一度お試しいただくか、炭水化物を手入力してください。",
     errorFailed: "推定できませんでした。説明を言い換えてもう一度お試しいただくか、炭水化物を手入力してください。",
